@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { EditorContent, useEditor } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import { TextSelection } from '@tiptap/pm/state';
@@ -20,6 +20,8 @@ import {
   spansToJSON,
   matchOffset,
   countMatches,
+  pmChange,
+  REDECORATE,
 } from './pm.ts';
 import { EditorContextMenu, type MenuState } from './ContextMenu.tsx';
 import { FindBar } from './FindBar.tsx';
@@ -40,21 +42,25 @@ const loreKeyCache = {
   },
 };
 
-export function StoryEditor() {
-  const story = useStory((s) => s.current);
-  const storyId = story?.id;
+export const StoryEditor = memo(function StoryEditor() {
+  // Narrow subscriptions: the editor must not re-render on its own keystrokes.
+  const storyId = useStory((s) => s.current?.id);
+  const mode = useStory((s) => s.current?.mode);
+  const entries = useStory((s) => s.current?.lorebook.entries);
   const setEditor = useStory((s) => s.setEditor);
   const highlight = useSettings((s) => s.highlightSpeech);
   const inverted = useSettings((s) => s.highlightSpeechInverted);
   const spellcheck = useSettings((s) => s.editorSpellcheck);
   const loreKeysOn = useSettings((s) => s.editorLoreKeys);
   const showToolbar = useSettings((s) => s.showEditorToolbar);
-  const entries = story?.lorebook.entries;
+  const visibilityRange = useSettings((s) => s.paragraphVisibilityRange);
   const findOpen = useUI((s) => s.findOpen);
   const generating = useStory((s) => s.generating);
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [find, setFind] = useState({ query: '', index: 0 });
   const findRef = useRef(find);
+  /** Editor document as of the last update, for structural diffs. */
+  const prevDoc = useRef<import('@tiptap/pm/model').Node | null>(null);
   findRef.current = find;
 
   const opts = useMemo(
@@ -72,6 +78,8 @@ export function StoryEditor() {
     [],
   );
 
+  // Built once; later documents are loaded with setDocTr.
+  const [initialContent] = useState(() => spansToJSON(useStory.getState().current?.doc ?? []));
   const editor = useEditor({
     extensions: [
       StarterKit.configure({
@@ -93,7 +101,7 @@ export function StoryEditor() {
       OriginMark,
       NovelPlugins(opts),
     ],
-    content: spansToJSON(useStory.getState().current?.doc ?? []),
+    content: initialContent,
     editorProps: {
       attributes: { spellcheck: String(spellcheck), 'aria-label': 'Story', role: 'textbox', 'aria-multiline': 'true' },
       handlePaste(view, event) {
@@ -122,15 +130,30 @@ export function StoryEditor() {
         },
       },
     },
+    onCreate({ editor: ed }) {
+      prevDoc.current = ed.state.doc;
+    },
     onUpdate({ editor: ed, transaction }) {
-      if (transaction.getMeta(EXTERNAL)) return;
-      useStory.getState().editorChanged(docToSpans(ed.state.doc));
+      const before = prevDoc.current;
+      prevDoc.current = ed.state.doc;
+      if (transaction.getMeta(EXTERNAL) || !before) return;
+      const store = useStory.getState();
+      if (!store.current || store.generating) return;
+      const change = pmChange(before, ed.state.doc, store.current.doc);
+      if (change) store.editorChanged(change);
+      // Debug aid for tests: verify the incremental change against a full conversion.
+      if ((window as { __nwCheckDoc?: boolean }).__nwCheckDoc) {
+        const want = JSON.stringify(docToSpans(ed.state.doc));
+        const got = JSON.stringify(useStory.getState().current?.doc);
+        if (want !== got) throw new Error(`editor/store doc mismatch\nwant ${want.slice(0, 400)}\ngot  ${got.slice(0, 400)}`);
+      }
     },
   });
 
   // Register controller for the store.
   useEffect(() => {
     if (!editor) return;
+    let scrollQueued = false;
     setEditor({
       setDoc(doc, cursor) {
         const tr = setDocTr(editor.state, doc);
@@ -153,8 +176,14 @@ export function StoryEditor() {
         editor.commands.focus();
       },
       scrollToEnd() {
-        const el = editor.view.dom.closest('.editor-scroll');
-        if (el && el.scrollHeight - el.scrollTop - el.clientHeight < 400) el.scrollTop = el.scrollHeight;
+        // Coalesced to one layout read per frame while text streams in.
+        if (scrollQueued) return;
+        scrollQueued = true;
+        requestAnimationFrame(() => {
+          scrollQueued = false;
+          const el = editor.view.dom.closest('.editor-scroll');
+          if (el && el.scrollHeight - el.scrollTop - el.clientHeight < 400) el.scrollTop = el.scrollHeight;
+        });
       },
     });
     return () => setEditor(null);
@@ -174,8 +203,8 @@ export function StoryEditor() {
   // Re-render decorations when display options change.
   useEffect(() => {
     if (!editor) return;
-    editor.view.dispatch(editor.state.tr.setMeta(EXTERNAL, true));
-  }, [editor, highlight, find, story?.mode, loreKeysOn, entries]);
+    editor.view.dispatch(editor.state.tr.setMeta(EXTERNAL, true).setMeta(REDECORATE, true));
+  }, [editor, highlight, find, mode, loreKeysOn, entries]);
 
   useEffect(() => {
     editor?.view.dom.setAttribute('spellcheck', String(spellcheck));
@@ -185,6 +214,39 @@ export function StoryEditor() {
   useEffect(() => {
     editor?.setEditable(!generating, false);
   }, [editor, generating]);
+
+  // Paragraph Visibility Range: off-screen paragraphs skip layout and paint (content-visibility), except a band
+  // of `visibilityRange` characters around the caret, which stays fully rendered for editing and selection.
+  const keepStyle = useRef<HTMLStyleElement | null>(null);
+  useEffect(() => {
+    if (!editor || !visibilityRange) return;
+    const style = document.createElement('style');
+    document.head.appendChild(style);
+    keepStyle.current = style;
+    let last = '';
+    const update = () => {
+      const doc = editor.state.doc;
+      const caret = Math.min(editor.state.selection.head, doc.content.size - 1);
+      const idx = doc.resolve(Math.max(0, caret)).index(0);
+      let a = idx;
+      let chars = 0;
+      while (a > 0 && chars < visibilityRange) chars += doc.child(--a).content.size + 1;
+      let b = idx;
+      chars = 0;
+      while (b < doc.childCount - 1 && chars < visibilityRange) chars += doc.child(++b).content.size + 1;
+      const rule = `.nw-editor.pv .ProseMirror > p:nth-child(n+${a + 1}):nth-child(-n+${b + 1}){content-visibility:visible}`;
+      if (rule !== last) style.textContent = last = rule;
+    };
+    update();
+    editor.on('selectionUpdate', update);
+    editor.on('update', update);
+    return () => {
+      editor.off('selectionUpdate', update);
+      editor.off('update', update);
+      style.remove();
+      keepStyle.current = null;
+    };
+  }, [editor, visibilityRange]);
 
   const gotoMatch = (index: number) => {
     if (!editor || !find.query) return;
@@ -200,7 +262,7 @@ export function StoryEditor() {
   };
 
   return (
-    <div className={`nw-editor ${highlight ? 'highlight-speech' : ''} ${inverted ? 'inverted' : ''}`}>
+    <div className={`nw-editor ${highlight ? 'highlight-speech' : ''} ${inverted ? 'inverted' : ''} ${visibilityRange ? 'pv' : ''}`}>
       {findOpen && editor && (
         <FindBar
           query={find.query}
@@ -220,4 +282,4 @@ export function StoryEditor() {
       {menu && editor && <EditorContextMenu state={menu} editor={editor} onClose={() => setMenu(null)} />}
     </div>
   );
-}
+});

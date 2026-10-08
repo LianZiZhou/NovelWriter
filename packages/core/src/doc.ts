@@ -84,47 +84,75 @@ export function revertChanges(doc: readonly Span[], cs: readonly Change[]): Span
  * text and span attributes (so origin/mark changes are captured too).
  */
 export function diffDocs(before: readonly Span[], after: readonly Span[]): Change | null {
-  const a = flatten(before);
-  const b = flatten(after);
+  const lenA = docLength(before);
+  const lenB = docLength(after);
+  // Common prefix, walking both span lists in step without allocating per character.
   let start = 0;
-  const min = Math.min(a.length, b.length);
-  while (start < min && sameChar(a[start], b[start])) start++;
-  if (start === a.length && start === b.length) return null;
-  let endA = a.length;
-  let endB = b.length;
-  while (endA > start && endB > start && sameChar(a[endA - 1], b[endB - 1])) {
-    endA--;
-    endB--;
+  {
+    let ia = 0;
+    let ib = 0;
+    let oa = 0;
+    let ob = 0;
+    while (ia < before.length && ib < after.length) {
+      const sa = before[ia];
+      const sb = after[ib];
+      if (sa.origin !== sb.origin || !sameMarks(sa.marks, sb.marks)) break;
+      const n = Math.min(sa.text.length - oa, sb.text.length - ob);
+      let k = 0;
+      while (k < n && sa.text.charCodeAt(oa + k) === sb.text.charCodeAt(ob + k)) k++;
+      start += k;
+      if (k < n) break;
+      oa += k;
+      ob += k;
+      if (oa === sa.text.length) {
+        ia++;
+        oa = 0;
+      }
+      if (ob === sb.text.length) {
+        ib++;
+        ob = 0;
+      }
+    }
   }
+  if (start === lenA && start === lenB) return null;
+  // Common suffix, not overlapping the prefix.
+  let suffix = 0;
+  {
+    const max = Math.min(lenA, lenB) - start;
+    let ia = before.length - 1;
+    let ib = after.length - 1;
+    let oa = ia >= 0 ? before[ia].text.length : 0;
+    let ob = ib >= 0 ? after[ib].text.length : 0;
+    while (ia >= 0 && ib >= 0 && suffix < max) {
+      const sa = before[ia];
+      const sb = after[ib];
+      if (oa === 0) {
+        ia--;
+        oa = ia >= 0 ? before[ia].text.length : 0;
+        continue;
+      }
+      if (ob === 0) {
+        ib--;
+        ob = ib >= 0 ? after[ib].text.length : 0;
+        continue;
+      }
+      if (sa.origin !== sb.origin || !sameMarks(sa.marks, sb.marks)) break;
+      const n = Math.min(oa, ob, max - suffix);
+      let k = 0;
+      while (k < n && sa.text.charCodeAt(oa - 1 - k) === sb.text.charCodeAt(ob - 1 - k)) k++;
+      suffix += k;
+      if (k < n) break;
+      oa -= k;
+      ob -= k;
+    }
+  }
+  const endA = lenA - suffix;
+  const endB = lenB - suffix;
   return {
     pos: start,
     removed: slice(before, start, endA),
     inserted: slice(after, start, endB),
   };
-}
-
-interface Ch {
-  c: string;
-  o: Origin;
-  m: string;
-}
-
-function flatten(doc: readonly Span[]): Ch[] {
-  const out: Ch[] = [];
-  for (const sp of doc) {
-    const m = (sp.marks ?? []).slice().sort().join(',');
-    for (const c of sp.text) {
-      // Surrogate pairs are split into code points; keep UTF-16 indices aligned.
-      if (c.length === 2) {
-        out.push({ c: c[0], o: sp.origin, m }, { c: c[1], o: sp.origin, m });
-      } else out.push({ c, o: sp.origin, m });
-    }
-  }
-  return out;
-}
-
-function sameChar(x: Ch, y: Ch): boolean {
-  return x.c === y.c && x.o === y.o && x.m === y.m;
 }
 
 /**

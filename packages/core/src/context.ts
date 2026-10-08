@@ -113,23 +113,78 @@ export function trimText(
   maxType: TrimType,
 ): { text: string; type: TrimType } | null {
   if (limit <= 0) return null;
+  if (text.length <= limit * 32 && countTokens(text) <= limit) return { text, type: 'newline' };
+  // Nothing longer than this many characters can fit (tokens average well under 16 characters), so only
+  // that end of a long text is examined.
+  const windowChars = limit * 16;
   const maxIdx = TRIM_ORDER.indexOf(maxType);
   for (let t = 0; t <= maxIdx; t++) {
     const type = TRIM_ORDER[t];
-    const bounds = unitBoundaries(text, type);
-    // Binary search the number of units to keep.
-    let lo = 0;
-    let hi = bounds.length - 1;
-    let best: string | null = null;
-    while (lo <= hi) {
-      const mid = (lo + hi) >> 1; // units to drop
-      const cut = direction === 'trimTop' ? text.slice(bounds[mid]) : text.slice(0, bounds[bounds.length - 1 - mid]);
-      if (countTokens(cut) <= limit) {
-        best = cut;
-        hi = mid - 1;
-      } else lo = mid + 1;
+    const base = text.length > windowChars ? (direction === 'trimTop' ? text.length - windowChars : 0) : 0;
+    const sub = text.length > windowChars ? (direction === 'trimTop' ? text.slice(base) : text.slice(0, windowChars)) : text;
+    // Unit boundaries of the full text that fall inside the window, relative to the window.
+    let bounds: number[];
+    if (type === 'token') bounds = unitBoundaries(sub, type);
+    else {
+      bounds = unitBoundaries(sub, type).filter((x) => (direction === 'trimTop' ? x > 0 || base === 0 : x < sub.length || sub.length === text.length));
+      if (direction === 'trimTop') bounds = [...bounds.filter((x) => x < sub.length), sub.length];
+      else bounds = [0, ...bounds.filter((x) => x > 0)];
+      // A boundary inside the window is only real if it is one in the full text (window edges are not).
+      if (direction === 'trimTop' && base > 0) bounds = bounds.filter((x) => x > 0);
+      if (direction === 'trimBottom' && sub.length < text.length) bounds = bounds.filter((x) => x < sub.length || x === 0);
     }
-    if (best && best.trim()) return { text: best, type };
+    if (bounds.length < 2 && !(bounds.length === 1 && bounds[0] === 0)) continue;
+    // Token start offsets of the window give a cheap estimate of the tokens kept for each cut.
+    const starts: number[] = [];
+    let off = 0;
+    for (const tok of tokenize(sub)) {
+      starts.push(off);
+      off += tok.length;
+    }
+    const tokensBefore = (c: number) => {
+      let lo = 0;
+      let hi = starts.length;
+      while (lo < hi) {
+        const mid = (lo + hi) >> 1;
+        if (starts[mid] < c) lo = mid + 1;
+        else hi = mid;
+      }
+      return lo;
+    };
+    const cutAt = (i: number) => (direction === 'trimTop' ? sub.slice(bounds[i]) : sub.slice(0, bounds[i]));
+    const estimate = (i: number) => (direction === 'trimTop' ? starts.length - tokensBefore(bounds[i]) : tokensBefore(bounds[i]));
+    // Keep as much as fits: for trimTop the smallest bound index, for trimBottom the largest.
+    let best = -1;
+    if (direction === 'trimTop') {
+      let lo = 0;
+      let hi = bounds.length - 1;
+      while (lo <= hi) {
+        const mid = (lo + hi) >> 1;
+        if (estimate(mid) <= limit) {
+          best = mid;
+          hi = mid - 1;
+        } else lo = mid + 1;
+      }
+      if (best < 0) continue;
+      // Verify exactly, then step to the neighbouring units if the estimate was off.
+      while (best < bounds.length - 1 && countTokens(cutAt(best)) > limit) best++;
+      while (best > 0 && countTokens(cutAt(best - 1)) <= limit) best--;
+    } else {
+      let lo = 0;
+      let hi = bounds.length - 1;
+      while (lo <= hi) {
+        const mid = (lo + hi) >> 1;
+        if (estimate(mid) <= limit) {
+          best = mid;
+          lo = mid + 1;
+        } else hi = mid - 1;
+      }
+      if (best < 0) continue;
+      while (best > 0 && countTokens(cutAt(best)) > limit) best--;
+      while (best < bounds.length - 1 && countTokens(cutAt(best + 1)) <= limit) best++;
+    }
+    const kept = cutAt(best);
+    if (kept.trim() && countTokens(kept) <= limit) return { text: kept, type };
   }
   return null;
 }
@@ -179,10 +234,13 @@ export function assemble(candidates: Candidate[], maxTokens: number): Omit<Built
 
   for (const c of order) {
     if (!c.text) continue;
-    const full = c.config.prefix + c.text + c.config.suffix;
-    const fullTokens = countTokens(full);
     const budget = resolveTokens(c.config.tokenBudget, maxTokens) || maxTokens;
-    const r = Math.min(resolveTokens(c.config.reservedTokens, maxTokens), fullTokens, budget);
+    const want = resolveTokens(c.config.reservedTokens, maxTokens);
+    if (want <= 0) continue;
+    const full = c.config.prefix + c.text + c.config.suffix;
+    // Long texts exceed any reservation; skip counting them.
+    const fullTokens = full.length > maxTokens * 32 ? Infinity : countTokens(full);
+    const r = Math.min(want, fullTokens, budget);
     if (r > 0) {
       reserved.set(c.id, r);
       reservedTotal += r;
@@ -199,7 +257,9 @@ export function assemble(candidates: Candidate[], maxTokens: number): Omit<Built
   for (const c of order) {
     const own = reserved.get(c.id) ?? 0;
     reservedTotal -= own;
-    const originalTokens = countTokens(c.config.prefix + c.text + c.config.suffix);
+    // A text this long can't fit anyway; skip the exact count (it costs a full tokenization of the story).
+    const fullText = c.config.prefix + c.text + c.config.suffix;
+    const originalTokens = fullText.length > maxTokens * 32 ? Math.ceil(fullText.length / 4) : countTokens(fullText);
     const base: ContextReportEntry = {
       id: c.id,
       label: c.label,

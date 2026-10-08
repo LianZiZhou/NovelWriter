@@ -30,6 +30,8 @@ export interface Settings {
   keyboardDisplaces: boolean;
   showIdenticon: boolean;
   showMinibar: boolean;
+  /** Characters around the caret always kept rendered; 0 = never skip rendering ("No Unloading"). */
+  paragraphVisibilityRange: number;
   ttsSpeakHypebot: boolean;
   ttsTestText: string;
   ttsSavedVoices: SavedVoice[];
@@ -137,6 +139,7 @@ export const DEFAULT_SETTINGS: Settings = {
   keyboardDisplaces: true,
   showIdenticon: false,
   showMinibar: false,
+  paragraphVisibilityRange: 1000,
   ttsSpeakHypebot: false,
   ttsTestText: 'This is a test for text to speech. A little harsh, a little slow, but always on point.',
   ttsSavedVoices: [],

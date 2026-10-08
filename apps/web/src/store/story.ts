@@ -1,3 +1,4 @@
+import { useRef } from 'react';
 import { create } from 'zustand';
 import {
   BUILTIN_PRESETS,
@@ -10,7 +11,6 @@ import {
   cloneJson,
   commit,
   defaultParams,
-  diffDocs,
   docText,
   exportStoryFile,
   flatten as flattenHistory,
@@ -104,7 +104,8 @@ interface StoryState {
   allPresets: () => Preset[];
   setEditor: (e: EditorController | null) => void;
 
-  editorChanged: (doc: Span[]) => void;
+  /** Apply a user edit made in the editor (computed incrementally by the editor). */
+  editorChanged: (change: Change) => void;
   undo: () => void;
   redo: (childId?: string) => void;
   jump: (nodeId: string) => void;
@@ -130,7 +131,7 @@ let lastEditAt = 0;
 
 function scheduleSave(get: () => StoryState, set: (p: Partial<StoryState>) => void) {
   clearTimeout(saveTimer);
-  saveTimer = setTimeout(async () => {
+  saveTimer = setTimeout(() => whenIdle(async () => {
     const s = get().current;
     if (!s) return;
     try {
@@ -139,7 +140,14 @@ function scheduleSave(get: () => StoryState, set: (p: Partial<StoryState>) => vo
     } catch {
       set({ serverDown: true });
     }
-  }, 600);
+  }), 600);
+}
+
+/** Run off the typing path: serializing a long story takes a while. */
+function whenIdle(fn: () => void): void {
+  const w = window as Window & { requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => number };
+  if (w.requestIdleCallback) w.requestIdleCallback(fn, { timeout: 2000 });
+  else setTimeout(fn, 0);
 }
 
 function upsertMeta(list: StoryMeta[], m: StoryMeta): StoryMeta[] {
@@ -160,6 +168,32 @@ export function autoFormat(text: string): string {
     .replace(/[ \t]+\n/g, '\n')
     .replace(/(\S) {2,}(?=\S)/g, '$1 ')
     .replace(/\n{3,}/g, '\n\n');
+}
+
+const DOC_FIELDS = new Set(['doc', 'history', 'updatedAt', 'step']);
+
+/**
+ * The open story for panels that don't show the text: it only changes when something other than the
+ * document, history or step changes, so typing doesn't re-render them. Its `doc`/`history` may be stale.
+ */
+export function useStoryMeta(): Story | null {
+  const ref = useRef<Story | null>(null);
+  return useStory((st) => {
+    const c = st.current;
+    const prev = ref.current;
+    if (prev && c && prev.id === c.id) {
+      let same = true;
+      for (const k in c) {
+        if (!DOC_FIELDS.has(k) && (c as unknown as Record<string, unknown>)[k] !== (prev as unknown as Record<string, unknown>)[k]) {
+          same = false;
+          break;
+        }
+      }
+      if (same) return prev;
+    }
+    ref.current = c;
+    return c;
+  });
 }
 
 export function preferredModel(models: ModelInfo[]): ModelInfo | undefined {
@@ -420,11 +454,10 @@ export const useStory = create<StoryState>((set, get) => ({
 
   // ------------------------------------------------------------------ editing & history
 
-  editorChanged(doc) {
+  editorChanged(change) {
     const s = get().current;
     if (!s || get().generating) return;
-    const change = diffDocs(s.doc, doc);
-    if (!change) return;
+    const doc = applyChange(s.doc, change);
     const type = nodeTypeFor(change, s);
     const cur = s.history.nodes[s.history.current];
     const now = Date.now();

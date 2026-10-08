@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyChange, diffDocs, docText, normalize, replace, revertChange } from '../src/doc.ts';
+import { applyChange, diffDocs, docText, normalize, replace, revertChange, slice } from '../src/doc.ts';
 import { canRedo, commit, createHistory, structureStats, flatten, jumpTo, materialize, redo, retryOptions, trim, undo } from '../src/history.ts';
 import type { Span } from '../src/types.ts';
 
@@ -91,5 +91,39 @@ describe('structure stats', () => {
     expect(s.longestAbandonedBranch).toBe(3);
     expect(s.mostRetries).toBe(1);
     expect(s.noRetryStreak).toBe(1);
+  });
+});
+
+describe('diffDocs', () => {
+  // Reference: the original per-character implementation.
+  function reference(before: Span[], after: Span[]) {
+    const flat = (d: Span[]) => d.flatMap((sp) => [...sp.text].flatMap((c) => (c.length === 2 ? [c[0], c[1]] : [c])).map((c) => `${c}|${sp.origin}|${(sp.marks ?? []).slice().sort().join(',')}`));
+    const a = flat(before);
+    const b = flat(after);
+    let start = 0;
+    while (start < Math.min(a.length, b.length) && a[start] === b[start]) start++;
+    if (start === a.length && start === b.length) return null;
+    let endA = a.length;
+    let endB = b.length;
+    while (endA > start && endB > start && a[endA - 1] === b[endB - 1]) {
+      endA--;
+      endB--;
+    }
+    return { pos: start, removed: slice(before, start, endA), inserted: slice(after, start, endB) };
+  }
+  it('matches the per-character reference on random edits', () => {
+    let seed = 42;
+    const rnd = (n: number) => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) % n);
+    const origins = ['prompt', 'ai', 'edit', 'user'] as const;
+    const marks = [undefined, ['bold'], ['italic', 'bold']] as const;
+    const randomDoc = (): Span[] =>
+      normalize(Array.from({ length: 1 + rnd(6) }, () => ({ text: 'ab\nc d😀e'.slice(rnd(4), 4 + rnd(6)) || 'x', origin: origins[rnd(4)], ...(rnd(3) ? {} : { marks: [...(marks[rnd(3)] ?? [])] as Span['marks'] }) })));
+    for (let i = 0; i < 3000; i++) {
+      const a = randomDoc();
+      const b = rnd(3) === 0 ? randomDoc() : replace(a, Math.min(rnd(8), docText(a).length), Math.min(rnd(8) + 2, docText(a).length), rnd(2) ? [] : randomDoc());
+      expect(diffDocs(a, b)).toEqual(reference(a, b));
+      const c = diffDocs(a, b);
+      if (c) expect(applyChange(a, c)).toEqual(normalize(b));
+    }
   });
 });

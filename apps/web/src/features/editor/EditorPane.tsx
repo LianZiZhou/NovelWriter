@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { ArrowClockwise, ArrowUUpLeft, ArrowUUpRight, Book, CaretRight, ChatCircle, DiceFive, PersonSimpleRun, Plus, TextAlignLeft, TreeStructure, X } from '@phosphor-icons/react';
-import { canRedo, canUndo, docText, retryOptions, type AdventureInputMode, type HistoryNode } from '@novelwriter/core';
+import { canRedo, canUndo, retryOptions, type AdventureInputMode, type HistoryNode } from '@novelwriter/core';
 import { useStory } from '../../store/story.ts';
 import { useSettings } from '../../store/settings.ts';
 import { useUI } from '../../store/ui.ts';
@@ -161,7 +161,7 @@ export function EditorPane() {
   const cur = h.nodes[h.current];
   const redoCount = cur.children.length;
   const adventure = story.mode === 'adventure';
-  const isEmpty = docText(story.doc).length === 0;
+  const isEmpty = story.doc.every((sp) => !sp.text);
   // Children of the current step are what Redo can reach; on an AI step the siblings are the retries.
   const branchOptions = redoCount > 0 ? cur.children.map((c) => h.nodes[c]) : cur.type === 'ai' ? options : [];
 

@@ -3294,3 +3294,9 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* Paragraph Visibility Range: the browser skips layout/paint of off-screen paragraphs. */
+.nw-editor.pv .ProseMirror > p {
+  content-visibility: auto;
+  contain-intrinsic-size: auto calc(var(--editor-font-size) * var(--editor-line-height) * 3);
+}

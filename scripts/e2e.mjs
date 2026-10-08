@@ -9,6 +9,10 @@ const out = new URL('../reference/e2e/', import.meta.url).pathname;
 mkdirSync(out, { recursive: true });
 const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH ?? '/opt/pw-browsers/chromium', args: ['--no-sandbox'] });
 const ctx = await browser.newContext({ viewport: { width: 1600, height: 900 }, acceptDownloads: true });
+// Every editor update is checked against a full document conversion (see StoryEditor onUpdate).
+await ctx.addInitScript(() => {
+  window.__nwCheckDoc = true;
+});
 const page = await ctx.newPage();
 const errors = [];
 page.on('pageerror', (e) => errors.push(e.message));
@@ -54,6 +58,40 @@ await step('user typing at end is blue, edits are pink', async () => {
   await page.keyboard.press('Home');
   await page.keyboard.type('X');
   await page.waitForSelector('.ProseMirror .o-edit');
+});
+
+await step('incremental edits stay in sync with the stored document', async () => {
+  const ed = page.locator('.ProseMirror');
+  await ed.click();
+  await page.keyboard.press('Control+End');
+  await page.keyboard.type(' Then');
+  await page.keyboard.press('Enter');
+  await page.keyboard.type('A new line.');
+  await page.keyboard.press('Enter');
+  await page.keyboard.press('Enter');
+  await page.keyboard.type('After a blank.');
+  await page.keyboard.press('Home');
+  await page.keyboard.press('Backspace');
+  await page.keyboard.press('Backspace');
+  await page.keyboard.press('Control+Home');
+  await page.keyboard.type('Edit ');
+  await page.keyboard.down('Shift');
+  for (let i = 0; i < 12; i++) await page.keyboard.press('ArrowRight');
+  await page.keyboard.up('Shift');
+  await page.keyboard.press('Control+b');
+  await page.keyboard.press('Control+a');
+  await page.keyboard.press('Control+c');
+  await page.keyboard.press('Control+End');
+  await page.keyboard.press('Enter');
+  await page.keyboard.press('Control+v');
+  await page.keyboard.down('Shift');
+  await page.keyboard.press('ArrowUp');
+  await page.keyboard.press('ArrowUp');
+  await page.keyboard.up('Shift');
+  await page.keyboard.press('Delete');
+  for (let i = 0; i < 3; i++) await page.keyboard.press('Control+z');
+  await page.waitForTimeout(300);
+  assert.equal(errors.length, 0, errors.join('\n'));
 });
 
 await step('retry produces a sibling branch', async () => {

@@ -1,10 +1,13 @@
-import { mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { docText, migrateStory, type Preset, type Shelf, type Story, type StoryMeta } from '@novelwriter/core';
 
 /** JSON-file persistence under a data directory. Writes are atomic (temp + rename). */
 export class Storage {
+  /** Library metadata by file, re-read only when a story file's mtime changes. */
+  private metaCache = new Map<string, { mtimeMs: number; meta: StoryMeta }>();
+
   constructor(readonly dir: string) {}
 
   async init(): Promise<void> {
@@ -40,11 +43,23 @@ export class Storage {
   async listStories(): Promise<StoryMeta[]> {
     const files = existsSync(this.path('stories')) ? await readdir(this.path('stories')) : [];
     const metas: StoryMeta[] = [];
+    const seen = new Set<string>();
     for (const f of files) {
       if (!f.endsWith('.json')) continue;
+      seen.add(f);
+      const mtimeMs = (await stat(this.path('stories', f)).catch(() => null))?.mtimeMs ?? 0;
+      const cached = this.metaCache.get(f);
+      if (cached && cached.mtimeMs === mtimeMs) {
+        metas.push(cached.meta);
+        continue;
+      }
       const s = await this.readJson<Story | null>(join('stories', f), null);
-      if (s) metas.push(toMeta(s));
+      if (!s) continue;
+      const meta = toMeta(s);
+      this.metaCache.set(f, { mtimeMs, meta });
+      metas.push(meta);
     }
+    for (const f of this.metaCache.keys()) if (!seen.has(f)) this.metaCache.delete(f);
     return metas.sort((a, b) => b.updatedAt - a.updatedAt);
   }
 

@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import type { ModelRef } from '@novelwriter/core';
 import { useStory } from '../../store/story.ts';
 import { useUI } from '../../store/ui.ts';
@@ -9,14 +10,15 @@ import { ModelThumb } from '../../components/ModelThumb.tsx';
 export function ModelSelect({ value, onChange, className, placeholder }: { value: ModelRef | null; onChange: (m: ModelRef) => void; className?: string; placeholder?: string }) {
   const models = useStory((s) => s.models);
   const key = (m: ModelRef) => `${m.provider}\u0000${m.id}`;
-  const options = models.map((m) => ({
+  let options = useMemo(() => models.map((m) => ({
     value: key(m),
     label: m.name,
     group: m.provider,
     description: `${m.provider} · ${Math.round(m.contextWindow / 1000)}k ${t('context')}${m.reasoning ? ` · ${t('reasoning')}` : ''}`,
     image: <ModelThumb provider={m.provider} id={m.id} />,
-  }));
+  })), [models]);
   if (value && !models.some((m) => m.provider === value.provider && m.id === value.id)) {
+    options = [...options];
     options.unshift({ value: key(value), label: value.id, group: value.provider, description: t('Not connected'), image: <ModelThumb provider={value.provider} id={value.id} /> });
   }
   return (

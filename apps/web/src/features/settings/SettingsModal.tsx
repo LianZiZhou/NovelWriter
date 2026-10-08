@@ -128,6 +128,19 @@ function InterfaceTab() {
         <ToggleRow title={t('Show Editor Toolbar')} desc={t('A toolbar with formatting options will appear when selecting text in the editor.')} on={s.showEditorToolbar} onChange={(v) => s.set({ showEditorToolbar: v })} />
         <ToggleRow title={t('Show Tips')} desc={s.showTips ? t('Tips will be shown below the editor.') : t('Tips will not be shown.')} on={s.showTips} onChange={(v) => s.set({ showTips: v })} />
         <ToggleRow title={t('Keyboard Displaces Content')} desc={t('The onscreen keyboard of some mobile devices will displace the content of the page.')} on={s.keyboardDisplaces} onChange={(v) => s.set({ keyboardDisplaces: v })} />
+        <div>
+          <SliderSetting
+            title={t('Paragraph Visibility Range')}
+            desc={t('Paragraphs scrolled out of view are not laid out or painted, which keeps long stories fast. The set number of characters around the cursor always stays rendered.')}
+            value={s.paragraphVisibilityRange || 20000}
+            min={500}
+            max={20000}
+            step={500}
+            def={1000}
+            onChange={(v) => s.set({ paragraphVisibilityRange: v >= 20000 ? 0 : v })}
+            note={!s.paragraphVisibilityRange ? t('No Unloading') : undefined}
+          />
+        </div>
         <ToggleRow title={t('Auto Format Text')} desc={t('Generated text will be tidied automatically: doubled spaces, trailing spaces and extra blank lines are removed.')} on={s.autoFormat} onChange={(v) => s.set({ autoFormat: v })} />
       </Group>
       <Group title="Experimental">

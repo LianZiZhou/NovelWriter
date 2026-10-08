@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { ArrowRight, ArrowSquareOut, ArrowsLeftRight, Book, CaretDown, CaretUp, ChartBar, Copy, ImageSquare, CornersOut, DownloadSimple, MagnifyingGlass, Sword, Article } from '@phosphor-icons/react';
 import { countTokens, exportPlaintext, exportScenario, exportStoryFile, searchLore } from '@novelwriter/core';
-import { download, safeFileName, useStory } from '../../store/story.ts';
+import { download, safeFileName, useStory, useStoryMeta } from '../../store/story.ts';
 import { useSettings } from '../../store/settings.ts';
 import { useUI } from '../../store/ui.ts';
 import { t } from '../../i18n.ts';
@@ -26,7 +26,7 @@ export function FieldBox({ value, onChange, placeholder, ariaLabel, onExpand, mi
 }
 
 export function StoryTab() {
-  const story = useStory((s) => s.current)!;
+  const story = useStoryMeta()!;
   const presets = useStory((s) => s.allPresets)();
   const store = useStory.getState();
   const ui = useUI.getState();

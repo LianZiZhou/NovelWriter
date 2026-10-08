@@ -2,7 +2,7 @@ import { Extension, Mark, mergeAttributes } from '@tiptap/core';
 import { Plugin, PluginKey, type EditorState, type Transaction } from '@tiptap/pm/state';
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
 import { Fragment, Slice, type Node as PMNode, type Schema } from '@tiptap/pm/model';
-import { diffText, paragraphs, type Mark as SpanMark, type Origin, type Span } from '@novelwriter/core';
+import { diffDocs, normalize, paragraphs, slice, type Change, type Mark as SpanMark, type Origin, type Span } from '@novelwriter/core';
 
 /** Origin of text (prompt / ai / edit / user), rendered as a colored span. */
 export const OriginMark = Mark.create({
@@ -84,6 +84,62 @@ export function docToSpans(doc: PMNode): Span[] {
   return merged;
 }
 
+function paraSpans(para: PMNode): Span[] {
+  const out: Span[] = [];
+  para.forEach((n) => {
+    if (!n.isText || !n.text) return;
+    const origin = (n.marks.find((m) => m.type.name === 'origin')?.attrs.o as Origin) ?? 'user';
+    const marks = n.marks.map((m) => SPAN_MARKS[m.type.name]).filter(Boolean);
+    out.push(marks.length ? { text: n.text, origin, marks } : { text: n.text, origin });
+  });
+  return out;
+}
+
+/** Text offset of the start of paragraph `index` (paragraphs hold only text, so content size = length). */
+function paraOffset(doc: PMNode, index: number): number {
+  let off = 0;
+  for (let k = 0; k < index; k++) off += doc.child(k).content.size + 1;
+  return off;
+}
+
+function indexAt(doc: PMNode, pos: number): number {
+  const p = Math.max(0, Math.min(pos, doc.content.size - 1));
+  return Math.min(doc.resolve(p).index(0), doc.childCount - 1);
+}
+
+/**
+ * The span-level change between two editor documents, given the span form of `before` (canonical, as kept in
+ * the store). Only the paragraphs that differ are converted, so the cost does not grow with story length:
+ * ProseMirror shares unchanged paragraph nodes, which makes findDiffStart/End cheap.
+ */
+export function pmChange(before: PMNode, after: PMNode, spans: readonly Span[]): Change | null {
+  const start = before.content.findDiffStart(after.content);
+  if (start == null) return null;
+  const end = before.content.findDiffEnd(after.content)!;
+  let endA = end.a;
+  const overlap = start - Math.min(end.a, end.b);
+  if (overlap > 0) endA += overlap;
+  const delta = after.childCount - before.childCount;
+  const i0 = indexAt(before, start);
+  let i1 = Math.max(indexAt(before, endA - 1), i0, i0 - delta);
+  // A newline before an empty paragraph takes its origin from the text before it, so keep those together.
+  while (i1 + 1 < before.childCount && before.child(i1 + 1).content.size === 0) i1++;
+  const j1 = i1 + delta;
+  const offStart = i0 > 0 ? paraOffset(before, i0) - 1 : 0;
+  const offEnd = paraOffset(before, i1) + before.child(i1).content.size;
+  const removed = slice(spans, offStart, offEnd);
+  const prevOrigin = offStart > 0 ? slice(spans, offStart - 1, offStart)[0]?.origin : undefined;
+  const inserted: Span[] = [];
+  for (let j = i0; j <= j1; j++) {
+    const ps = paraSpans(after.child(j));
+    if (j > 0) inserted.push({ text: '\n', origin: ps[0]?.origin ?? inserted[inserted.length - 1]?.origin ?? prevOrigin ?? 'user' });
+    inserted.push(...ps);
+  }
+  const change = diffDocs(removed, normalize(inserted));
+  if (!change) return null;
+  return { ...change, pos: change.pos + offStart };
+}
+
 /** Plain text with '\n' between paragraphs. */
 export function docPlainText(doc: PMNode): string {
   const parts: string[] = [];
@@ -148,7 +204,7 @@ export function replaceRangeTr(state: EditorState, from: number, to: number, spa
 export function setDocTr(state: EditorState, spans: Span[]): Transaction {
   const nodes = paragraphNodes(state.schema, spans);
   const content = nodes.length ? nodes : [state.schema.nodes.paragraph.create()];
-  return state.tr.replaceWith(0, state.doc.content.size, content).setMeta(EXTERNAL, true).setMeta('addToHistory', false);
+  return state.tr.replaceWith(0, state.doc.content.size, content).setMeta(EXTERNAL, true).setMeta(REDECORATE, true).setMeta('addToHistory', false);
 }
 
 export interface EditorOptionsRef {
@@ -161,7 +217,73 @@ export interface EditorOptionsRef {
   loreKeys?: () => RegExp[];
 }
 
-const decoKey = new PluginKey('nw-decorations');
+const decoKey = new PluginKey<DecorationSet>('nw-decorations');
+/** Transaction meta that forces decorations to be rebuilt (display options changed). */
+export const REDECORATE = 'nw-redecorate';
+
+interface DecoContext {
+  adventure: boolean;
+  speech: boolean;
+  loreKeys: RegExp[];
+}
+
+function decoContext(opts: EditorOptionsRef): DecoContext {
+  return { adventure: opts.adventure(), speech: opts.highlightSpeech(), loreKeys: opts.loreKeys?.() ?? [] };
+}
+
+function decorateParagraph(para: PMNode, pos: number, ctx: DecoContext, decos: Decoration[]): void {
+  const text = para.textContent;
+  if (!text) return;
+  const start = pos + 1;
+  if (ctx.adventure && text.startsWith('>')) {
+    decos.push(Decoration.node(pos, pos + para.nodeSize, { class: /^>\s*You (say|ask|shout|whisper)\b/i.test(text) ? 'action-line say' : 'action-line' }));
+    const markerLen = text.startsWith('> ') ? 2 : 1;
+    decos.push(Decoration.inline(start, start + markerLen, { class: 'action-marker' }));
+  }
+  if (ctx.speech) {
+    let last = 0;
+    for (const m of text.matchAll(QUOTE_RE)) {
+      const s = m.index ?? 0;
+      if (s > last) decos.push(Decoration.inline(start + last, start + s, { class: 'narration' }));
+      decos.push(Decoration.inline(start + s, start + s + m[0].length, { class: 'speech' }));
+      last = s + m[0].length;
+    }
+    if (last < text.length) decos.push(Decoration.inline(start + last, start + text.length, { class: 'narration' }));
+  }
+  for (const re of ctx.loreKeys) {
+    re.lastIndex = 0;
+    for (const m of text.matchAll(re)) {
+      if (!m[0]) break;
+      const i = m.index ?? 0;
+      decos.push(Decoration.inline(start + i, start + i + m[0].length, { class: 'lore-key' }));
+    }
+  }
+}
+
+function buildDecorations(doc: PMNode, opts: EditorOptionsRef): DecorationSet {
+  const decos: Decoration[] = [];
+  if (doc.childCount === 1 && doc.firstChild!.content.size === 0) {
+    decos.push(Decoration.node(0, doc.firstChild!.nodeSize, { class: 'is-editor-empty', 'data-placeholder': opts.placeholder() }));
+  }
+  const ctx = decoContext(opts);
+  const find = opts.find();
+  const q = find.query.toLowerCase();
+  let hit = 0;
+  doc.forEach((para, pos) => {
+    decorateParagraph(para, pos, ctx, decos);
+    if (q) {
+      const lower = para.textContent.toLowerCase();
+      const start = pos + 1;
+      let i = lower.indexOf(q);
+      while (i >= 0) {
+        decos.push(Decoration.inline(start + i, start + i + q.length, { class: `find-hit ${hit === find.index ? 'current' : ''}` }));
+        hit++;
+        i = lower.indexOf(q, i + q.length);
+      }
+    }
+  });
+  return DecorationSet.create(doc, decos);
+}
 
 const QUOTE_RE = /"[^"\n]*"?|“[^”\n]*”?|「[^」\n]*」?|『[^』\n]*』?/g;
 
@@ -183,76 +305,65 @@ export function NovelPlugins(opts: EditorOptionsRef) {
         new Plugin({
           appendTransaction(trs, oldState, newState) {
             if (!trs.some((tr) => tr.docChanged) || trs.some((tr) => tr.getMeta(EXTERNAL))) return null;
-            const before = docPlainText(oldState.doc);
-            const after = docPlainText(newState.doc);
-            const d = diffText(before, after);
-            const originType = newState.schema.marks.origin;
-            if (!d) {
-              // Formatting-only change or paragraph restructure: nothing to tag.
-              return null;
+            // Structural diff: cost follows the size of the edit, not of the story.
+            const start = oldState.doc.content.findDiffStart(newState.doc.content);
+            if (start == null) return null;
+            const end = oldState.doc.content.findDiffEnd(newState.doc.content)!;
+            let { a: endA, b: endB } = end;
+            const overlap = start - Math.min(endA, endB);
+            if (overlap > 0) {
+              endA += overlap;
+              endB += overlap;
             }
-            if (!d.inserted.replace(/\n/g, '')) return null;
-            const atEnd = d.pos + d.inserted.length === after.length;
-            const origin: Origin = !opts.hasAI() ? 'prompt' : atEnd && !d.removed ? 'user' : 'edit';
-            const from = offsetToPos(newState.doc, d.pos);
-            const to = offsetToPos(newState.doc, d.pos + d.inserted.length);
-            const tr = newState.tr.removeMark(from, to, originType).addMark(from, to, originType.create({ o: origin }));
+            const removed = oldState.doc.textBetween(start, endA, '\n');
+            const inserted = newState.doc.textBetween(start, endB, '\n');
+            // Formatting-only changes and paragraph splits/joins: nothing to tag.
+            if (removed === inserted || !inserted.replace(/\n/g, '')) return null;
+            const originType = newState.schema.marks.origin;
+            const atEnd = endB >= newState.doc.content.size - 1;
+            const origin: Origin = !opts.hasAI() ? 'prompt' : atEnd && !removed ? 'user' : 'edit';
+            const tr = newState.tr.removeMark(start, endB, originType).addMark(start, endB, originType.create({ o: origin }));
             tr.setStoredMarks([originType.create({ o: origin }), ...(newState.storedMarks ?? []).filter((m) => m.type !== originType)]);
             return tr;
           },
         }),
         new Plugin({
           key: decoKey,
+          state: {
+            init: (_, state) => buildDecorations(state.doc, opts),
+            apply(tr, set, oldState, newState) {
+              // Option changes (and find, whose "current" hit depends on every match before it) rebuild everything.
+              if (tr.getMeta(REDECORATE) || opts.find().query) return buildDecorations(newState.doc, opts);
+              if (!tr.docChanged) return set;
+              if (newState.doc.childCount <= 1 || oldState.doc.childCount <= 1) return buildDecorations(newState.doc, opts);
+              const start = oldState.doc.content.findDiffStart(newState.doc.content);
+              if (start == null) return set.map(tr.mapping, newState.doc);
+              const end = oldState.doc.content.findDiffEnd(newState.doc.content)!;
+              const endB = Math.max(end.b, start);
+              // Re-decorate only the paragraphs touched by the edit.
+              const doc = newState.doc;
+              const i0 = indexAt(doc, start);
+              const i1 = Math.max(i0, indexAt(doc, endB - 1));
+              let from = 0;
+              for (let k = 0; k < i0; k++) from += doc.child(k).nodeSize;
+              let to = from;
+              for (let k = i0; k <= i1; k++) to += doc.child(k).nodeSize;
+              const mapped = set.map(tr.mapping, doc);
+              const stale = mapped.find(from, to);
+              const fresh: Decoration[] = [];
+              const ctx = decoContext(opts);
+              let pos = from;
+              for (let k = i0; k <= i1; k++) {
+                const para = doc.child(k);
+                decorateParagraph(para, pos, ctx, fresh);
+                pos += para.nodeSize;
+              }
+              return mapped.remove(stale).add(doc, fresh);
+            },
+          },
           props: {
             decorations(state) {
-              const decos: Decoration[] = [];
-              const doc = state.doc;
-              if (doc.childCount === 1 && doc.firstChild!.content.size === 0) {
-                decos.push(Decoration.node(0, doc.firstChild!.nodeSize, { class: 'is-editor-empty', 'data-placeholder': opts.placeholder() }));
-              }
-              const adventure = opts.adventure();
-              const speech = opts.highlightSpeech();
-              const find = opts.find();
-              const loreKeys = opts.loreKeys?.() ?? [];
-              const q = find.query.toLowerCase();
-              let hit = 0;
-              doc.forEach((para, pos) => {
-                const text = para.textContent;
-                const start = pos + 1;
-                if (adventure && text.startsWith('>')) {
-                  decos.push(Decoration.node(pos, pos + para.nodeSize, { class: /^>\s*You (say|ask|shout|whisper)\b/i.test(text) ? 'action-line say' : 'action-line' }));
-                  const markerLen = text.startsWith('> ') ? 2 : 1;
-                  decos.push(Decoration.inline(start, start + markerLen, { class: 'action-marker' }));
-                }
-                if (speech && text) {
-                  let last = 0;
-                  for (const m of text.matchAll(QUOTE_RE)) {
-                    const s = m.index ?? 0;
-                    if (s > last) decos.push(Decoration.inline(start + last, start + s, { class: 'narration' }));
-                    decos.push(Decoration.inline(start + s, start + s + m[0].length, { class: 'speech' }));
-                    last = s + m[0].length;
-                  }
-                  if (last < text.length) decos.push(Decoration.inline(start + last, start + text.length, { class: 'narration' }));
-                }
-                for (const re of loreKeys) {
-                  re.lastIndex = 0;
-                  for (const m of text.matchAll(re)) {
-                    if (!m[0]) break;
-                    const i = m.index ?? 0;
-                    decos.push(Decoration.inline(start + i, start + i + m[0].length, { class: 'lore-key' }));
-                  }
-                }
-                if (q) {
-                  const lower = text.toLowerCase();
-                  let i = lower.indexOf(q);
-                  while (i >= 0) {
-                    decos.push(Decoration.inline(start + i, start + i + q.length, { class: `find-hit ${hit === find.index ? 'current' : ''}` }));
-                    hit++;
-                    i = lower.indexOf(q, i + q.length);
-                  }
-                }
-              });
-              return DecorationSet.create(doc, decos);
+              return decoKey.getState(state) as DecorationSet;
             },
           },
         }),

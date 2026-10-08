@@ -107,7 +107,28 @@ npm run e2e         # browser end-to-end test against `npm run dev` (uses the de
 node scripts/capture-reference.mjs   # screenshots of novelai.net for UI comparison (to reference/)
 node scripts/capture-app.mjs         # screenshots of this app in the same states
 node scripts/visual-compare.mjs      # side-by-side images in reference/compare/
+npx tsx scripts/perf.mjs [baseUrl] [sizes]   # editor timings on generated long stories
 ```
+
+### Long stories
+
+The editor stays responsive on stories of a million characters:
+- **Edits:** each one is computed from ProseMirror's structural diff, so only the paragraphs that changed are
+  converted and diffed.
+- **Decorations:** they are updated per paragraph.
+- **Off-screen paragraphs:** they are not laid out (*Paragraph Visibility Range* in Settings → Interface).
+- **Context building:** it only tokenizes the part of the story that can fit.
+
+Measured with `scripts/perf.mjs` in the dev build (headless Chromium), in milliseconds:
+
+| Story | Keystroke p50 / p95 | Context build |
+|---|---|---|
+| 2,000 chars | 11 / 19 | — |
+| 1,000,000 chars, before | 140 / 199 | 980 |
+| 1,000,000 chars, now | 19 / 30 | 73 |
+
+The keystroke figures run from the input event to the next frame, so about 11 ms of each is waiting for that
+frame.
 
 Layout: `packages/core` (context builder, lorebook, history, formats; no DOM),
 `apps/server` (Fastify + pi-ai), `apps/web` (React UI).

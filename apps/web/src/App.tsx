@@ -33,10 +33,10 @@ function ModalHost() {
   const modal = useUI((s) => s.modal);
   const p = useUI((s) => s.modalProps) as Record<string, never>;
   const close = useUI((s) => s.close);
-  const story = useStory((s) => s.current);
+  const hasStory = useStory((s) => !!s.current);
   if (!modal) return null;
   const needsStory = !['settings', 'palette', 'confirm', 'tokenize'].includes(modal);
-  if (needsStory && !story) return null;
+  if (needsStory && !hasStory) return null;
   switch (modal) {
     case 'lorebook':
       return <LorebookModal onClose={close} entryId={p.entryId} />;
@@ -251,7 +251,8 @@ function Minibar({ onExpand }: { onExpand: () => void }) {
 }
 
 export function App() {
-  const story = useStory((s) => s.current);
+  // Only the story id: subscribing to the whole story would re-render the app on every keystroke.
+  const storyId = useStory((s) => s.current?.id);
   const page = useStory((s) => s.page);
   const serverDown = useStory((s) => s.serverDown);
   const leftOpen = useSettings((s) => s.leftOpen);
@@ -268,7 +269,7 @@ export function App() {
   useSwipeGestures(mobile && gestures);
 
   const showLeft = mobile ? true : leftOpen;
-  const showRight = !!story && (mobile ? true : rightOpen);
+  const showRight = !!storyId && (mobile ? true : rightOpen);
   const openLeft = () => (mobile ? setUI({ mobileLeft: true, mobileRight: false }) : setSettings({ leftOpen: true }));
   const openRight = () => (mobile ? setUI({ mobileRight: true, mobileLeft: false }) : setSettings({ rightOpen: true }));
 
@@ -284,7 +285,7 @@ export function App() {
             </button>
           </div>
         )}
-        {story && (!rightOpen || mobile) && (
+        {storyId && (!rightOpen || mobile) && (
           <div className="corner-controls right">
             <button type="button" className="icon-btn" onClick={openRight} aria-label={t('Open right sidebar')} title={t('Open right sidebar')}>
               <CaretLeft size={16} weight="fill" />
@@ -302,7 +303,7 @@ export function App() {
             </button>
           </div>
         )}
-        {story ? <EditorPane key={story.id} /> : page === 'newStory' ? <NewStoryPage /> : <Dashboard />}
+        {storyId ? <EditorPane key={storyId} /> : page === 'newStory' ? <NewStoryPage /> : <Dashboard />}
       </main>
       {showRight && <RightSidebar mobileOpen={mobileRight} onCollapse={() => (mobile ? setUI({ mobileRight: false }) : setSettings({ rightOpen: false }))} />}
       {mobile && <div className={`drawer-backdrop ${mobileLeft || mobileRight ? 'show' : ''}`} onClick={() => setUI({ mobileLeft: false, mobileRight: false })} />}

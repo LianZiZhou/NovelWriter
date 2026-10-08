@@ -459,4 +459,7 @@ export const ZH_EXTRA: Record<string, string> = {
   "Underline": "下划线",
   "Strikethrough": "删除线",
   'Same as the story': '与故事相同',
+  'Paragraph Visibility Range': '段落可见范围',
+  'Paragraphs scrolled out of view are not laid out or painted, which keeps long stories fast. The set number of characters around the cursor always stays rendered.': '滚出视野的段落不参与排版和绘制，让长故事保持流畅。光标附近设定字数内的段落始终保持渲染。',
+  'No Unloading': '不卸载',
 };
