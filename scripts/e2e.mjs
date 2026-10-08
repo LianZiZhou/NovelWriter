@@ -24,7 +24,7 @@ await page.goto(base, { waitUntil: 'networkidle' });
 await step('use the offline demo model by default', async () => {
   await page.evaluate(async () => {
     const s = await (await fetch('/api/settings')).json();
-    await fetch('/api/settings', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...s, defaultModel: { provider: 'demo', id: 'markov' }, language: 'en' }) });
+    await fetch('/api/settings', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...s, defaultModel: { provider: 'demo', id: 'markov' }, language: 'en', rightTab: 'story', rightOpen: true, leftOpen: true, userScriptsAccepted: null }) });
   });
   await page.reload({ waitUntil: 'networkidle' });
 });
@@ -120,6 +120,9 @@ await step('user scripts hook the AI response', async () => {
   await page.locator('.story-card').nth(1).click();
   await page.getByRole('tab', { name: 'Advanced' }).click();
   await page.getByRole('button', { name: /Edit User Scripts/ }).click();
+  // First use shows the consent notice; later runs reuse the saved answer.
+  const gotIt = page.getByRole('button', { name: 'Got it' });
+  if (await gotIt.isVisible({ timeout: 1500 }).catch(() => false)) await gotIt.click();
   await page.locator('.modal').getByRole('button', { name: 'Add' }).click();
   await page.getByRole('textbox', { name: 'Script', exact: true }).fill("api.hooks.register('onResponse', ({ text }) => ({ text: text + ' [[SCRIPTED]]' }));");
   await page.locator('.modal [role=switch]').first().click();
@@ -133,7 +136,7 @@ await step("writer's toolbox rewrites a selection", async () => {
   const p = page.locator('.ProseMirror p').first();
   await p.click({ clickCount: 3 });
   await p.click({ button: 'right' });
-  await page.getByRole('button', { name: "Writer's Toolbox" }).click();
+  await page.getByRole('menuitem', { name: "Writer's Toolbox" }).click();
   await page.getByRole('tab', { name: 'Condense' }).click();
   await page.locator('.modal').getByRole('button', { name: 'Generate' }).click();
   await page.getByRole('button', { name: 'Replace' }).waitFor();

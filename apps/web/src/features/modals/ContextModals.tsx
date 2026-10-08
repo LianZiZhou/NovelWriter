@@ -1,10 +1,10 @@
 import { useMemo, useState } from 'react';
 import { CaretLeft, CaretRight, CornersOut, Plus, Trash } from '@phosphor-icons/react';
-import { countTokens, DEFAULT_SYSTEM_PROMPT_ADVENTURE, DEFAULT_SYSTEM_PROMPT_STORY, defaultContextSettings, formatEphemeral, parseEphemeral, ephemeralActive, type BuiltContext, type StoryContextSettings } from '@novelwriter/core';
+import { countTokens, outputTokens, DEFAULT_SYSTEM_PROMPT_ADVENTURE, DEFAULT_SYSTEM_PROMPT_STORY, defaultContextSettings, formatEphemeral, parseEphemeral, ephemeralActive, type BuiltContext, type StoryContextSettings } from '@novelwriter/core';
 import { useStory } from '../../store/story.ts';
 import { useUI } from '../../store/ui.ts';
 import { t } from '../../i18n.ts';
-import { Checkbox, Modal, ModalHeader, Tabs } from '../../components/ui.tsx';
+import { Modal, ModalHeader, Tabs, Toggle } from '../../components/ui.tsx';
 import { ContextBar, KIND_COLORS, KIND_LABELS } from '../right/AdvancedTab.tsx';
 import { ContextConfigEditor } from '../lorebook/ContextConfigEditor.tsx';
 
@@ -18,64 +18,105 @@ const REASONS: Record<string, string> = {
   disabled: 'Disabled',
 };
 
-export function ContextViewerModal({ onClose, which }: { onClose: () => void; which: 'last' | 'current' }) {
+export function ContextViewerModal({ onClose, which: initial }: { onClose: () => void; which: 'last' | 'current' }) {
   const last = useStory((s) => s.lastContext);
+  const story = useStory((s) => s.current);
+  const [which, setWhich] = useState(initial);
   const ctx = useMemo<BuiltContext | null>(() => (which === 'last' ? last : useStory.getState().previewContext()), [which, last]);
   const [stage, setStage] = useState<number | null>(null);
   const [showInactive, setShowInactive] = useState(false);
+  const tabs = (
+    <div className="ctx-tabs" role="tablist">
+      {(['last', 'current'] as const).map((w) => (
+        <button
+          type="button"
+          role="tab"
+          key={w}
+          aria-selected={which === w}
+          className={which === w ? 'active' : ''}
+          onClick={() => {
+            setWhich(w);
+            setStage(null);
+          }}
+        >
+          {w === 'last' ? t('Last Context') : t('Current Context')}
+        </button>
+      ))}
+    </div>
+  );
   if (!ctx) {
     return (
-      <Modal onClose={onClose} width={600}>
-        <ModalHeader title={t('Context Viewer')} onClose={onClose} />
-        <div className="muted">{t('No context yet. Send a generation first.')}</div>
+      <Modal onClose={onClose} width={1000} label={t('Context Viewer')} className="ctx-modal">
+        <div className="ctx-modal-head">
+          <ModalHeader plain title={t('Context Viewer')} onClose={onClose} />
+        </div>
+        <div className="modal-body ctx-modal-body">
+          {tabs}
+          <div className="muted" style={{ padding: '20px 0' }}>{t('No context yet. Send a generation first.')}</div>
+        </div>
       </Modal>
     );
   }
+  const stageCount = ctx.stages.length;
+  const stageIdx = stage ?? stageCount - 1;
   const segments = stage === null ? ctx.segments : ctx.stages[stage] ?? ctx.segments;
+  const stageTokens = segments.reduce((n, sg) => n + countTokens(sg.text), 0);
+  const reserved = ctx.report.filter((r) => r.included && (r.stage ?? 0) > stageIdx).reduce((n, r) => n + r.reservedTokens, 0);
   const hidden = new Set(ctx.report.filter((r) => r.hidden).map((r) => r.id));
   const rows = ctx.report.filter((r) => showInactive || r.included || r.kind !== 'lore');
+  const out = story ? outputTokens(story.params) : 0;
   return (
-    <Modal onClose={onClose} width={1100} label={t('Context Viewer')}>
-      <ModalHeader title={`${t('Context Viewer')} — ${which === 'last' ? t('Last Context') : t('Current Context')}`} onClose={onClose} />
-      <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+    <Modal onClose={onClose} width={1000} height="calc(100vh - 50px)" label={t('Context Viewer')} className="ctx-modal">
+      <div className="ctx-modal-head">
+        <ModalHeader plain title={t('Context Viewer')} onClose={onClose} />
+      </div>
+      <div className="modal-body ctx-modal-body">
+        {tabs}
+        <div className="ctx-summary">
+          {t('{n} tokens filled out of a maximum of {m}', { n: ctx.usedTokens, m: ctx.maxTokens })} ({t('context size')} [{ctx.maxTokens + out}] - {t('output length')} [{out}])
+        </div>
         <ContextBar ctx={ctx} />
-        <div className="row between">
-          <div className="ctx-legend">
-            {(Object.keys(KIND_COLORS) as (keyof typeof KIND_COLORS)[]).map((k) => (
-              <span key={k}>
-                <i style={{ background: KIND_COLORS[k] }} /> {t(KIND_LABELS[k])}
-              </span>
-            ))}
-          </div>
-          <span style={{ fontSize: 13 }}>
-            {ctx.usedTokens} / {ctx.maxTokens} {t('tokens')}
+        <div className="ctx-legend">
+          {(Object.keys(KIND_COLORS) as (keyof typeof KIND_COLORS)[]).map((k) => (
+            <span key={k}>
+              <i style={{ background: KIND_COLORS[k] }} /> {t(KIND_LABELS[k])}
+            </span>
+          ))}
+        </div>
+        <div className="row ctx-stage-row">
+          <button type="button" className="btn" disabled={stageIdx <= 0 || stageCount === 0} onClick={() => setStage(Math.max(0, stageIdx - 1))}>
+            <CaretLeft size={14} /> {t('Previous Stage')}
+          </button>
+          <button type="button" className="btn" disabled={stage === null} onClick={() => setStage(stageIdx + 1 >= stageCount - 1 ? null : stageIdx + 1)}>
+            {t('Next Stage')} <CaretRight size={14} />
+          </button>
+          <span>
+            {t('Stage {a}/{b}, Reserved: {r}, Remaining: {n}', { a: stageIdx, b: Math.max(0, stageCount - 1), r: reserved, n: Math.max(0, ctx.maxTokens - stageTokens - reserved) })}
           </span>
         </div>
-        <div className="row" style={{ gap: 8 }}>
-          <button type="button" className="btn small" disabled={stage === 0 || ctx.stages.length === 0} onClick={() => setStage((s) => (s === null ? ctx.stages.length - 2 : Math.max(0, s - 1)))}>
-            <CaretLeft size={12} /> {t('Previous Stage')}
-          </button>
-          <span style={{ fontSize: 13, minWidth: 120, textAlign: 'center' }}>
-            {t('Stage')} {stage === null ? ctx.stages.length - 1 : stage} / {Math.max(0, ctx.stages.length - 1)}
-          </span>
-          <button type="button" className="btn small" disabled={stage === null} onClick={() => setStage((s) => (s === null || s + 1 >= ctx.stages.length - 1 ? null : s + 1))}>
-            {t('Next Stage')} <CaretRight size={12} />
-          </button>
+        <div className="ctx-stage-note">
+          {stage === null || stageIdx >= stageCount - 1
+            ? t('Final context, as sent to the AI.')
+            : stageIdx === 0
+              ? t('Stage 0: reserved tokens are set aside for every entry that has a reservation.')
+              : t('Stage {a}: entries are inserted in order of their Insertion Order.', { a: stageIdx })}
         </div>
         <div className="ctx-text">
-          {segments.map((s, i) =>
-            hidden.has(s.sourceId) ? (
-              <span key={i} style={{ color: KIND_COLORS[s.kind], opacity: 0.5 }}>
+          {segments.map((sg, i) =>
+            hidden.has(sg.sourceId) ? (
+              <span key={i} style={{ color: KIND_COLORS[sg.kind], opacity: 0.5 }}>
                 [{t('Hidden')}]{'\n'}
               </span>
             ) : (
-              <span key={i} style={{ color: KIND_COLORS[s.kind] }} title={s.sourceId}>
-                {s.text}
+              <span key={i} style={{ color: KIND_COLORS[sg.kind] }} title={sg.sourceId}>
+                {sg.text}
               </span>
             ),
           )}
         </div>
-        <Checkbox on={showInactive} onChange={setShowInactive} label={t('Show non-activated entries')} />
+        <label className="row ctx-inactive">
+          {t('Show non-activated entries')} <Toggle on={showInactive} onChange={setShowInactive} label={t('Show non-activated entries')} />
+        </label>
         <div style={{ overflowX: 'auto' }}>
           <table className="ctx-table">
             <thead>
@@ -111,11 +152,28 @@ export function ContextViewerModal({ onClose, which }: { onClose: () => void; wh
             </tbody>
           </table>
         </div>
-        {ctx.phraseBias.length > 0 && (
-          <div style={{ fontSize: 13 }}>
-            <b>{t('Included Phrase Bias Groups')}:</b> {ctx.phraseBias.map((g) => `${g.phrases.join(', ')} (${g.bias})`).join(' · ')}
-          </div>
-        )}
+        <div className="ctx-sub">{t('Included Phrase Bias Groups')}</div>
+        <table className="ctx-table">
+          <thead>
+            <tr>
+              <th>{t('Phrases')}</th>
+              <th>{t('Bias')}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {ctx.phraseBias.map((g, i) => (
+              <tr key={i}>
+                <td>{g.phrases.join(', ')}</td>
+                <td>{g.bias}</td>
+              </tr>
+            ))}
+            {ctx.phraseBias.length === 0 && (
+              <tr>
+                <td colSpan={2} className="muted">—</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
       </div>
     </Modal>
   );

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { applyChange, diffDocs, docText, normalize, replace, revertChange } from '../src/doc.ts';
-import { canRedo, commit, createHistory, flatten, jumpTo, materialize, redo, retryOptions, trim, undo } from '../src/history.ts';
+import { canRedo, commit, createHistory, structureStats, flatten, jumpTo, materialize, redo, retryOptions, trim, undo } from '../src/history.ts';
 import type { Span } from '../src/types.ts';
 
 describe('doc', () => {
@@ -68,5 +68,28 @@ describe('history', () => {
   it('flattens', () => {
     const h = flatten([{ text: 'x', origin: 'ai' }]);
     expect(docText(materialize(h))).toBe('x');
+  });
+});
+
+describe('structure stats', () => {
+  it('measures steps, retries and abandoned branches', () => {
+    const ch = (t: string) => [{ pos: 0, removed: [], inserted: [{ text: t, origin: 'ai' as const }] }];
+    let h = createHistory();
+    h = commit(h, 'prompt', ch('a')).history;
+    const prompt = h.current;
+    h = commit(h, 'ai', ch('b')).history;
+    h = commit(h, 'user', ch('c')).history;
+    h = commit(h, 'ai', ch('d')).history;
+    // Retry from the prompt: a second AI child, then continue that branch.
+    h = { ...h, current: prompt };
+    h = commit(h, 'ai', ch('x')).history;
+    h = commit(h, 'ai', ch('y')).history;
+    const s = structureStats(h);
+    expect(s.currentStep).toBe(3);
+    expect(s.furthestStep).toBe(4);
+    expect(s.deadEnds).toBe(1);
+    expect(s.longestAbandonedBranch).toBe(3);
+    expect(s.mostRetries).toBe(1);
+    expect(s.noRetryStreak).toBe(1);
   });
 });

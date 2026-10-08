@@ -1,5 +1,5 @@
 import { docText } from './doc.ts';
-import { historyStats } from './history.ts';
+import { historyStats, structureStats, type StructureStats } from './history.ts';
 import type { Story } from './types.ts';
 
 const STOPWORDS = new Set(
@@ -17,6 +17,10 @@ export interface StoryStats {
   paragraphs: number;
   sentences: number;
   mostUsedWords: [string, number][];
+  sections: number;
+  lorebookEntries: number;
+  ephemeralEntries: number;
+  structure: StructureStats;
 }
 
 export function storyStats(story: Story): StoryStats {
@@ -42,5 +46,9 @@ export function storyStats(story: Story): StoryStats {
     paragraphs: text.split('\n').filter((p) => p.trim()).length,
     sentences: (text.match(/[.!?…。！？]+(\s|$)/g) ?? []).length,
     mostUsedWords: [...freq.entries()].sort((a, b) => b[1] - a[1]).slice(0, 20),
+    sections: text ? text.split('\n').length : 0,
+    lorebookEntries: story.lorebook.entries.length,
+    ephemeralEntries: story.ephemeral.length,
+    structure: structureStats(story.history),
   };
 }

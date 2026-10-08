@@ -229,16 +229,14 @@ export function migrateStory(raw: Partial<Story> & { id?: string }): Story {
   return s;
 }
 
-export const SPECIAL_CHARACTERS: { label: string; char: string }[] = [
-  { label: 'Em Dash', char: '—' },
-  { label: 'En Dash', char: '–' },
-  { label: 'Ellipsis', char: '…' },
-  { label: 'Asterism', char: '⁂' },
-  { label: 'Dinkus', char: '***' },
-  { label: 'Left Quote', char: '“' },
-  { label: 'Right Quote', char: '”' },
-  { label: 'Left Single Quote', char: '‘' },
-  { label: 'Right Single Quote', char: '’' },
-  { label: 'Section Sign', char: '§' },
+/** Special Character submenu, in the original's order. `display` is what the menu shows for invisible characters. */
+export const SPECIAL_CHARACTERS: { label: string; char: string; display?: string; desc?: string }[] = [
+  { label: 'LitRPG', char: '─', desc: 'LitRPG game text' },
+  { label: 'En Space', char: '\u2002', display: '"\u2002"', desc: 'quotations/excerpts' },
+  { label: 'Em Space', char: '\u2003', display: '"\u2003"', desc: 'poetry/lyrics' },
   { label: 'Bullet', char: '•' },
+  { label: 'Ellipsis', char: '…' },
+  { label: 'Em Dash', char: '—' },
+  { label: 'Dinkus', char: '***', desc: 'scene/chapter break' },
+  { label: 'Asterism', char: '⁂' },
 ];

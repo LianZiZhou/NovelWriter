@@ -352,9 +352,9 @@ function EntryEditor({ entry, categories, update, onClose, active }: { entry: Lo
         onChange={setTab}
         tabs={[
           { value: 'entry', label: t('Entry') },
+          { value: 'conditions', label: t('Advanced Conditions') },
           { value: 'placement', label: t('Placement') },
           { value: 'bias', label: t('Phrase Bias') },
-          { value: 'conditions', label: t('Advanced Conditions') },
         ]}
       />
       <div className="lore-body">

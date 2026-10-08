@@ -144,3 +144,64 @@ export function historyStats(h: History): { nodes: number; deadEnds: number; aiN
   }
   return { nodes: all.length - 1, deadEnds, aiNodes: all.filter((n) => n.type === 'ai').length, maxDepth };
 }
+
+export interface StructureStats {
+  currentStep: number;
+  furthestStep: number;
+  deadEnds: number;
+  /** AI steps in a row, ending at the current step, that were kept without a retry. */
+  noRetryStreak: number;
+  /** Most steps in any branch that leaves the current path. */
+  longestAbandonedBranch: number;
+  mostRetries: number;
+  averageRetries: number;
+}
+
+/** Shape of the history tree, as reported by the Story Statistics "Structure" column. */
+export function structureStats(h: History): StructureStats {
+  const path = pathTo(h, h.current);
+  const onPath = new Set(path);
+  const height = (id: string): number => {
+    const n = h.nodes[id];
+    return n.children.length ? 1 + Math.max(...n.children.map(height)) : 0;
+  };
+  let furthest = 0;
+  let deadEnds = 0;
+  let longestAbandoned = 0;
+  let mostRetries = 0;
+  let retrySum = 0;
+  let retryParents = 0;
+  const walk = (id: string, depth: number) => {
+    const n = h.nodes[id];
+    furthest = Math.max(furthest, depth);
+    if (!n.children.length && id !== h.current) deadEnds++;
+    const ai = n.children.filter((c) => h.nodes[c].type === 'ai').length;
+    if (ai > 0) {
+      mostRetries = Math.max(mostRetries, ai - 1);
+      retrySum += ai - 1;
+      retryParents++;
+    }
+    for (const c of n.children) {
+      if (onPath.has(id) && !onPath.has(c)) longestAbandoned = Math.max(longestAbandoned, 1 + height(c));
+      walk(c, depth + 1);
+    }
+  };
+  walk(path[0], 0);
+  let streak = 0;
+  for (let i = path.length - 1; i > 0; i--) {
+    const n = h.nodes[path[i]];
+    if (n.type !== 'ai') break;
+    const parent = h.nodes[path[i - 1]];
+    if (parent.children.filter((c) => h.nodes[c].type === 'ai').length > 1) break;
+    streak++;
+  }
+  return {
+    currentStep: path.length - 1,
+    furthestStep: furthest,
+    deadEnds,
+    noRetryStreak: streak,
+    longestAbandonedBranch: longestAbandoned,
+    mostRetries,
+    averageRetries: retryParents ? Math.round((retrySum / retryParents) * 100) / 100 : 0,
+  };
+}

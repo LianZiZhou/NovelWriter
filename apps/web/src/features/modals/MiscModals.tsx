@@ -49,45 +49,64 @@ export function ConfirmModal({ onClose, title, message, confirmLabel, danger, re
 
 export function StatsModal({ onClose }: { onClose: () => void }) {
   const story = useStory((s) => s.current)!;
-  const [more, setMore] = useState(false);
+  const [allWords, setAllWords] = useState(false);
   const st = useMemo(() => storyStats(story), [story]);
-  const Row = ({ k, v }: { k: string; v: React.ReactNode }) => (
-    <div className="row between" style={{ padding: '6px 0', borderBottom: '1px solid var(--bg1)' }}>
-      <span>{t(k)}</span>
+  const sx = st.structure;
+  const Row = ({ k, v, dot }: { k: string; v: React.ReactNode; dot?: string }) => (
+    <div className={`stat-row ${dot ? 'sub' : ''}`}>
+      <span>
+        {dot && <span className="stat-dot" style={{ background: dot }} />}
+        {t(k)}
+      </span>
       <b>{v}</b>
     </div>
   );
+  const words = allWords ? st.mostUsedWords : st.mostUsedWords.slice(0, 5);
   return (
-    <Modal onClose={onClose} width={560} label={t('Story Stats')}>
-      <ModalHeader title={t('Story Stats')} onClose={onClose} />
-      <div className="modal-body">
-        <Row k="Story Step" v={st.steps} />
-        <Row k="History Nodes" v={st.historyNodes} />
-        <Row k="AI Generations" v={st.aiGenerations} />
-        <Row k="Dead Ends" v={st.deadEnds} />
-        <Row k="Characters" v={st.characters} />
-        {(['prompt', 'ai', 'edit', 'user'] as const).map((o) => (
-          <Row key={o} k={`  ${o}`} v={<span className={`o-${o}`}>{st.charactersByOrigin[o] ?? 0}</span>} />
-        ))}
-        {more ? (
-          <>
-            <Row k="Words" v={st.words} />
-            <Row k="Paragraphs" v={st.paragraphs} />
-            <Row k="Sentences" v={st.sentences} />
-            <div className="sub-heading" style={{ marginTop: 14 }}>{t('Most Used Words')}</div>
-            <div className="chips" style={{ marginTop: 8 }}>
-              {st.mostUsedWords.map(([w, n]) => (
-                <span key={w} className="key-chip">
-                  {w} <b>{n}</b>
-                </span>
-              ))}
-            </div>
-          </>
-        ) : (
-          <button type="button" className="btn block" style={{ marginTop: 14 }} onClick={() => setMore(true)}>
-            {t('Generate Additional Stats')}
-          </button>
-        )}
+    <Modal onClose={onClose} width={660} label={t('Story Statistics')} className="stats-modal">
+      <ModalHeader plain title={t('Story Statistics')} subtitle={t('Get a perspective on your writing.')} onClose={onClose} />
+      <div className="modal-body stats-grid">
+        <div>
+          <div className="stat-group">{t('Data')}</div>
+          <Row k="Sections" v={st.sections} />
+          <Row k="Lorebook Entries" v={st.lorebookEntries} />
+          <Row k="Ephemeral Entries" v={st.ephemeralEntries} />
+          <div className="stat-group">{t('Writing')}</div>
+          <Row k="Characters" v={st.characters} />
+          <Row k="User" dot="var(--text-user)" v={st.charactersByOrigin.user ?? 0} />
+          <Row k="AI" dot="var(--text-ai)" v={st.charactersByOrigin.ai ?? 0} />
+          <Row k="Edits" dot="var(--text-edit)" v={st.charactersByOrigin.edit ?? 0} />
+          <Row k="Prompt" dot="var(--text-prompt)" v={st.charactersByOrigin.prompt ?? 0} />
+          <Row k="Paragraphs" v={st.paragraphs} />
+          <Row k="Words" v={st.words} />
+          <Row k="Sentences" v={st.sentences} />
+        </div>
+        <div>
+          <div className="stat-group">{t('Structure')}</div>
+          <Row k="Current Step" v={sx.currentStep} />
+          <Row k="Furthest Step" v={sx.furthestStep} />
+          <Row k="Dead Ends" v={sx.deadEnds} />
+          <Row k="No Retry Streak" v={sx.noRetryStreak} />
+          <Row k="Longest Abandoned Branch" v={sx.longestAbandonedBranch} />
+          <Row k="Most Retries" v={sx.mostRetries} />
+          <Row k="Average Retries" v={sx.averageRetries} />
+          <div className="stat-group" title={t('Words of three or more letters, leaving out common ones.')}>
+            {t('Most Used Words')}
+          </div>
+          <ol className="stat-words">
+            {words.map(([w, n]) => (
+              <li key={w}>
+                {w} <span className="muted">({n})</span>
+              </li>
+            ))}
+            {words.length === 0 && <li>—</li>}
+          </ol>
+          {st.mostUsedWords.length > 5 && (
+            <button type="button" className="link-btn" onClick={() => setAllWords(!allWords)}>
+              {allWords ? t('Show fewer') : t('Show more')}
+            </button>
+          )}
+        </div>
       </div>
     </Modal>
   );

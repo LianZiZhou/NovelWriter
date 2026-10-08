@@ -18,14 +18,20 @@ export interface MenuState {
 const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform);
 const mod = isMac ? '⌘' : 'Ctrl';
 
-function Item({ label, shortcut, onClick, disabled, sub }: { label: string; shortcut?: string; onClick?: () => void; disabled?: boolean; sub?: ReactNode }) {
+function Item({ label, shortcut, onClick, disabled, sub, desc, glyph }: { label: string; shortcut?: string; onClick?: () => void; disabled?: boolean; sub?: ReactNode; desc?: string; glyph?: string }) {
   const [open, setOpen] = useState(false);
   return (
     <div style={{ position: 'relative' }} onMouseEnter={() => setOpen(true)} onMouseLeave={() => setOpen(false)}>
-      <button type="button" className="item" disabled={disabled} onClick={onClick}>
-        <span>{label}</span>
+      <button type="button" className={`item ${open && sub && !disabled ? 'open' : ''} ${desc ? 'two-line' : ''}`} disabled={disabled} onClick={onClick} role="menuitem">
+        <span className="item-main">
+          <span className="item-label">
+            {glyph !== undefined && <span className="glyph">{glyph}</span>}
+            {label}
+          </span>
+          {desc && <span className="item-desc">{desc}</span>}
+        </span>
         {shortcut && <span className="shortcut">{shortcut}</span>}
-        {sub && <CaretRight weight="fill" size={12} />}
+        {sub && <CaretRight weight="fill" size={14} />}
       </button>
       {sub && open && !disabled && <div className="context-menu submenu">{sub}</div>}
     </div>
@@ -103,7 +109,7 @@ export function EditorContextMenu({ state, editor, onClose }: { state: MenuState
       <Item
         label={t('Special Character')}
         sub={SPECIAL_CHARACTERS.map((c) => (
-          <Item key={c.label} label={`${c.char}  ${t(c.label)}`} onClick={run(() => editor.chain().focus().insertContent(c.char).run())} />
+          <Item key={c.label} glyph={c.display ?? c.char} label={`(${t(c.label)})`} desc={c.desc && t(c.desc)} onClick={run(() => editor.chain().focus().insertContent(c.char).run())} />
         ))}
       />
       <div className="sep" />
