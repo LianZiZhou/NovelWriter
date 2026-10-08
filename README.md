@@ -100,9 +100,10 @@ npm run desktop:dist   # installers for the current OS in apps/desktop/release/
 `xvfb-run -a npm run smoke -w @novelwriter/desktop` runs a smoke test against the bundle (pass the path
 of a packaged executable to test that instead).
 
-Tagging a commit `v*` runs `.github/workflows/desktop.yml`, which builds on Windows, macOS and Linux and
-attaches the installers to a GitHub Release. Pushes and pull requests that touch the app run the same
-build; their installers are kept as workflow artifacts for 3 days. Code signing is optional: add the `MAC_CSC_LINK` /
+`.github/workflows/desktop.yml` builds on Windows, macOS and Linux. Every push to `main` that touches the
+app publishes a GitHub Release tagged with the short commit hash (app version `0.1.<run number>`) with the
+installers attached; tagging a commit `v*` publishes a release with that version. Other branches and pull
+requests run the same build and keep the installers as workflow artifacts for 3 days. Code signing is optional: add the `MAC_CSC_LINK` /
 `MAC_CSC_KEY_PASSWORD` (plus `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID` for notarization)
 or `WIN_CSC_LINK` / `WIN_CSC_KEY_PASSWORD` secrets to sign; without them the macOS app is ad-hoc signed and
 the Windows installer is unsigned.

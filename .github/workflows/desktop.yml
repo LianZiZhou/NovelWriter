@@ -22,15 +22,48 @@ on:
 permissions:
   contents: read
 
-env:
-  # The release the installers go to: the pushed v* tag, or the tag given to a manual run.
-  RELEASE_TAG: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || inputs.release_tag || '' }}
-
 concurrency:
   group: desktop-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # Where the installers go and which version they carry:
+  #   push to main  -> a release tagged with the short commit hash, version <major>.<minor>.<run number>
+  #   v* tag        -> that tag's release, version from the tag (v1.2.3 -> 1.2.3)
+  #   manual run    -> the existing release named in `release_tag`, if any
+  #   anything else -> no release; installers kept as workflow artifacts
+  meta:
+    name: Release info
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.meta.outputs.tag }}
+      version: ${{ steps.meta.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: apps/desktop/package.json
+          sparse-checkout-cone-mode: false
+      - id: meta
+        shell: bash
+        env:
+          EVENT: ${{ github.event_name }}
+          INPUT_TAG: ${{ inputs.release_tag }}
+          RUN_NUMBER: ${{ github.run_number }}
+        run: |
+          tag='' version=''
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            tag="$GITHUB_REF_NAME"; version="${tag#v}"
+          elif [[ "$EVENT" == push && "$GITHUB_REF" == refs/heads/main ]]; then
+            tag="${GITHUB_SHA::7}"
+            base=$(node -p "require('./apps/desktop/package.json').version.split('.').slice(0, 2).join('.')")
+            version="$base.$RUN_NUMBER"
+          elif [[ "$EVENT" == workflow_dispatch && -n "$INPUT_TAG" ]]; then
+            tag="$INPUT_TAG"; [[ "$tag" == v* ]] && version="${tag#v}"
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "release tag: ${tag:-none}, app version: ${version:-from package.json}"
+
   test:
     name: Typecheck and tests
     runs-on: ubuntu-latest
@@ -44,26 +77,31 @@ jobs:
       - run: npm run typecheck
       - run: npm test
 
-  # Tag builds: create the release once, then each platform uploads its installers to it
-  # directly (no artifact storage, so the account's artifact quota can't block a release).
+  # Create the release once, then each platform uploads its installers to it directly (no
+  # artifact storage, so the account's artifact quota can't block a release). A manual run only
+  # fills a release that already exists.
   release:
     name: Create GitHub Release
-    if: startsWith(github.ref, 'refs/tags/v')
-    needs: test
+    if: needs.meta.outputs.tag != '' && github.event_name == 'push'
+    needs: [meta, test]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
       - uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
+          tag_name: ${{ needs.meta.outputs.tag }}
+          name: ${{ needs.meta.outputs.tag }}
+          target_commitish: ${{ github.sha }}
           generate_release_notes: true
-          prerelease: ${{ contains(github.ref_name, '-') }}
+          prerelease: ${{ startsWith(github.ref, 'refs/tags/v') && contains(github.ref_name, '-') }}
+          make_latest: ${{ !(startsWith(github.ref, 'refs/tags/v') && contains(github.ref_name, '-')) }}
 
   build:
     name: Build (${{ matrix.os }})
-    needs: [test, release]
+    needs: [meta, test, release]
     # Runs when the release job was skipped (branch/PR builds) but not when it failed.
-    if: ${{ !cancelled() && needs.test.result == 'success' && needs.release.result != 'failure' }}
+    if: ${{ !cancelled() && needs.meta.result == 'success' && needs.test.result == 'success' && needs.release.result != 'failure' }}
     permissions:
       contents: write
     strategy:
@@ -116,8 +154,7 @@ jobs:
       - name: Build installers
         shell: bash
         env:
-          # Tag builds carry the tag's version (v1.2.3 -> 1.2.3).
-          NOVELWRITER_VERSION: ${{ env.RELEASE_TAG }}
+          NOVELWRITER_VERSION: ${{ needs.meta.outputs.version }}
         run: npm run desktop:dist
 
       - name: Smoke test the packaged app
@@ -135,10 +172,10 @@ jobs:
           ls -la "${files[@]}"
 
       - name: Attach installers to the release
-        if: env.RELEASE_TAG != ''
+        if: needs.meta.outputs.tag != ''
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
-          tag_name: ${{ env.RELEASE_TAG }}
+          tag_name: ${{ needs.meta.outputs.tag }}
           files: |
             apps/desktop/release/*.exe
             apps/desktop/release/*.dmg
@@ -149,7 +186,7 @@ jobs:
       # Branch and PR builds keep the installers for a few days for testing. A full artifact
       # quota must not fail the build, which has already been checked above.
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        if: env.RELEASE_TAG == ''
+        if: needs.meta.outputs.tag == ''
         continue-on-error: true
         with:
           name: novelwriter-${{ runner.os }}
