@@ -110,5 +110,109 @@ await measure('context-menu', ['Cut', 'Generate Inline', 'Writer\'s Toolbox']);
 await page.keyboard.press('Escape');
 await page.setViewportSize({ width: 390, height: 844 });
 await shot('mobile');
+await page.setViewportSize({ width: 1600, height: 900 });
+
+// Detail states (Round 2). Each step is independent; a failure is logged and skipped.
+const step = async (name, fn) => {
+  try {
+    await fn();
+  } catch (e) {
+    console.log('skipped', name, e.message.split('\n')[0]);
+  }
+  await page.keyboard.press('Escape').catch(() => {});
+  await wait(400);
+};
+const scrollRight = () =>
+  page.evaluate(() => {
+    const el = [...document.querySelectorAll('div')].find((d) => d.scrollHeight > d.clientHeight + 50 && d.getBoundingClientRect().left > 1150);
+    if (el) el.scrollTop = 99999;
+  });
+await step('model-dropdown', async () => {
+  await page.mouse.click(1450, 238);
+  await shot('model-dropdown');
+});
+await step('export-menu', async () => {
+  await scrollRight();
+  await page.evaluate(() => [...document.querySelectorAll('button')].find((x) => x.innerText.trim() === 'To File')?.nextElementSibling?.click());
+  await shot('export-menu');
+});
+await step('story-stats', async () => {
+  await clickText('View Story Stats');
+  await shot('story-stats');
+});
+await step('memory-expand', async () => {
+  await clickAria('expand memory');
+  await shot('memory-expand');
+});
+await step('context-viewer', async () => {
+  await clickText('Advanced');
+  await clickText('Current Context');
+  await shot('context-viewer');
+});
+await step('system-prompt', async () => {
+  await clickText('Edit System Prompt');
+  await shot('system-prompt');
+});
+await step('user-scripts', async () => {
+  await clickText('Edit User Scripts');
+  await shot('user-scripts');
+});
+await step('samplers', async () => {
+  await page.mouse.click(1537, 85);
+  await clickText('Change Samplers');
+  await shot('samplers');
+});
+await step('context-special', async () => {
+  await page.mouse.click(700, 195, { button: 'right' });
+  await page.hover('text=Special Character');
+  await shot('context-special');
+});
+await step('redo-list', async () => {
+  await page.click('.ProseMirror');
+  await page.keyboard.press('End');
+  await page.keyboard.type(' More words.');
+  await wait(1200);
+  await clickAria('Undo');
+  await page.evaluate(() => [...document.querySelectorAll('button')].find((x) => /^\d+$/.test(x.innerText.trim()) && x.getBoundingClientRect().top > 800)?.click());
+  await shot('redo-list');
+});
+await step('settings-bottoms', async () => {
+  await clickAria('Open Settings');
+  for (const t of ['AI Settings', 'Interface', 'Theme', 'Text To Speech', 'Defaults', 'Hotkeys']) {
+    if (!(await clickText(t))) continue;
+    await page.evaluate(() => {
+      const el = [...document.querySelectorAll('div')].find((d) => d.scrollHeight > d.clientHeight + 50 && d.getBoundingClientRect().left > 420 && d.getBoundingClientRect().width > 600);
+      if (el) el.scrollTop = 99999;
+    });
+    await shot(`settings-${t.replace(/ /g, '')}-bottom`);
+  }
+  if (await clickText('Change Log')) await shot('changelog');
+});
+await step('account-menu', async () => {
+  await clickAria('Open Account Menu');
+  await shot('account-menu');
+});
+await step('story-settings', async () => {
+  await clickAria('Edit Story Information');
+  await shot('story-settings');
+});
+await step('filters', async () => {
+  await clickAria('Open Sort Settings');
+  await shot('filters');
+});
+await step('adventure', async () => {
+  await page.evaluate(() => [...document.querySelectorAll('[aria-label="create a new story"]')].find((x) => x.offsetParent)?.click());
+  await wait(3000);
+  await page.mouse.click(1267, 350);
+  await wait(5000);
+  await page.keyboard.press('Escape');
+  await shot('adventure');
+});
+await step('dashboard', async () => {
+  await page.goto('https://novelai.net/stories', { waitUntil: 'domcontentloaded', timeout: 60000 });
+  await wait(6000);
+  await page.keyboard.press('Escape');
+  await shot('dashboard');
+});
 await browser.close();
 console.log('saved to', out);
