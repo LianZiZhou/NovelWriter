@@ -2,6 +2,8 @@
  * Minimal i18n: English strings are the keys; other languages map them.
  * The app root is keyed by language, so a language switch re-renders everything.
  */
+import { ZH_EXTRA } from './i18n-zh-extra.ts';
+
 export type Lang = 'en' | 'zh';
 
 let lang: Lang = 'en';
@@ -344,4 +346,5 @@ const ZH: Record<string, string> = {
   'Type a command…': '输入命令……',
   'No AI model is configured. Open Settings → AI Providers to sign in, or use the offline Demo model.': '尚未配置 AI 模型。打开 设置 → AI 服务商 登录，或使用离线演示模型。',
   'Server unreachable': '无法连接服务器',
+  ...ZH_EXTRA,
 };

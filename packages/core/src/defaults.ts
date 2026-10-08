@@ -211,6 +211,7 @@ export function newStory(p: Partial<Story> = {}): Story {
     step: 0,
     placeholders: [],
     titleHistory: [],
+    scripts: [],
     ...p,
   };
 }

@@ -9,9 +9,10 @@
   "scripts": {
     "dev": "concurrently -k -n server,web -c blue,magenta \"npm run dev -w @novelwriter/server\" \"npm run dev -w @novelwriter/web\"",
     "build": "npm run build -w @novelwriter/web",
-    "start": "npm run start -w @novelwriter/server",
+    "start": "npm run build && npm run start -w @novelwriter/server",
     "test": "vitest run",
-    "typecheck": "tsc -p packages/core && tsc -p apps/server && tsc -p apps/web"
+    "typecheck": "tsc -p packages/core && tsc -p apps/server && tsc -p apps/web",
+    "e2e": "node scripts/e2e.mjs"
   },
   "engines": {
     "node": ">=22.19.0"

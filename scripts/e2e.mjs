@@ -116,6 +116,62 @@ await step('stories persist across reload', async () => {
   assert.ok((await page.locator('.story-card').count()) >= 2);
 });
 
+await step('user scripts hook the AI response', async () => {
+  await page.locator('.story-card').nth(1).click();
+  await page.getByRole('tab', { name: 'Advanced' }).click();
+  await page.getByRole('button', { name: /Edit User Scripts/ }).click();
+  await page.locator('.modal').getByRole('button', { name: 'Add' }).click();
+  await page.getByRole('textbox', { name: 'Script', exact: true }).fill("api.hooks.register('onResponse', ({ text }) => ({ text: text + ' [[SCRIPTED]]' }));");
+  await page.locator('.modal [role=switch]').first().click();
+  await page.keyboard.press('Escape');
+  await page.getByRole('button', { name: 'Send' }).click();
+  await page.waitForFunction(() => document.querySelector('.ProseMirror')?.textContent?.includes('[[SCRIPTED]]'));
+  await page.getByRole('tab', { name: 'Story' }).click();
+});
+
+await step("writer's toolbox rewrites a selection", async () => {
+  const p = page.locator('.ProseMirror p').first();
+  await p.click({ clickCount: 3 });
+  await p.click({ button: 'right' });
+  await page.getByRole('button', { name: "Writer's Toolbox" }).click();
+  await page.getByRole('tab', { name: 'Condense' }).click();
+  await page.locator('.modal').getByRole('button', { name: 'Generate' }).click();
+  await page.getByRole('button', { name: 'Replace' }).waitFor();
+  await page.getByRole('button', { name: 'Replace' }).click();
+  assert.equal(await page.locator('.modal').count(), 0);
+});
+
+await step('history tree opens and jumps', async () => {
+  await page.locator('.branch-count').click();
+  await page.getByRole('button', { name: /History Tree/ }).click();
+  const nodes = page.locator('.history-tree .node');
+  assert.ok((await nodes.count()) > 3);
+  await nodes.nth(1).click();
+  await page.keyboard.press('Escape');
+});
+
+await step('theme and language switch', async () => {
+  await page.getByRole('button', { name: 'Open Settings' }).first().click();
+  await page.locator('.split-modal .nav button', { hasText: 'Theme' }).click();
+  await page.getByRole('button', { name: /NovelAI Light/ }).click();
+  const bg = await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--bg2').trim());
+  assert.equal(bg.toUpperCase(), '#EEECF4');
+  await page.screenshot({ path: `${out}theme-light.png` });
+  await page.getByRole('button', { name: /NovelAI Dark$/ }).click();
+  await page.locator('.split-modal .nav button', { hasText: 'Interface' }).click();
+  await page.locator('.split-modal .select-box').first().click();
+  await page.getByRole('option', { name: '简体中文' }).click();
+  await page.waitForSelector('text=发送');
+  await page.screenshot({ path: `${out}zh.png` });
+  await page.keyboard.press('Escape');
+  await page.getByRole('button', { name: '打开设置' }).first().click();
+  await page.locator('.split-modal .nav button', { hasText: '界面' }).click();
+  await page.locator('.split-modal .select-box').first().click();
+  await page.getByRole('option', { name: 'English' }).click();
+  await page.waitForSelector('text=Send');
+  await page.keyboard.press('Escape');
+});
+
 await step('export story to file', async () => {
   const [dl] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'To File' }).click()]);
   assert.ok(dl.suggestedFilename().endsWith('.story'));

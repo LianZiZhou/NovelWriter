@@ -25,6 +25,7 @@ import {
   ToolboxModal,
 } from './features/modals/MiscModals.tsx';
 import { Logo } from './components/Logo.tsx';
+import { ScriptsModal } from './features/scripts/ScriptsModal.tsx';
 
 function ModalHost() {
   const modal = useUI((s) => s.modal);
@@ -65,6 +66,8 @@ function ModalHost() {
       return <HistoryTreeModal onClose={close} />;
     case 'samplers':
       return <SamplersModal onClose={close} />;
+    case 'scripts':
+      return <ScriptsModal onClose={close} />;
     case 'confirm':
       return <ConfirmModal onClose={close} title={p.title} message={p.message} confirmLabel={p.confirmLabel} danger={p.danger} resolve={p.resolve} />;
     default:

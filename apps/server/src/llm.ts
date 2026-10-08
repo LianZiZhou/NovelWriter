@@ -3,6 +3,7 @@ import {
   fauxAssistantMessage,
   fauxProvider,
   fauxText,
+  getSupportedThinkingLevels,
   type Api,
   type Context,
   type Message,
@@ -67,7 +68,7 @@ export class LLM {
           id: c.id,
           name: c.name,
           baseUrl: c.baseUrl,
-          auth: { apiKey: { name: `${c.name} API key`, resolve: async () => ({ auth: key ? { apiKey: key } : {}, source: key ? 'custom key' : 'no key' }) } },
+          auth: { apiKey: { name: `${c.name} API key`, resolve: async () => ({ auth: { apiKey: key || 'no-key' }, source: key ? 'custom key' : 'no key' }) } },
           models: c.models.map(
             (m): Model<'openai-completions'> => ({
               id: m.id,
@@ -168,6 +169,15 @@ export class LLM {
 
     const { temperature, samplingParams: sp } = samplingParams(params);
     const options: Record<string, unknown> = { maxTokens, signal };
+    // Story continuation wants no (or minimal) thinking. Models that cannot turn
+    // thinking off get the lowest level and extra budget so output isn't starved.
+    if (model.reasoning) {
+      const levels = getSupportedThinkingLevels(model);
+      if (!levels.includes('off') && levels.length) {
+        options.reasoning = levels[0];
+        options.maxTokens = maxTokens + 2048;
+      }
+    }
     if (temperature !== undefined) options.temperature = temperature;
     if (Object.keys(sp).length && (model.api === 'openai-completions' || this.customIds.has(model.provider))) options.samplingParams = sp;
     if (req.stop?.length && model.api === 'openai-completions') options.samplingParams = { ...(options.samplingParams as object), stop: req.stop.slice(0, 4) };

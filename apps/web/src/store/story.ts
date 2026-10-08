@@ -43,6 +43,7 @@ import { useSettings } from './settings.ts';
 import { useUI } from './ui.ts';
 import { t } from '../i18n.ts';
 import { speak } from '../features/tts/tts.ts';
+import { runHook } from '../features/scripts/runner.ts';
 
 /** Implemented by the editor component so the store can drive it. Offsets are plain-text offsets. */
 export interface EditorController {
@@ -78,6 +79,7 @@ interface StoryState {
   editor: EditorController | null;
   serverDown: boolean;
   activeShelf: string | null;
+  scriptLogs: string[];
 
   init: () => Promise<void>;
   refreshModels: () => Promise<void>;
@@ -198,6 +200,7 @@ export const useStory = create<StoryState>((set, get) => ({
   editor: null,
   serverDown: false,
   activeShelf: null,
+  scriptLogs: [],
 
   async init() {
     try {
@@ -470,7 +473,9 @@ export const useStory = create<StoryState>((set, get) => ({
 
     // Player/user input from the input box or adventure bar is appended first.
     if (input && input.text.trim()) {
-      let text = s.mode === 'adventure' ? adventureInput(input.text, input.mode ?? 'do') : input.text;
+      const hooked = await runHook(s.scripts, 'onInput', { text: input.text });
+      logScripts(set, get, hooked);
+      let text = s.mode === 'adventure' ? adventureInput(hooked.value.text, input.mode ?? 'do') : hooked.value.text;
       const before = docText(s.doc);
       if (before && !before.endsWith('\n')) text = '\n' + text;
       if (s.mode === 'adventure') text += '\n';
@@ -590,6 +595,12 @@ async function runGeneration(
   const req = buildStoryRequest(s, { maxContextTokens: maxCtx, model: model.id, inline: opts.inline ? { before, after } : undefined });
   set({ generating: true, task: 'story', lastContext: req.context });
   abort = new AbortController();
+  if (s.scripts.some((x) => x.enabled)) {
+    const hooked = await runHook(s.scripts, 'onContextBuilt', { system: req.system, context: req.messages[0]?.content ?? '' });
+    logScripts(set, get, hooked);
+    req.system = hooked.value.system;
+    if (req.messages[0]) req.messages[0] = { ...req.messages[0], content: hooked.value.context };
+  }
   const ed = get().editor;
   let raw = '';
   let shown = '';
@@ -627,6 +638,11 @@ async function runGeneration(
     trimToSentence: settings.continueToSentenceEnd && !abort.signal.aborted,
     minLength: s.params.minLength,
   });
+  if (final && s.scripts.some((x) => x.enabled)) {
+    const hooked = await runHook(s.scripts, 'onResponse', { text: final });
+    logScripts(set, get, hooked);
+    final = hooked.value.text;
+  }
   if (opts.inline && after && !/^\s/.test(after) && final && !/\s$/.test(final)) final += ' ';
   if (!final.trim()) final = '';
   show(final);
@@ -650,6 +666,14 @@ async function runGeneration(
   }
   set({ generating: false, task: null });
   if (error) ui.toast(error, 'error');
+}
+
+function logScripts(set: (p: Partial<StoryState>) => void, get: () => StoryState, r: { logs: string[]; errors: string[] }) {
+  if (!r.logs.length && !r.errors.length) return;
+  const stamp = new Date().toLocaleTimeString();
+  const lines = [...r.logs.map((l) => `[${stamp}] ${l}`), ...r.errors.map((e) => `[${stamp}] ERROR ${e}`)];
+  set({ scriptLogs: [...get().scriptLogs, ...lines].slice(-200) });
+  if (r.errors.length) useUI.getState().toast(r.errors[0], 'error');
 }
 
 async function maybeHypebot(set: (p: Partial<StoryState>) => void, get: () => StoryState, last: string) {

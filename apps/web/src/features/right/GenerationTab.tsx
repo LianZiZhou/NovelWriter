@@ -243,7 +243,7 @@ export function GenerationTab() {
               <Select
                 value={p.phraseRepPen}
                 onChange={(v) => set({ phraseRepPen: v })}
-                options={(['off', 'very_light', 'light', 'medium', 'aggressive', 'very_aggressive'] as const).map((v) => ({ value: v, label: t(v.replace('_', ' ').replace(/^./, (c) => c.toUpperCase())) }))}
+                options={(['off', 'very_light', 'light', 'medium', 'aggressive', 'very_aggressive'] as const).map((v) => ({ value: v, label: v === 'off' ? t('Off') : t(v.replace('_', ' ').replace(/^./, (c) => c.toUpperCase())) }))}
               />
             </div>
             <div>

@@ -231,6 +231,15 @@ export interface Story {
   /** Scenario placeholder definitions, when the story is a scenario. */
   placeholders: Placeholder[];
   titleHistory: string[];
+  scripts: UserScript[];
+}
+
+/** A user script run in a sandbox, hooking into generation. */
+export interface UserScript {
+  id: string;
+  name: string;
+  enabled: boolean;
+  code: string;
 }
 
 export interface Placeholder {

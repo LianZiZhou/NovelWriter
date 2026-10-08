@@ -18,6 +18,7 @@ export type ModalName =
   | 'historyTree'
   | 'modelPicker'
   | 'samplers'
+  | 'scripts'
   | 'confirm';
 
 export interface Toast {

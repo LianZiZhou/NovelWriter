@@ -68,3 +68,77 @@ describe('server', () => {
     expect(models[0].id).toBe('llama');
   });
 });
+
+import { createServer, type Server } from 'node:http';
+
+describe('custom OpenAI-compatible provider', () => {
+  let fake: Server;
+  let port = 0;
+  const bodies: Record<string, unknown>[] = [];
+  beforeAll(async () => {
+    fake = createServer((req, res) => {
+      let raw = '';
+      req.on('data', (c) => (raw += c));
+      req.on('end', () => {
+        if (req.url?.endsWith('/models')) {
+          res.writeHead(200, { 'content-type': 'application/json' });
+          res.end(JSON.stringify({ data: [{ id: 'fake-model' }] }));
+          return;
+        }
+        bodies.push(JSON.parse(raw));
+        res.writeHead(200, { 'content-type': 'text/event-stream' });
+        const chunk = (content: string, finish: string | null = null) =>
+          `data: ${JSON.stringify({ id: 'x', object: 'chat.completion.chunk', created: 0, model: 'fake-model', choices: [{ index: 0, delta: { content }, finish_reason: finish }] })}\n\n`;
+        res.write(chunk(' The door'));
+        res.write(chunk(' creaked open.'));
+        res.write(chunk('', 'stop'));
+        res.end('data: [DONE]\n\n');
+      });
+    });
+    await new Promise<void>((r) => fake.listen(0, '127.0.0.1', () => r()));
+    port = (fake.address() as { port: number }).port;
+  });
+  afterAll(() => new Promise<void>((r) => fake.close(() => r())));
+
+  it('probes models and streams a generation with sampling params', async () => {
+    const baseUrl = `http://127.0.0.1:${port}/v1`;
+    const probe = await app.inject({ method: 'POST', url: '/api/custom-providers/probe', payload: { baseUrl } });
+    expect(probe.json()).toEqual([{ id: 'fake-model' }]);
+    await app.inject({ method: 'PUT', url: '/api/custom-providers', payload: [{ id: 'fake', name: 'Fake', baseUrl, models: [{ id: 'fake-model' }] }] });
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/generate',
+      payload: {
+        model: { provider: 'fake', id: 'fake-model' },
+        system: 'sys',
+        messages: [{ role: 'user', content: 'Once' }],
+        params: { temperature: 0.7, topP: 0.9, minP: 0.05, maxLength: 400, order: [{ id: 'temperature', enabled: true }, { id: 'top_p', enabled: true }, { id: 'min_p', enabled: true }] },
+        stop: ['\n\n'],
+      },
+    });
+    const events = res.body.split('\n\n').filter(Boolean).map((l) => JSON.parse(l.replace(/^data: /, '')));
+    expect(events.filter((e) => e.type === 'delta').map((e) => e.text).join('')).toBe(' The door creaked open.');
+    expect(events.at(-1)).toMatchObject({ type: 'done', stopReason: 'stop' });
+    const body = bodies[0];
+    expect(body.temperature).toBe(0.7);
+    expect(body.top_p).toBe(0.9);
+    expect(body.min_p).toBe(0.05);
+    expect(body.max_tokens).toBe(100);
+    expect(body.stop).toEqual(['\n\n']);
+    expect((body.messages as { role: string }[])[0].role).toBe('system');
+  });
+});
+
+describe('password protection', () => {
+  it('requires basic auth when a password is set', async () => {
+    const d = await mkdtemp(join(tmpdir(), 'nw-'));
+    const locked = await buildApp({ dataDir: d, password: 's3cret' });
+    expect((await locked.inject({ url: '/api/stories' })).statusCode).toBe(401);
+    const ok = await locked.inject({ url: '/api/stories', headers: { authorization: `Basic ${Buffer.from('me:s3cret').toString('base64')}` } });
+    expect(ok.statusCode).toBe(200);
+    const bad = await locked.inject({ url: '/api/stories', headers: { authorization: `Basic ${Buffer.from('me:nope').toString('base64')}` } });
+    expect(bad.statusCode).toBe(401);
+    await locked.close();
+    await rm(d, { recursive: true, force: true });
+  });
+});

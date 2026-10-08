@@ -92,6 +92,16 @@ export function AdvancedTab() {
       </div>
 
       <div className="panel-section">
+        <Collapsible title={<SectionTitle>{t('User Scripts')}</SectionTitle>} className="">
+          <div className="desc" style={{ marginBottom: 10 }}>{t('Extend NovelWriter with custom scripts.')}</div>
+          <button type="button" className="btn block" onClick={() => ui.open('scripts')}>
+            {t('Edit User Scripts')}
+            {story.scripts.some((x) => x.enabled) ? ` (${story.scripts.filter((x) => x.enabled).length})` : ''}
+          </button>
+        </Collapsible>
+      </div>
+
+      <div className="panel-section">
         <Collapsible
           title={<SectionTitle>{t('Phrase Bias')}</SectionTitle>}
           className=""

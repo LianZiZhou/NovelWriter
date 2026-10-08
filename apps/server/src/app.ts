@@ -3,6 +3,7 @@ import cors from '@fastify/cors';
 import websocket from '@fastify/websocket';
 import fastifyStatic from '@fastify/static';
 import { existsSync } from 'node:fs';
+import { timingSafeEqual } from 'node:crypto';
 import { join } from 'node:path';
 import type { AuthType } from '@earendil-works/pi-ai';
 import { migrateStory, type GenerateRequest, type Preset, type Shelf, type Story } from '@novelwriter/core';
@@ -15,6 +16,8 @@ export interface AppOptions {
   dataDir: string;
   staticDir?: string;
   logger?: boolean;
+  /** When set, every request requires HTTP Basic auth with this password (any username). */
+  password?: string;
 }
 
 export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
@@ -24,7 +27,18 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
   llm.setCustomProviders(await storage.readJson<CustomProviderConfig[]>('custom-providers.json', []));
 
   const app = Fastify({ logger: opts.logger ?? false, bodyLimit: 50 * 1024 * 1024 });
-  await app.register(cors, { origin: true });
+  if (opts.password) {
+    const expected = Buffer.from(opts.password);
+    app.addHook('onRequest', async (req, reply) => {
+      const header = req.headers.authorization ?? '';
+      const decoded = header.startsWith('Basic ') ? Buffer.from(header.slice(6), 'base64').toString() : '';
+      const given = Buffer.from(decoded.slice(decoded.indexOf(':') + 1));
+      if (given.length !== expected.length || !timingSafeEqual(given, expected)) {
+        return reply.code(401).header('www-authenticate', 'Basic realm="NovelWriter"').send({ error: 'Unauthorized' });
+      }
+    });
+  }
+  await app.register(cors, { origin: opts.password ? false : true });
   await app.register(websocket);
 
   // ------------------------------------------------------------- stories
