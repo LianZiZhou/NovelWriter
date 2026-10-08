@@ -1,16 +1,17 @@
 // Electron main process: starts the NovelWriter server in-process and shows it in a window.
-import { app, BrowserWindow, Menu, dialog, screen, session, shell, type MenuItemConstructorOptions } from 'electron';
+import { app, BrowserWindow, Menu, dialog, ipcMain, screen, session, shell, type IpcMainEvent, type IpcMainInvokeEvent, type MenuItemConstructorOptions } from 'electron';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { startServer, type RunningServer } from './server.ts';
-import { MIN_SIZE, isAppUrl, isExternalHttpUrl, parseJsonObject, restoreBounds, type WindowState } from './util.ts';
+import { MIN_SIZE, WINDOW_CHANNELS, isAppUrl, isExternalHttpUrl, menuPoint, parseJsonObject, restoreBounds, type WindowControlsState, type WindowState } from './util.ts';
 
 const REPO_URL = 'https://github.com/LianZiZhou/NovelWriter';
 
 let server: RunningServer | undefined;
 let mainWindow: BrowserWindow | undefined;
 let quitting = false;
+let appOrigin = '';
 
 const userData = () => app.getPath('userData');
 const dataDir = () => resolve(process.env.NOVELWRITER_DATA || join(userData(), 'data'));
@@ -43,6 +44,44 @@ function openExternal(url: string): void {
   if (isExternalHttpUrl(url)) void shell.openExternal(url);
 }
 
+// ------------------------------------------------------------------ title bar
+// The page draws its own title bar (apps/web/src/components/TitleBar.tsx). macOS keeps the
+// native traffic lights inset into it; Windows and Linux get a frameless window whose
+// buttons are drawn by the page and call back here through the preload bridge.
+const TITLE_BAR_HEIGHT = 38;
+
+function windowControlsState(win: BrowserWindow): WindowControlsState {
+  return { maximized: win.isMaximized(), fullscreen: win.isFullScreen(), focused: win.isFocused() };
+}
+
+/** The window behind an IPC call, only when the call comes from the app's own page. */
+function trustedWindow(event: IpcMainEvent | IpcMainInvokeEvent): BrowserWindow | undefined {
+  const url = event.senderFrame?.url ?? '';
+  if (!appOrigin || !isAppUrl(url, appOrigin)) return undefined;
+  return BrowserWindow.fromWebContents(event.sender) ?? undefined;
+}
+
+function registerWindowControls(): void {
+  ipcMain.on(WINDOW_CHANNELS.minimize, (e) => trustedWindow(e)?.minimize());
+  ipcMain.on(WINDOW_CHANNELS.toggleMaximize, (e) => {
+    const win = trustedWindow(e);
+    if (!win) return;
+    if (win.isMaximized()) win.unmaximize();
+    else win.maximize();
+  });
+  ipcMain.on(WINDOW_CHANNELS.close, (e) => trustedWindow(e)?.close());
+  ipcMain.on(WINDOW_CHANNELS.showMenu, (e, x: unknown, y: unknown) => {
+    const win = trustedWindow(e);
+    if (!win) return;
+    const [width, height] = win.getContentSize();
+    Menu.getApplicationMenu()?.popup({ window: win, ...menuPoint(x, y, width, height) });
+  });
+  ipcMain.handle(WINDOW_CHANNELS.getState, (e) => {
+    const win = trustedWindow(e);
+    return win ? windowControlsState(win) : undefined;
+  });
+}
+
 // ------------------------------------------------------------------ window
 function createWindow(origin: string): BrowserWindow {
   const saved = readState<WindowState>('window-state.json');
@@ -55,7 +94,11 @@ function createWindow(origin: string): BrowserWindow {
     title: 'NovelWriter',
     backgroundColor: '#1d1e2c',
     icon: process.platform === 'linux' ? iconPath() : undefined,
+    ...(process.platform === 'darwin'
+      ? { titleBarStyle: 'hiddenInset' as const, trafficLightPosition: { x: 14, y: (TITLE_BAR_HEIGHT - 16) / 2 } }
+      : { frame: false }),
     webPreferences: {
+      preload: fromBundle('./preload.cjs'),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
@@ -71,6 +114,15 @@ function createWindow(origin: string): BrowserWindow {
     writeState('window-state.json', { bounds: win.getNormalBounds(), maximized: win.isMaximized() } satisfies WindowState);
   };
   win.on('close', save);
+  const sendState = () => {
+    if (!win.isDestroyed()) win.webContents.send(WINDOW_CHANNELS.state, windowControlsState(win));
+  };
+  win.on('maximize', sendState);
+  win.on('unmaximize', sendState);
+  win.on('enter-full-screen', sendState);
+  win.on('leave-full-screen', sendState);
+  win.on('focus', sendState);
+  win.on('blur', sendState);
   win.on('closed', () => {
     if (mainWindow === win) mainWindow = undefined;
   });
@@ -152,6 +204,7 @@ async function start(): Promise<void> {
   if (prefs.port !== server.port) writeState('server.json', { port: server.port });
 
   const { origin, authorization } = server;
+  appOrigin = origin;
   const ses = session.defaultSession;
   // Every request to our server (including the login WebSocket) carries the per-launch password.
   ses.webRequest.onBeforeSendHeaders({ urls: [`${origin}/*`, `ws://127.0.0.1:${server.port}/*`] }, (details, callback) => {
@@ -162,6 +215,7 @@ async function start(): Promise<void> {
   ses.setPermissionCheckHandler((_wc, permission, requestingOrigin) => requestingOrigin === origin && allowed.has(permission));
 
   Menu.setApplicationMenu(buildMenu());
+  registerWindowControls();
   mainWindow = createWindow(origin);
 }
 

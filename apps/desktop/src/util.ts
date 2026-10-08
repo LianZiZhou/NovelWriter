@@ -19,6 +19,41 @@ export function isAppUrl(raw: string, appOrigin: string): boolean {
   }
 }
 
+/** IPC channels between the preload's title-bar bridge and the main process. */
+export const WINDOW_CHANNELS = {
+  minimize: 'nw-window:minimize',
+  toggleMaximize: 'nw-window:toggle-maximize',
+  close: 'nw-window:close',
+  showMenu: 'nw-window:show-menu',
+  getState: 'nw-window:get-state',
+  state: 'nw-window:state',
+} as const;
+
+export interface WindowControlsState {
+  maximized: boolean;
+  fullscreen: boolean;
+  focused: boolean;
+}
+
+/** What the page sees as `window.novelwriterDesktop` (mirrored in apps/web/src/env.d.ts). */
+export interface DesktopBridge {
+  platform: string;
+  minimize(): void;
+  toggleMaximize(): void;
+  close(): void;
+  /** Pop up the application menu at a point in the window (CSS pixels). */
+  showMenu(x: number, y: number): void;
+  getState(): Promise<WindowControlsState>;
+  /** Subscribe to window state changes; returns an unsubscribe function. */
+  onState(cb: (state: WindowControlsState) => void): () => void;
+}
+
+/** Clamp a menu position sent by the page to the window's content area. */
+export function menuPoint(x: unknown, y: unknown, width: number, height: number): { x: number; y: number } {
+  const clamp = (v: unknown, max: number) => (typeof v === 'number' && Number.isFinite(v) ? Math.min(Math.max(0, Math.round(v)), max) : 0);
+  return { x: clamp(x, width), y: clamp(y, height) };
+}
+
 export interface Rect {
   x: number;
   y: number;

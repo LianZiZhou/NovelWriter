@@ -4,6 +4,7 @@ import { loadTokenizer } from '@novelwriter/core';
 import './styles/global.css';
 import './styles/app.css';
 import { App } from './App.tsx';
+import { TitleBar, desktop } from './components/TitleBar.tsx';
 import { useSettings } from './store/settings.ts';
 import { useStory } from './store/story.ts';
 
@@ -23,8 +24,12 @@ function Root() {
   return <App key={language} />;
 }
 
+// The desktop app draws its own title bar above the app (see components/TitleBar.tsx).
+if (desktop) document.body.classList.add('desktop', `desktop-${desktop.platform}`);
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
+    <TitleBar />
     <Root />
   </StrictMode>,
 );

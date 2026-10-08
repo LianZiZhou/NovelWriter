@@ -22,7 +22,7 @@ module.exports = {
   copyright: 'Copyright © LianZiZhou and contributors',
   directories: { output: 'release', buildResources: 'build' },
   // Everything the app runs is bundled into dist/main.mjs (see scripts/bundle.mjs).
-  files: ['package.json', 'dist/main.mjs', 'dist/main.mjs.LEGAL.txt'],
+  files: ['package.json', 'dist/main.mjs', 'dist/main.mjs.LEGAL.txt', 'dist/preload.cjs'],
   extraResources: [
     { from: '../web/dist', to: 'web' },
     { from: 'build/icon.png', to: 'icon.png' },

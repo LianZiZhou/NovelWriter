@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_SIZE, MIN_SIZE, isAppUrl, isExternalHttpUrl, parseJsonObject, restoreBounds } from '../src/util.ts';
+import { DEFAULT_SIZE, MIN_SIZE, isAppUrl, isExternalHttpUrl, menuPoint, parseJsonObject, restoreBounds } from '../src/util.ts';
 
 describe('desktop link handling', () => {
   it('only hands http(s) URLs to the system browser', () => {
@@ -43,5 +43,13 @@ describe('window state', () => {
     expect(parseJsonObject('{oops')).toEqual({});
     expect(parseJsonObject('[1,2]')).toEqual({});
     expect(parseJsonObject(undefined)).toEqual({});
+  });
+});
+
+describe('title bar menu', () => {
+  it('keeps the menu position sent by the page inside the window', () => {
+    expect(menuPoint(12.4, 38, 1200, 800)).toEqual({ x: 12, y: 38 });
+    expect(menuPoint(-5, 9000, 1200, 800)).toEqual({ x: 0, y: 800 });
+    expect(menuPoint('10', Number.NaN, 1200, 800)).toEqual({ x: 0, y: 0 });
   });
 });

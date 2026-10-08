@@ -930,4 +930,7 @@ export const ZH_EXTRA: Record<string, string> = {
   "Highlight and style text in the editor": "在编辑器中高亮和设置文本样式",
   "Change generation settings": "修改生成设置",
   "For NovelAI (.story)": "导出为 NovelAI 格式 (.story)",
+  "Application menu": "应用菜单",
+  "Restore": "还原",
+  "Maximize": "最大化",
 };

@@ -51,7 +51,8 @@ Credentials are stored in `data/auth.json` on the server and never sent to the b
 NovelWriter also ships as a desktop app for Windows, macOS and Linux. It runs the same server inside
 the app (on `127.0.0.1`, with a random port and a per-launch password, so other programs and web pages
 cannot use your stored credentials) and shows the UI in its own window. Login links, device-code pages
-and other external links open in your normal browser.
+and other external links open in your normal browser. The window has its own title bar in the app's theme
+(story title, app menu and window buttons on Windows and Linux; the native traffic lights on macOS).
 
 ### Download
 
