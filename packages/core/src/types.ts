@@ -307,6 +307,8 @@ export interface Shelf {
   title: string;
   description: string;
   createdAt: number;
+  /** Shelf this one sits on (nested shelves); null/undefined = the library root. */
+  parent?: string | null;
 }
 
 export interface StoryMeta {

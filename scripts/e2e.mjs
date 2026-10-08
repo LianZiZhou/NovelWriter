@@ -332,6 +332,61 @@ await step('export story to file', async () => {
   assert.ok(dl.suggestedFilename().endsWith('.story'));
 });
 
+await step('shelves: create, drag a story in, search the shelf, nested shelf, back out', async () => {
+  const title = await page.locator('.story-card.active .name').innerText();
+  await page.getByRole('button', { name: 'New Shelf' }).click();
+  await page.getByLabel('Shelf Name').fill('E2E Shelf');
+  await page.getByRole('button', { name: 'Create Shelf' }).click();
+  const shelfCard = page.locator('.shelf-card', { hasText: 'E2E Shelf' });
+  await page.locator('.story-card.active').dragTo(shelfCard);
+  await page.waitForFunction(() => !document.querySelector('.story-card.active'));
+  await shelfCard.click();
+  await page.locator('.story-card.active').waitFor();
+  await page.getByRole('button', { name: 'Search stories' }).click();
+  await page.getByPlaceholder('Search this shelf').fill('zzzz-not-here');
+  await page.getByText("We can't find what you're looking for.").waitFor();
+  await page.getByPlaceholder('Search this shelf').fill('');
+  await page.getByRole('button', { name: 'Search stories' }).click();
+  // A shelf inside this shelf.
+  await page.getByRole('button', { name: 'New Shelf' }).click();
+  await page.getByLabel('Shelf Name').fill('Inner Shelf');
+  await page.getByRole('button', { name: 'Create Shelf' }).click();
+  await page.locator('.shelf-card', { hasText: 'Inner Shelf' }).waitFor();
+  // Drag the story back to the library via the back button.
+  await page.locator('.story-card.active').dragTo(page.locator('.shelf-back'));
+  await page.locator('.shelf-back').click();
+  await page.locator('.story-card.active', { hasText: title }).waitFor();
+  assert.ok((await page.locator('.shelf-card', { hasText: 'E2E Shelf' }).innerText()).includes('0'), 'shelf now empty');
+  // Clean up: delete the outer shelf (the inner one moves up), then the inner one.
+  for (const name of ['E2E Shelf', 'Inner Shelf']) {
+    await page.locator('.shelf-card', { hasText: name }).getByRole('button', { name: 'Delete Shelf' }).click();
+    await page.getByRole('dialog', { name: 'Delete Shelf?' }).getByRole('button', { name: 'Delete' }).click();
+    await page.locator('.shelf-card', { hasText: name }).waitFor({ state: 'detached' });
+  }
+});
+
+await step('download all stories as a zip', async () => {
+  await page.getByRole('button', { name: 'Open Account Menu' }).click();
+  const [dl] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Download All Stories' }).click()]);
+  assert.ok(dl.suggestedFilename().endsWith('.zip'));
+  const path = await dl.path();
+  const { readFileSync } = await import('node:fs');
+  assert.equal(readFileSync(path).subarray(0, 2).toString(), 'PK');
+  await page.getByRole('button', { name: 'Open Account Menu' }).click();
+});
+
+await step('scenario browser and placeholders dialog', async () => {
+  await page.getByRole('button', { name: 'create a new story' }).click();
+  await page.getByRole('button', { name: /View All Scenarios/ }).click();
+  await page.getByLabel('Search scenarios').fill('goblin');
+  assert.equal(await page.locator('.scenario-card h3').count(), 1);
+  await page.locator('.scenario-card').first().getByRole('button', { name: 'Start' }).click();
+  await page.getByText('used in').first().waitFor();
+  await page.getByRole('textbox', { name: 'Your name' }).fill('Bramble');
+  await page.getByRole('button', { name: 'Fill Placeholders' }).click();
+  await page.waitForFunction(() => document.querySelector('.ProseMirror')?.textContent?.includes('Bramble'));
+});
+
 await page.screenshot({ path: `${out}final.png` });
 await browser.close();
 if (errors.length) {

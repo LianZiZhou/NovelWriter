@@ -3896,3 +3896,51 @@
 .lore-modal.docked .lore-name {
   min-width: 0;
 }
+
+.scenario-search {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 18px;
+}
+.scenario-search .input {
+  max-width: 420px;
+}
+
+/* Library: drag targets, empty states, shelves. */
+.story-card.drop-target,
+.shelf-back.drop-target {
+  outline: 2px dashed var(--text-headings);
+  outline-offset: -2px;
+}
+.lib-empty {
+  padding: 24px 20px;
+  font-size: 14px;
+  color: var(--text-placeholder);
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.shelf-desc {
+  padding: 10px 20px;
+  font-size: 13px;
+  color: var(--text-placeholder);
+  border-bottom: 1px solid var(--bg2);
+}
+.card-shelved {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  opacity: 0.7;
+  margin-top: 4px;
+}
+.filters-hint {
+  font-size: 12px;
+  color: var(--text-placeholder);
+  margin-top: 6px;
+}
+.placeholder-uses code {
+  font-family: var(--font-code);
+}

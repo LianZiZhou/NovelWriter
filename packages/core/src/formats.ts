@@ -2,6 +2,7 @@ import { docText, plainDoc } from './doc.ts';
 import { biasGroup, contextConfig, emptyLorebook, migrateStory, newLoreCategory, newLoreEntry, newStory } from './defaults.ts';
 import { flatten } from './history.ts';
 import { uid } from './util.ts';
+import { applyNovelAIExtras, bannedSequences, importAIDungeon, importKoboldSave, isAIDungeon, isKoboldSave, isNovelAIModule, moduleNote, novelAIDocumentText } from './foreign.ts';
 import type { ContextConfig, GenerationParams, LoreCategory, LoreEntry, Lorebook, PhraseBiasGroup, Placeholder, SamplerId, Story } from './types.ts';
 
 // ---------------------------------------------------------------- story files
@@ -102,7 +103,11 @@ export type ImportResult =
   | { kind: 'lorebook'; lorebook: Lorebook }
   | { kind: 'bias'; groups: PhraseBiasGroup[] }
   | { kind: 'preset'; preset: { name: string; params: Story['params'] } }
-  | { kind: 'theme'; theme: unknown };
+  | { kind: 'theme'; theme: unknown }
+  /** Banned token sequences (`.badwords`). */
+  | { kind: 'banned'; phrases: string[] }
+  /** A NovelAI AI module: can't run here; imported as a style note for the Author's Note. */
+  | { kind: 'module'; name: string; note: string };
 
 /** Import any supported file. `name` is used to guess the type for plain text. */
 export function importFile(name: string, content: string | Uint8Array): ImportResult {
@@ -118,6 +123,11 @@ export function importFile(name: string, content: string | Uint8Array): ImportRe
     return { kind: 'story', story: newStory({ title, doc, history: flatten(doc) }), needsPlaceholders: false };
   }
   const data = JSON.parse(trimmed) as Record<string, unknown>;
+  if (/\.badwords$/i.test(name) || (!Array.isArray(data) && 'bannedSequenceGroups' in data && !('content' in data) && !('scenarioVersion' in data))) {
+    return { kind: 'banned', phrases: bannedSequences((data as { bannedSequenceGroups?: unknown }).bannedSequenceGroups ?? data) };
+  }
+  if (!Array.isArray(data) && isNovelAIModule(data, name)) return { kind: 'module', name: String(data.name ?? 'Module'), note: moduleNote(data) };
+  if (!Array.isArray(data) && isKoboldSave(data)) return { kind: 'story', story: importKoboldSave(data, name), needsPlaceholders: false };
   const foreign = importForeignLorebook(data);
   if (foreign) return { kind: 'lorebook', lorebook: foreign };
   if (Array.isArray(data)) return { kind: 'bias', groups: data.map(importBiasGroup) };
@@ -141,6 +151,7 @@ export function importFile(name: string, content: string | Uint8Array): ImportRe
     return { kind: 'preset', preset: importPreset(data, name.replace(/\.[^.]+$/, '') || 'Imported Preset') };
   }
   if ('colors' in data && 'fonts' in data) return { kind: 'theme', theme: data };
+  if (isAIDungeon(data)) return { kind: 'story', story: importAIDungeon(data), needsPlaceholders: false };
   throw new Error('Unrecognized file format.');
 }
 
@@ -157,16 +168,18 @@ function phraseText(p: unknown): string | null {
     const o = p as Record<string, unknown>;
     if (typeof o.sequence === 'string') return o.sequence;
     if (typeof o.text === 'string') return o.text;
+    if (typeof o.phrase === 'string') return o.phrase;
   }
   return null;
 }
 
 export function importBiasGroup(raw: unknown): PhraseBiasGroup {
   const r = (raw ?? {}) as Record<string, unknown>;
-  const phrases = Array.isArray(r.phrases) ? (r.phrases.map(phraseText).filter(Boolean) as string[]) : [];
+  // NovelAI groups list `phrases`; single-phrase formats (HoloAI and others) put the phrase on the item itself.
+  const phrases = Array.isArray(r.phrases) ? (r.phrases.map(phraseText).filter(Boolean) as string[]) : [phraseText(r)].filter((x): x is string => !!x);
   return biasGroup({
     phrases,
-    bias: Number(r.bias ?? 0),
+    bias: Number(r.bias ?? r.value ?? r.strength ?? 0),
     ensureSequenceFinish: Boolean(r.ensureSequenceFinish ?? r.ensure_sequence_finish ?? false),
     generateOnce: Boolean(r.generateOnce ?? r.generate_once ?? true),
     enabled: r.enabled === undefined ? true : Boolean(r.enabled),
@@ -443,29 +456,47 @@ function importNovelAIScenario(d: Record<string, unknown>): Story {
   });
   if (ctx[0]?.contextConfig) s.contextSettings.memory = importContextConfig(ctx[0].contextConfig, s.contextSettings.memory);
   if (ctx[1]?.contextConfig) s.contextSettings.authorsNote = importContextConfig(ctx[1].contextConfig, s.contextSettings.authorsNote);
+  applyNovelAIExtras(s, d, importBiasGroup);
+  if ((d.settings as { prefix?: string } | undefined)?.prefix === 'special_openings' || d.isTA) s.mode = 'adventure';
   return s;
 }
 
-/** Best-effort import of legacy NovelAI .story files with plaintext fragments. */
+/**
+ * NovelAI `.story` files: V1 keeps the text as origin-tagged fragments; V2 keeps it in a msgpack `document`
+ * (text comes in as prompt text, since its origin data isn't documented).
+ */
 function importNovelAIStory(d: Record<string, unknown>): Story {
   const meta = (d.metadata ?? {}) as Record<string, unknown>;
   const content = (d.content ?? {}) as Record<string, unknown>;
   const storyRaw = (content.story ?? {}) as { fragments?: { data: string; origin: string }[] };
-  const doc = (storyRaw.fragments ?? []).map((f) => ({
+  let doc: Story['doc'] = (storyRaw.fragments ?? []).map((f) => ({
     text: f.data,
-    origin: (f.origin === 'ai' ? 'ai' : f.origin === 'edit' ? 'edit' : f.origin === 'prompt' ? 'prompt' : 'user') as Story['doc'][number]['origin'],
+    origin: (f.origin === 'ai' ? 'ai' : f.origin === 'edit' ? 'edit' : f.origin === 'prompt' || f.origin === 'root' ? 'prompt' : 'user') as Story['doc'][number]['origin'],
   }));
-  const ctx = Array.isArray(content.context) ? (content.context as { text?: string }[]) : [];
-  return newStory({
+  if (typeof content.document === 'string') {
+    const text = novelAIDocumentText(content.document);
+    if (text !== null && (text.length >= docText(doc).length || !doc.length)) doc = plainDoc(text, 'prompt');
+  }
+  const ctx = Array.isArray(content.context) ? (content.context as { text?: string; contextConfig?: unknown }[]) : [];
+  const settings = (content.settings ?? {}) as { parameters?: Record<string, unknown> };
+  const s = newStory({
     title: String(meta.title ?? 'Imported Story'),
     description: String(meta.description ?? ''),
     tags: Array.isArray(meta.tags) ? meta.tags.map(String) : [],
+    favorite: Boolean(meta.favorite),
+    mode: meta.isTA ? 'adventure' : 'storyteller',
     doc,
     history: flatten(doc),
     memory: ctx[0]?.text ?? '',
     authorsNote: ctx[1]?.text ?? '',
     lorebook: content.lorebook ? importLorebook(content.lorebook as Record<string, unknown>) : emptyLorebook(),
+    params: settings.parameters ? importParams(settings.parameters) : newStory().params,
+    step: Number((content.story as { step?: number } | undefined)?.step ?? 0),
   });
+  if (ctx[0]?.contextConfig) s.contextSettings.memory = importContextConfig(ctx[0].contextConfig, s.contextSettings.memory);
+  if (ctx[1]?.contextConfig) s.contextSettings.authorsNote = importContextConfig(ctx[1].contextConfig, s.contextSettings.authorsNote);
+  applyNovelAIExtras(s, content, importBiasGroup);
+  return s;
 }
 
 // ---------------------------------------------------------------- PNG embedding

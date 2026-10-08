@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { ArrowRight, Play, Sword, Article } from '@phosphor-icons/react';
+import { ArrowRight, MagnifyingGlass, Play, Sword, Article } from '@phosphor-icons/react';
 import { scenarioToStory } from '@novelwriter/core';
 import { useStory } from '../../store/story.ts';
 import { useUI } from '../../store/ui.ts';
@@ -13,14 +13,22 @@ const ADV_PREVIEW = 'There are Corgis lined up as far as your eyes can see. Smal
 export function NewStoryPage() {
   const store = useStory.getState();
   const [seed, setSeed] = useState(0);
+  const [browse, setBrowse] = useState(false);
+  const [query, setQuery] = useState('');
   const picks = useMemo(() => {
     const arr = [...STARTERS];
     for (let i = arr.length - 1; i > 0; i--) {
       const j = (i * 7 + seed * 13) % (i + 1);
       [arr[i], arr[j]] = [arr[j], arr[i]];
     }
-    return arr.slice(0, 1);
+    return arr.slice(0, 2);
   }, [seed]);
+  const all = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return STARTERS;
+    return STARTERS.filter((s) => `${s.title} ${s.author} ${s.tags.join(' ')} ${s.description} ${s.mode === 'adventure' ? 'text adventure' : 'storyteller'}`.toLowerCase().includes(q));
+  }, [query]);
+  const shown = browse ? all : picks;
 
   const start = async (mode: 'storyteller' | 'adventure') => {
     await store.createStory({ mode });
@@ -68,12 +76,26 @@ export function NewStoryPage() {
             </h2>
             <div style={{ fontSize: 14, marginTop: 8 }}>{t('Choose a scenario below. Placeholders let you personalize it before you start.')}</div>
           </div>
-          <button type="button" className="btn" style={{ fontSize: 16, padding: '10px 14px' }} onClick={() => setSeed(seed + 1)}>
-            {t('Shuffle')}
-          </button>
+          {browse ? (
+            <button type="button" className="btn" style={{ fontSize: 16, padding: '10px 14px' }} onClick={() => setBrowse(false)}>
+              {t('Show Fewer')}
+            </button>
+          ) : (
+            <button type="button" className="btn" style={{ fontSize: 16, padding: '10px 14px' }} onClick={() => setSeed(seed + 1)}>
+              {t('Shuffle')}
+            </button>
+          )}
         </div>
+        {browse && (
+          <div className="scenario-search">
+            <MagnifyingGlass size={18} />
+            <input className="input" autoFocus value={query} placeholder={t('Search scenarios by title, author or tag')} aria-label={t('Search scenarios')} onChange={(e) => setQuery(e.target.value)} />
+            <span className="muted">{t('{n} scenarios', { n: all.length })}</span>
+          </div>
+        )}
         <div className="scenario-grid">
-          {picks.map((s) => (
+          {browse && all.length === 0 && <div className="muted">{t("We can't find what you're looking for.")}</div>}
+          {shown.map((s) => (
             <div key={s.title} className="scenario-card">
               <div className="head">
                 <div className="row between">
@@ -99,24 +121,26 @@ export function NewStoryPage() {
                     </span>
                   )}
                   {s.tags.map((tag) => (
-                    <span key={tag} className="chip" style={{ background: 'transparent', opacity: 0.6 }}>
+                    <button type="button" key={tag} className="chip" style={{ background: 'transparent', opacity: 0.6 }} onClick={() => (setBrowse(true), setQuery(tag))} title={t('Show scenarios tagged {tag}', { tag })}>
                       {tag}
-                    </span>
+                    </button>
                   ))}
                 </div>
               </div>
               <div className="body">{s.description}</div>
             </div>
           ))}
-          <button
-            type="button"
-            className="scenario-card"
-            style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: 230 }}
-            onClick={() => setSeed(seed + 1)}
-          >
-            <h3 style={{ color: 'var(--text-headings)', fontSize: 18 }}>{t('View All Scenarios')}</h3>
-            <div className="muted" style={{ fontSize: 14 }}>{STARTERS.map((s) => s.title).join(' · ')}</div>
-          </button>
+          {!browse && (
+            <button
+              type="button"
+              className="scenario-card"
+              style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: 230, gap: 8 }}
+              onClick={() => setBrowse(true)}
+            >
+              <h3 style={{ color: 'var(--text-headings)', fontSize: 18 }}>{t('View All Scenarios')}</h3>
+              <div className="muted" style={{ fontSize: 14 }}>{t('{n} scenarios', { n: STARTERS.length })}</div>
+            </button>
+          )}
         </div>
       </div>
     </div>

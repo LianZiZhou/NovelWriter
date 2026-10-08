@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { docText } from '../src/doc.ts';
 import { adventureInput } from '../src/adventure.ts';
 import { applyPlaceholders, findPlaceholders } from '../src/scenario.ts';
 import { embedPngLorebook, exportLorebook, exportScenario, exportStoryFile, importFile, readPngLorebook } from '../src/formats.ts';
@@ -97,5 +98,73 @@ describe('presets', () => {
     if (r.kind !== 'preset') return;
     expect(r.preset.params).toMatchObject({ temperature: 1, maxLength: 160, topK: 25, tailFreeSampling: 0.925, repetitionPenalty: 1.9 });
     expect(r.preset.params.order.filter((o) => o.enabled).map((o) => o.id)).toEqual(['tfs', 'temperature', 'top_k']);
+  });
+});
+
+describe('placeholder definitions and uses', () => {
+  it('reads %{} headers, orders them and strips them when filling', async () => {
+    const { storyPlaceholders, placeholderUses } = await import('../src/scenario.ts');
+    const { newLoreEntry } = await import('../src/defaults.ts');
+    const s = newStory({
+      doc: [{ text: '%{2city[Veylan]:Home city:Where you grew up}\n%{1name[Mara]:Your name}\n${name} left ${city}.', origin: 'prompt' }],
+      systemPrompt: 'Write about ${name}.',
+    });
+    s.lorebook.entries.push(newLoreEntry({ displayName: '${city}', keys: ['${city}'], text: 'A city.' }));
+    const p = storyPlaceholders(s);
+    expect(p.map((x) => [x.key, x.defaultValue, x.description])).toEqual([
+      ['name', 'Mara', 'Your name'],
+      ['city', 'Veylan', 'Home city'],
+    ]);
+    expect(p[1].longDescription).toBe('Where you grew up');
+    expect(placeholderUses(s).get('name')).toEqual(['Story', 'System Prompt']);
+    const f = applyPlaceholders(s, { name: 'Ion', city: 'Tarn' });
+    expect(f.doc[0].text).toBe('Ion left Tarn.');
+    expect(f.systemPrompt).toBe('Write about Ion.');
+    expect(f.lorebook.entries[0].keys).toEqual(['Tarn']);
+  });
+});
+
+describe('foreign stories', () => {
+  it('imports NovelAI scenario extras, KoboldAI and AI Dungeon saves, badwords and modules', async () => {
+    const scen = importFile('x.scenario', JSON.stringify({
+      scenarioVersion: 3,
+      title: 'S',
+      prompt: 'Once.',
+      context: [{ text: 'mem' }, { text: 'an' }],
+      phraseBiasGroups: [{ phrases: [{ sequence: 'dragon' }], bias: 0.5, enabled: true }],
+      bannedSequenceGroups: [{ sequences: [{ sequence: 'NSFW' }], enabled: true }],
+      ephemeralContext: [{ text: 'EPH', startingStep: 1, delay: 2, duration: 3, repeat: false, contextConfig: { insertionPosition: -2 } }],
+      settings: { banBrackets: false, parameters: { temperature: 0.7 } },
+    }));
+    expect(scen.kind).toBe('story');
+    if (scen.kind !== 'story') return;
+    expect(scen.story.phraseBias[0].phrases).toEqual(['dragon']);
+    expect(scen.story.bannedTokens).toEqual(['NSFW']);
+    expect(scen.story.ephemeral[0]).toMatchObject({ text: 'EPH', startingStep: 1, delay: 2, duration: 3, position: -2 });
+    expect(scen.story.banBrackets).toBe(false);
+
+    const kobold = importFile('save.json', JSON.stringify({ gamestarted: true, prompt: 'The gate.', memory: 'M', authorsnote: 'A', actions: [' It opened.', ' Wind.'], worldinfo: [{ key: 'gate, door', content: 'An iron gate.', comment: 'Gate' }] }));
+    expect(kobold.kind === 'story' && docText(kobold.story.doc)).toBe('The gate. It opened. Wind.');
+    expect(kobold.kind === 'story' && kobold.story.lorebook.entries[0]).toMatchObject({ displayName: 'Gate', keys: ['gate', 'door'] });
+
+    const aid = importFile('adv.json', JSON.stringify({ title: 'Cave', prompt: 'You enter a cave.', memory: '', authorsNote: '', actions: [{ type: 'do', text: '\n> You light a torch.\n' }, { type: 'continue', text: 'Shadows flee.' }], storyCards: [{ keys: 'cave', value: 'Dark.', title: 'Cave' }] }));
+    expect(aid.kind === 'story' && aid.story.mode).toBe('adventure');
+    expect(aid.kind === 'story' && aid.story.doc.map((d) => d.origin)).toContain('ai');
+
+    expect(importFile('x.badwords', JSON.stringify({ sequences: [{ sequence: 'foo' }, 'bar'] }))).toEqual({ kind: 'banned', phrases: ['foo', 'bar'] });
+    const mod = importFile('noir.module', JSON.stringify({ name: 'Noir', description: 'Hardboiled prose.', data: 'AAAA', prefix: 'x' }));
+    expect(mod).toEqual({ kind: 'module', name: 'Noir', note: '[ Style: Noir — Hardboiled prose. ]' });
+    expect(importFile('h.bias', JSON.stringify([{ phrase: 'moon', bias: 2 }]))).toMatchObject({ kind: 'bias', groups: [{ phrases: ['moon'], bias: 2 }] });
+  });
+
+  it('reads the text of a msgpack story document', async () => {
+    const { novelAIDocumentText } = await import('../src/foreign.ts');
+    // { sections: { "a": { text: "One" }, "b": { text: "Two" } }, order: ["b", "a"] } in msgpack.
+    const enc = new TextEncoder();
+    const s = (x: string) => [0xa0 | x.length, ...enc.encode(x)];
+    const bytes = new Uint8Array([0x82, ...s('sections'), 0x82, ...s('a'), 0x81, ...s('text'), ...s('One'), ...s('b'), 0x81, ...s('text'), ...s('Two'), ...s('order'), 0x92, ...s('b'), ...s('a')]);
+    let bin = '';
+    for (const b of bytes) bin += String.fromCharCode(b);
+    expect(novelAIDocumentText(btoa(bin))).toBe('Two\nOne');
   });
 });

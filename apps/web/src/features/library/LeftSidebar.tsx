@@ -26,23 +26,32 @@ import {
   UserCircle,
   X,
 } from '@phosphor-icons/react';
-import { exportStoryFile, uid, type StoryMeta } from '@novelwriter/core';
+import { exportStoryFile, uid, zipFiles, type Shelf, type StoryMeta } from '@novelwriter/core';
 import { api } from '../../api.ts';
-import { download, useStory } from '../../store/story.ts';
+import { download, safeFileName, useStory } from '../../store/story.ts';
 import { useSettings } from '../../store/settings.ts';
 import { useUI } from '../../store/ui.ts';
 import { t } from '../../i18n.ts';
-import { timeAgo, Select, Toggle } from '../../components/ui.tsx';
+import { timeAgo, Modal, ModalHeader, Select, Toggle } from '../../components/ui.tsx';
 import { Logo } from '../../components/Logo.tsx';
 import { Identicon } from '../../components/Identicon.tsx';
 
 const REPO_URL = 'https://github.com/LianZiZhou/NovelWriter#readme';
 
-function StoryCard({ meta, active, compact }: { meta: StoryMeta; active: boolean; compact: boolean }) {
+function StoryCard({ meta, active, compact, shelvedIn }: { meta: StoryMeta; active: boolean; compact: boolean; shelvedIn?: string }) {
   const store = useStory.getState();
   const ui = useUI.getState();
   return (
-    <div className={`story-card ${active ? 'active' : ''}`} onClick={() => void store.openStory(meta.id)} data-story-id={meta.id}>
+    <div
+      className={`story-card ${active ? 'active' : ''}`}
+      onClick={() => void store.openStory(meta.id)}
+      data-story-id={meta.id}
+      draggable
+      onDragStart={(e) => {
+        e.dataTransfer.setData('application/x-novelwriter-story', meta.id);
+        e.dataTransfer.effectAllowed = 'move';
+      }}
+    >
       <div className="card-body">
         <div className="card-title">
           <span className="name">{meta.title || t('New Story')}</span>
@@ -70,6 +79,11 @@ function StoryCard({ meta, active, compact }: { meta: StoryMeta; active: boolean
           </span>
         </div>
         {!compact && meta.preview && <div className="card-preview">{meta.preview}</div>}
+        {shelvedIn && (
+          <div className="card-shelved">
+            {t('Shelved in:')} <Books size={13} /> {shelvedIn}
+          </div>
+        )}
         {!active && (
           <div className="card-time">
             {timeAgo(meta.updatedAt)} <Paperclip size={14} />
@@ -158,7 +172,8 @@ function AccountMenu({ onClose }: { onClose: () => void }) {
         onClick={async () => {
           const metas = await api.listStories();
           const all = await Promise.all(metas.map((m) => api.getStory(m.id)));
-          download('novelwriter-stories.json', JSON.stringify(all.map((s) => JSON.parse(exportStoryFile(s)))));
+          const zip = zipFiles(all.map((s) => ({ name: `${safeFileName(s.title || 'Untitled')}.story`, data: exportStoryFile(s) })));
+          download(`novelwriter-stories-${new Date().toISOString().slice(0, 10)}.zip`, zip.slice().buffer, 'application/zip');
         }}
       />
       <div className="menu-group">{t('Other')}</div>
@@ -210,6 +225,7 @@ function FiltersPanel() {
           {s.favoritesOnTop ? <Check size={12} weight="bold" /> : <X size={12} weight="bold" />} {t('Favorites')}
         </button>
       </div>
+      <div className="filters-hint">{t('Click the heart on a story to mark it as a favorite.')}</div>
       <div className="filters-group">{t('Sort By')}</div>
       <div className="row" style={{ gap: 8 }}>
         <Select
@@ -219,7 +235,7 @@ function FiltersPanel() {
           options={[
             { value: 'recent', label: t('Most Recent') },
             { value: 'alpha', label: t('Alphabetical') },
-            { value: 'created', label: t('Created') },
+            { value: 'created', label: t('Creation Date') },
           ]}
         />
         <button type="button" className="icon-btn" style={{ width: 28 }} aria-label={t('Change display order')} onClick={() => s.set({ librarySortAsc: !s.librarySortAsc })}>
@@ -247,10 +263,18 @@ export function LeftSidebar({ onCollapse, mobileOpen }: { onCollapse: () => void
   const store = useStory.getState();
   const ui = useUI.getState();
 
+  const [shelfEdit, setShelfEdit] = useState<Shelf | 'new' | null>(null);
+  const [dropTarget, setDropTarget] = useState<string | null>(null);
+  const shelfIds = useMemo(() => new Set(shelves.map((x) => x.id)), [shelves]);
+  const parentOf = (sh: Shelf) => (sh.parent && shelfIds.has(sh.parent) ? sh.parent : null);
+
   const list = useMemo(() => {
-    let l = q.trim()
-      ? library.filter((m) => `${m.title} ${m.preview} ${m.description} ${m.tags.join(' ')}`.toLowerCase().includes(q.toLowerCase()))
-      : library.filter((m) => (activeShelf ? m.shelf === activeShelf : !m.shelf || !shelves.some((s) => s.id === m.shelf)));
+    const query = q.trim().toLowerCase();
+    // Inside a shelf the search covers that shelf ("Search this shelf"); at the top it covers the whole library.
+    const inShelf = (m: StoryMeta) => (activeShelf ? m.shelf === activeShelf : !m.shelf || !shelfIds.has(m.shelf));
+    let l = query
+      ? library.filter((m) => (!activeShelf || m.shelf === activeShelf) && `${m.title} ${m.preview} ${m.description} ${m.tags.join(' ')}`.toLowerCase().includes(query))
+      : library.filter(inShelf);
     l = [...l];
     const dir = asc ? -1 : 1;
     if (sort === 'alpha') l.sort((a, b) => a.title.localeCompare(b.title) * -dir);
@@ -258,26 +282,64 @@ export function LeftSidebar({ onCollapse, mobileOpen }: { onCollapse: () => void
     else l.sort((a, b) => (b.updatedAt - a.updatedAt) * dir);
     if (favoritesOnTop) l.sort((a, b) => Number(b.favorite) - Number(a.favorite));
     return l;
-  }, [library, sort, asc, favoritesOnTop, q, activeShelf, shelves]);
+  }, [library, sort, asc, favoritesOnTop, q, activeShelf, shelfIds]);
+
+  const moveToShelf = async (storyId: string, shelfId: string | null) => {
+    const meta = library.find((m) => m.id === storyId);
+    if (!meta || meta.shelf === shelfId) return;
+    await store.setShelf(storyId, shelfId);
+    ui.toast(shelfId ? t('Moved to "{name}"', { name: shelves.find((x) => x.id === shelfId)?.title ?? '' }) : t('Moved to the library'), 'success');
+  };
+  const dropProps = (shelfId: string | null, key: string) => ({
+    onDragOver: (e: React.DragEvent) => {
+      if (!e.dataTransfer.types.includes('application/x-novelwriter-story')) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      setDropTarget(key);
+    },
+    onDragLeave: () => setDropTarget((d) => (d === key ? null : d)),
+    onDrop: (e: React.DragEvent) => {
+      const id = e.dataTransfer.getData('application/x-novelwriter-story');
+      setDropTarget(null);
+      if (id) {
+        e.preventDefault();
+        void moveToShelf(id, shelfId);
+      }
+    },
+  });
+  const countIn = (id: string): number => library.filter((m) => m.shelf === id).length + shelves.filter((x) => parentOf(x) === id).reduce((n, x) => n + countIn(x.id), 0);
 
   const shelf = shelves.find((s) => s.id === activeShelf);
-  const shelfCards =
-    !activeShelf && !q
-      ? shelves.map((s) => (
-          <div key={s.id} className="story-card shelf-card" onClick={() => useStory.setState({ activeShelf: s.id })}>
+  const shelfName = (id: string | null) => shelves.find((x) => x.id === id)?.title;
+  const shelfCards = !q
+    ? shelves
+        .filter((s) => parentOf(s) === (activeShelf ?? null))
+        .map((s) => (
+          <div
+            key={s.id}
+            className={`story-card shelf-card ${dropTarget === s.id ? 'drop-target' : ''}`}
+            onClick={() => useStory.setState({ activeShelf: s.id })}
+            {...dropProps(s.id, s.id)}
+          >
             <div className="card-body">
               <div className="card-title">
                 <span className="name row" style={{ gap: 8 }}>
-                  <Books size={18} /> {s.title}
+                  <Books size={18} /> {s.title || t('Untitled Shelf')}
                 </span>
                 <span className="card-icons" onClick={(e) => e.stopPropagation()}>
+                  <button type="button" className="icon-btn" aria-label={t('Shelf Settings')} title={t('Shelf Settings')} onClick={() => setShelfEdit(s)}>
+                    <PencilSimpleLine size={16} weight="fill" />
+                  </button>
                   <button
                     type="button"
                     className="icon-btn"
                     aria-label={t('Delete Shelf')}
+                    title={t('Delete Shelf')}
                     onClick={async () => {
-                      if (await ui.confirm({ title: t('Delete Shelf'), message: t('Stories on this shelf will be moved back to the library.'), danger: true, confirmLabel: t('Delete') })) {
-                        store.saveShelves(shelves.filter((x) => x.id !== s.id));
+                      if (await ui.confirm({ title: t('Delete Shelf?'), message: t('Stories and shelves on this shelf will be moved up one level.'), danger: true, confirmLabel: t('Delete') })) {
+                        const up = parentOf(s);
+                        for (const m of library.filter((m) => m.shelf === s.id)) await store.setShelf(m.id, up);
+                        store.saveShelves(shelves.filter((x) => x.id !== s.id).map((x) => (x.parent === s.id ? { ...x, parent: up } : x)));
                       }
                     }}
                   >
@@ -285,13 +347,14 @@ export function LeftSidebar({ onCollapse, mobileOpen }: { onCollapse: () => void
                   </button>
                 </span>
               </div>
+              {!compact && s.description && <div className="card-preview">{s.description}</div>}
               <div className="card-time">
-                {library.filter((m) => m.shelf === s.id).length} {t('Stories')}
+                {countIn(s.id)} {t('Stories')}
               </div>
             </div>
           </div>
         ))
-      : [];
+    : [];
 
   return (
     <aside className={`left-sidebar ${mobileOpen ? 'mobile-open' : ''}`} aria-label={t('Your Stories')}>
@@ -322,8 +385,15 @@ export function LeftSidebar({ onCollapse, mobileOpen }: { onCollapse: () => void
         <>
           <div className="lib-head">
             {shelf ? (
-              <button type="button" className="row title" style={{ gap: 8, fontWeight: 400 }} onClick={() => useStory.setState({ activeShelf: null })}>
-                <ArrowLeft size={16} /> {shelf.title}
+              <button
+                type="button"
+                className={`row title shelf-back ${dropTarget === '__up' ? 'drop-target' : ''}`}
+                style={{ gap: 8, fontWeight: 400 }}
+                title={t('Back to {name}', { name: shelfName(parentOf(shelf)) ?? t('Your Stories') })}
+                onClick={() => useStory.setState({ activeShelf: parentOf(shelf) })}
+                {...dropProps(parentOf(shelf), '__up')}
+              >
+                <ArrowLeft size={16} /> {shelf.title || t('Untitled Shelf')}
               </button>
             ) : (
               <span className="title">{panel === 'filters' ? t('Filters') : t('Your Stories')}</span>
@@ -347,15 +417,21 @@ export function LeftSidebar({ onCollapse, mobileOpen }: { onCollapse: () => void
             {panel === 'filters' && <FiltersPanel />}
             {searchOpen && (
               <div className="lib-search">
-                <input autoFocus className="input" placeholder={t('Search stories')} value={q} onChange={(e) => setQ(e.target.value)} aria-label={t('Search stories')} />
+                <input autoFocus className="input" placeholder={shelf ? t('Search this shelf') : t('Search your stories')} value={q} onChange={(e) => setQ(e.target.value)} aria-label={shelf ? t('Search this shelf') : t('Search your stories')} />
               </div>
             )}
             {shelvesOnTop && shelfCards}
+            {shelf?.description && !q && <div className="shelf-desc">{shelf.description}</div>}
             {list.map((m) => (
-              <StoryCard key={m.id} meta={m} active={m.id === currentId} compact={compact} />
+              <StoryCard key={m.id} meta={m} active={m.id === currentId} compact={compact} shelvedIn={q && !activeShelf && m.shelf ? shelfName(m.shelf) : undefined} />
             ))}
             {!shelvesOnTop && shelfCards}
-            {list.length === 0 && shelfCards.length === 0 && <div className="muted" style={{ padding: 20, fontSize: 14 }}>{t('No stories yet.')}</div>}
+            {list.length === 0 && shelfCards.length === 0 && (
+              <div className="lib-empty">
+                {q ? t("We can't find what you're looking for.") : shelf ? t('This shelf is empty.') : t('Looks like your Library is empty.')}
+                {!q && shelf && <div className="desc">{t('Drag stories here, or use the pencil on a story to move it to this shelf.')}</div>}
+              </div>
+            )}
           </div>
         </>
       )}
@@ -364,14 +440,7 @@ export function LeftSidebar({ onCollapse, mobileOpen }: { onCollapse: () => void
           <Plus size={16} weight="bold" /> {t('New Story')}
         </button>
         <div className="row2">
-          <button
-            type="button"
-            className="shelf-btn"
-            onClick={() => {
-              const title = prompt(t('Shelf'), t('New Shelf'));
-              if (title) store.saveShelves([...shelves, { id: uid(), title, description: '', createdAt: Date.now() }]);
-            }}
-          >
+          <button type="button" className="shelf-btn" onClick={() => setShelfEdit('new')}>
             <Books size={18} /> {t('New Shelf')}
           </button>
           <button type="button" className="import-btn" onClick={() => fileRef.current?.click()}>
@@ -383,13 +452,75 @@ export function LeftSidebar({ onCollapse, mobileOpen }: { onCollapse: () => void
           type="file"
           multiple
           hidden
-          accept=".story,.scenario,.lorebook,.json,.txt,.png,.bias,.preset,.naitheme"
+          accept=".story,.scenario,.lorebook,.json,.txt,.png,.bias,.preset,.gensettings,.generationset,.badwords,.module,.naitheme"
           onChange={(e) => {
             if (e.target.files) void store.importFiles(e.target.files);
             e.target.value = '';
           }}
         />
       </div>
+      {shelfEdit && (
+        <ShelfSettings
+          shelf={shelfEdit === 'new' ? null : shelfEdit}
+          shelves={shelves}
+          defaultParent={activeShelf}
+          onClose={() => setShelfEdit(null)}
+          onSave={(sh) => {
+            store.saveShelves(shelves.some((x) => x.id === sh.id) ? shelves.map((x) => (x.id === sh.id ? sh : x)) : [...shelves, sh]);
+            setShelfEdit(null);
+          }}
+        />
+      )}
     </aside>
   );
 }
+
+/** Create or edit a shelf: title, description and the shelf it sits on. */
+function ShelfSettings({ shelf, shelves, defaultParent, onClose, onSave }: { shelf: Shelf | null; shelves: Shelf[]; defaultParent: string | null; onClose: () => void; onSave: (s: Shelf) => void }) {
+  const [title, setTitle] = useState(shelf?.title ?? '');
+  const [description, setDescription] = useState(shelf?.description ?? '');
+  const [parent, setParent] = useState<string>(shelf ? (shelf.parent ?? '__root') : (defaultParent ?? '__root'));
+  // A shelf can't sit on itself or on one of its own sub-shelves.
+  const descendants = (id: string): string[] => shelves.filter((x) => x.parent === id).flatMap((x) => [x.id, ...descendants(x.id)]);
+  const blocked = new Set(shelf ? [shelf.id, ...descendants(shelf.id)] : []);
+  return (
+    <Modal onClose={onClose} width={460} label={shelf ? t('Shelf Settings') : t('New Shelf')}>
+      <ModalHeader title={shelf ? t('Shelf Settings') : t('New Shelf')} onClose={onClose} />
+      <form
+        className="modal-body"
+        style={{ display: 'flex', flexDirection: 'column', gap: 12 }}
+        onSubmit={(e) => {
+          e.preventDefault();
+          onSave({ id: shelf?.id ?? uid(), createdAt: shelf?.createdAt ?? Date.now(), title: title.trim() || t('New Shelf'), description, parent: parent === '__root' ? null : parent });
+        }}
+      >
+        <label className="number-field">
+          <span style={{ fontWeight: 600 }}>{t('Shelf Name')}</span>
+          <input className="input" autoFocus value={title} placeholder={t('New Shelf')} onChange={(e) => setTitle(e.target.value)} />
+        </label>
+        <label className="number-field">
+          <span style={{ fontWeight: 600 }}>{t('Description')}</span>
+          <textarea className="textarea" style={{ height: 90 }} value={description} onChange={(e) => setDescription(e.target.value)} />
+        </label>
+        <div className="number-field">
+          <span style={{ fontWeight: 600 }}>{t('Inside Shelf')}</span>
+          <Select
+            value={parent}
+            ariaLabel={t('Inside Shelf')}
+            onChange={setParent}
+            options={[{ value: '__root', label: t('Your Stories') }, ...shelves.filter((x) => !blocked.has(x.id)).map((x) => ({ value: x.id, label: x.title }))]}
+          />
+        </div>
+        <div className="row" style={{ justifyContent: 'flex-end', gap: 8 }}>
+          <button type="button" className="btn" onClick={onClose}>
+            {t('Cancel')}
+          </button>
+          <button type="submit" className="btn primary">
+            {shelf ? t('Save') : t('Create Shelf')}
+          </button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+

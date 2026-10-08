@@ -13,3 +13,5 @@ export * from './formats.ts';
 export * from './prompts.ts';
 export * from './stats.ts';
 export * from './backend.ts';
+export * from './foreign.ts';
+export * from './zip.ts';

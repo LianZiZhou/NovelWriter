@@ -107,6 +107,8 @@ interface StoryState {
   duplicateStory: (id: string) => Promise<void>;
   downloadStory: (id: string) => Promise<void>;
   setFavorite: (id: string, fav: boolean) => Promise<void>;
+  /** Move a story onto a shelf (null = the library root). */
+  setShelf: (id: string, shelf: string | null) => Promise<void>;
   importFiles: (files: FileList | File[]) => Promise<void>;
   saveShelves: (s: Shelf[]) => void;
   savePresets: (p: Preset[]) => void;
@@ -411,6 +413,21 @@ export const useStory = create<StoryState>((set, get) => ({
     set({ library: upsertMeta(get().library, meta) });
   },
 
+  async setShelf(id, shelf) {
+    // Update the card right away so a dragged story leaves the list at once.
+    set({ library: get().library.map((m) => (m.id === id ? { ...m, shelf } : m)) });
+    if (get().current?.id === id) {
+      get().update((s) => {
+        s.shelf = shelf;
+      });
+      return;
+    }
+    const s = await api.getStory(id);
+    s.shelf = shelf;
+    const meta = await api.saveStory(s);
+    set({ library: upsertMeta(get().library, meta) });
+  },
+
   async importFiles(files) {
     const ui = useUI.getState();
     for (const f of Array.from(files)) {
@@ -437,6 +454,18 @@ export const useStory = create<StoryState>((set, get) => ({
           const p: Preset = { id: uid(), name: r.preset.name, params: r.preset.params };
           get().savePresets([...get().presets, p]);
           ui.toast(t('Imported preset "{name}"', { name: p.name }), 'success');
+        } else if (r.kind === 'banned') {
+          if (!get().current) await get().createStory();
+          get().update((s) => {
+            s.bannedTokens = [...new Set([...s.bannedTokens, ...r.phrases])];
+          });
+          ui.toast(t('Imported {n} banned tokens', { n: r.phrases.length }), 'success');
+        } else if (r.kind === 'module') {
+          if (!get().current) await get().createStory();
+          get().update((s) => {
+            s.authorsNote = s.authorsNote ? `${s.authorsNote}\n${r.note}` : r.note;
+          });
+          ui.toast(t('"{name}" is a trained AI module, which can\'t run here. Its description was added to the Author\'s Note as a style hint.', { name: r.name }), 'info');
         } else if (r.kind === 'theme') {
           const th = r.theme as { name?: string };
           const st = useSettings.getState();

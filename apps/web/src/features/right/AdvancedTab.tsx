@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { ArrowClockwise, X } from '@phosphor-icons/react';
-import { exportBiasGroups, type BuiltContext, type ContextSourceKind } from '@novelwriter/core';
+import { exportBiasGroups, storyPlaceholders, type BuiltContext, type ContextSourceKind } from '@novelwriter/core';
 import { download, safeFileName, useStory } from '../../store/story.ts';
 import { useUI } from '../../store/ui.ts';
 import { t } from '../../i18n.ts';
@@ -188,7 +188,9 @@ export function AdvancedTab() {
           className="btn block"
           onClick={async () => {
             await store.duplicateStory(story.id);
-            ui.open('placeholders');
+            const copy = useStory.getState().current;
+            if (copy && storyPlaceholders(copy).length) ui.open('placeholders');
+            else ui.toast(t('Duplicated. This story has no placeholders; add ${name[default]:description} to its text to make a scenario.'), 'info');
           }}
         >
           {t('Duplicate and Start as Scenario')}

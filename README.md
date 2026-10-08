@@ -85,7 +85,18 @@ Credentials are stored in `data/auth.json` on the server and never sent to the b
   custom instructions, with strength/length settings and Adjust (run again on the result).
 - **Text Adventure**: Do / Say / Story input with the usual shortcuts (`l`, `i`, `n`, `x door`,
   `!`, `"`…).
-- **Scenarios** with `${placeholder[default]:description}` fields.
+- **Scenarios** with `${placeholder[default]:description}` fields and `%{1key[default]:Label:Description}`
+  definitions; placeholders work in the story, Memory, Author's Note, system prompt, prefill, ephemeral
+  context, category headers and lore entries/keys. The import dialog shows where each one is used and
+  can fill or keep them. 16 original built-in scenarios with a searchable browser.
+- **Library**: shelves with names, descriptions and nested shelves, drag stories onto a shelf (or back out),
+  search the whole library or one shelf, favorites, sort by recent/alphabetical/creation date, and
+  Download All Stories as a `.zip`.
+- **Import** (drop files on the window or use Import File): NovelAI `.story` (fragment-based and the
+  newer document format; text from the latter comes in as prompt text), `.scenario` (incl. phrase bias,
+  banned tokens, ephemeral context, sampler settings), `.lorebook`, `.preset`/`.gensettings`, `.bias`,
+  `.badwords`, `.module` (as a style note; trained modules can't run), KoboldAI saves, AI Dungeon
+  adventures/scenarios, SillyTavern/Agnai lorebooks, plain text and PNG-embedded lorebooks.
 - **User scripts**: sandboxed hooks to rewrite the context and the AI response.
 - **Screenshot Designer** (title, date, pen name, logo, colours, legend, model, background,
   comment, speech highlighting; PNG, JPG or clipboard).

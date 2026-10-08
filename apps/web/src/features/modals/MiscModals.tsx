@@ -13,6 +13,7 @@ import {
   backendCaps,
   slice,
   storyPlaceholders,
+  placeholderUses,
   applyPlaceholders,
   storyStats,
   tokenIds,
@@ -516,6 +517,7 @@ export function PlaceholdersModal({ onClose }: { onClose: () => void }) {
   const story = useStory((s) => s.current)!;
   const store = useStory.getState();
   const placeholders = useMemo(() => storyPlaceholders(story), [story]);
+  const uses = useMemo(() => placeholderUses(story), [story]);
   const [values, setValues] = useState<Record<string, string>>(() => Object.fromEntries(placeholders.map((p) => [p.key, p.defaultValue])));
   useEffect(() => {
     if (!placeholders.length) onClose();
@@ -540,16 +542,25 @@ export function PlaceholdersModal({ onClose }: { onClose: () => void }) {
           onClose();
         }}
       >
+        <div className="desc">{t('This scenario has placeholders. Fill them in to personalize it, or keep them to edit the scenario itself.')}</div>
         {placeholders.map((p) => (
           <label key={p.key} className="number-field">
             <span style={{ fontWeight: 600 }}>{p.description || p.key}</span>
             {p.longDescription && <span className="desc">{p.longDescription}</span>}
-            <input className="input" value={values[p.key] ?? ''} onChange={(e) => setValues({ ...values, [p.key]: e.target.value })} />
+            <input className="input" value={values[p.key] ?? ''} aria-label={p.description || p.key} onChange={(e) => setValues({ ...values, [p.key]: e.target.value })} />
+            <span className="desc placeholder-uses">
+              <code>{'${' + p.key + '}'}</code> {t('used in')}: {(uses.get(p.key) ?? []).map((w) => (w.includes(': ') ? `${t(w.split(': ')[0])}: ${w.split(': ').slice(1).join(': ')}` : t(w))).join(', ') || '—'}
+            </span>
           </label>
         ))}
-        <button type="submit" className="btn primary">
-          {t('Start')}
-        </button>
+        <div className="row" style={{ justifyContent: 'flex-end', gap: 8 }}>
+          <button type="button" className="btn" onClick={onClose} title={t('Start without replacing the placeholders, e.g. to edit the scenario.')}>
+            {t('Keep Placeholders')}
+          </button>
+          <button type="submit" className="btn primary">
+            {t('Fill Placeholders')}
+          </button>
+        </div>
       </form>
     </Modal>
   );
