@@ -45,6 +45,51 @@ try {
     assert.equal(await page.evaluate(() => typeof globalThis.require + typeof globalThis.process), 'undefinedundefined');
   });
 
+  await step('styled title bar drives the window through the preload bridge', async () => {
+    const mac = process.platform === 'darwin';
+    await page.waitForSelector(`header.titlebar.${mac ? 'mac' : 'framed'}`);
+    // The bridge exposes only the window controls.
+    assert.deepEqual(
+      await page.evaluate(() => Object.keys(window.novelwriterDesktop).sort()),
+      ['close', 'getState', 'minimize', 'onState', 'platform', 'showMenu', 'toggleMaximize'],
+    );
+    // Window managers do the actual resizing (and Xvfb has none), so the window methods are
+    // stubbed: this checks button -> IPC -> origin check -> window -> state event -> button.
+    await app.evaluate(({ BrowserWindow, Menu }) => {
+      const w = BrowserWindow.getAllWindows()[0];
+      const calls = (globalThis.__winCalls = []);
+      let max = false;
+      w.isMaximized = () => max;
+      w.maximize = () => (calls.push('maximize'), (max = true), w.emit('maximize'));
+      w.unmaximize = () => (calls.push('unmaximize'), (max = false), w.emit('unmaximize'));
+      w.minimize = () => calls.push('minimize');
+      Menu.getApplicationMenu().popup = (o) => calls.push(`menu@${o.x},${o.y}`);
+    });
+    const calls = () => app.evaluate(() => globalThis.__winCalls);
+    if (mac) {
+      // macOS keeps the native traffic lights; the bridge still drives and reports the window.
+      await page.evaluate(() => window.novelwriterDesktop.toggleMaximize());
+      await page.waitForFunction(() => window.novelwriterDesktop.getState().then((s) => s.maximized), null, { timeout: 10_000 });
+    } else {
+      const max = '.titlebar-controls .titlebar-btn:nth-child(2)';
+      assert.equal(await page.getAttribute(max, 'aria-label'), 'Maximize');
+      await page.click(max);
+      await page.waitForFunction((sel) => document.querySelector(sel)?.getAttribute('aria-label') === 'Restore', max, { timeout: 10_000 });
+      await page.click(max);
+      await page.waitForFunction((sel) => document.querySelector(sel)?.getAttribute('aria-label') === 'Maximize', max, { timeout: 10_000 });
+      await page.click('.titlebar-controls .titlebar-btn:nth-child(1)');
+      await page.click('.titlebar-btn.menu');
+      let got = await calls();
+      for (let i = 0; i < 40 && got.length < 4; i++) {
+        await page.waitForTimeout(50);
+        got = await calls();
+      }
+      assert.deepEqual(got.slice(0, 3), ['maximize', 'unmaximize', 'minimize']);
+      assert.match(got[3] ?? '', /^menu@\d+,\d+$/);
+    }
+    if (process.env.SMOKE_SCREENSHOT) await page.screenshot({ path: process.env.SMOKE_SCREENSHOT.replace(/(\.png)?$/, '-titlebar.png') });
+  });
+
   await step('API reachable from the window, refused without the per-launch password', async () => {
     assert.deepEqual(await page.evaluate(() => fetch('/api/health').then((r) => r.json())), { ok: true });
     assert.equal((await fetch(`${origin}/api/health`)).status, 401);

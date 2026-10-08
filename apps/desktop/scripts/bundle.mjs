@@ -42,5 +42,20 @@ const result = await build({
   logLevel: 'warning',
 });
 
+// The window's preload runs sandboxed, where only CommonJS and require('electron') work.
+await build({
+  absWorkingDir: root,
+  entryPoints: ['src/preload.ts'],
+  outfile: 'dist/preload.cjs',
+  bundle: true,
+  platform: 'node',
+  format: 'cjs',
+  target: 'node22',
+  external: ['electron'],
+  minifyWhitespace: true,
+  minifySyntax: true,
+  logLevel: 'warning',
+});
+
 const bytes = Object.values(result.metafile.outputs).reduce((n, o) => n + o.bytes, 0);
 console.log(`bundled dist/main.mjs (${(bytes / 1024 / 1024).toFixed(1)} MB incl. source map)`);
