@@ -1,0 +1,32 @@
+{
+  "name": "novelwriter",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "concurrently -k -n server,web -c blue,magenta \"npm run dev -w @novelwriter/server\" \"npm run dev -w @novelwriter/web\"",
+    "build": "npm run build -w @novelwriter/web",
+    "start": "npm run start -w @novelwriter/server",
+    "test": "vitest run",
+    "typecheck": "tsc -p packages/core && tsc -p apps/server && tsc -p apps/web"
+  },
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "devDependencies": {
+    "@types/node": "24.13.6",
+    "concurrently": "10.0.5",
+    "playwright-core": "1.56.1",
+    "typescript": "7.0.2",
+    "vitest": "5.0.1"
+  },
+  "overrides": {
+    "@tiptap/core": "3.31.3",
+    "@tiptap/pm": "3.31.3",
+    "@tiptap/extension-bubble-menu": "3.31.3",
+    "@tiptap/extension-floating-menu": "3.31.3"
+  }
+}
