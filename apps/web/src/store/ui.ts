@@ -2,6 +2,7 @@ import { create } from 'zustand';
 
 export type ModalName =
   | 'lorebook'
+  | 'tokenProbs'
   | 'settings'
   | 'contextViewer'
   | 'contextSettings'

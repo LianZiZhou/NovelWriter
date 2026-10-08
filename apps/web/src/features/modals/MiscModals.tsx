@@ -7,6 +7,7 @@ import {
   commit,
   docText,
   pathTo,
+  backendCaps,
   slice,
   storyPlaceholders,
   applyPlaceholders,
@@ -393,6 +394,8 @@ const SAMPLER_NAMES: Record<SamplerId, string> = {
 /** Sampler order table: drag rows to reorder, disable/enable on the right. */
 export function SamplersModal({ onClose }: { onClose: () => void }) {
   const story = useStory((s) => s.current)!;
+  const info = useStory((s) => s.modelInfo)();
+  const caps = backendCaps(info?.flavor ?? 'chat-only');
   const store = useStory.getState();
   const order = story.params.order;
   const setOrder = (o: typeof order) => store.update((s) => void (s.params = { ...s.params, order: o }));
@@ -402,12 +405,13 @@ export function SamplersModal({ onClose }: { onClose: () => void }) {
       <ModalHeader title={t('Samplers')} onClose={onClose} />
       <p className="samplers-help">{t('You can reorder samplers here.')}</p>
       <p className="samplers-help">{t('Disabled samplers will be hidden from the sidebar.')}</p>
+      {caps.samplerOrder ? null : <p className="samplers-help desc">{t('This model applies samplers in its own fixed order.')}</p>}
       <div className="modal-body samplers-table" role="list">
         {order.map((s, i) => (
           <div
             key={s.id}
             role="listitem"
-            className={`sampler-row ${drag === i ? 'dragging' : ''}`}
+            className={`sampler-row ${drag === i ? 'dragging' : ''} ${caps.params.includes(s.id as SamplerId) ? '' : 'unsupported'}`}
             draggable
             title={t(SAMPLER_INFO[s.id as SamplerId].help)}
             onDragStart={() => setDrag(i)}
@@ -425,6 +429,7 @@ export function SamplersModal({ onClose }: { onClose: () => void }) {
             <span className="sampler-name">
               {t(SAMPLER_NAMES[s.id as SamplerId])}
               {!s.enabled && <span className="sampler-off">({t('disabled')})</span>}
+              {!caps.params.includes(s.id as SamplerId) && <span className="sampler-unsupported">{t('not used by this model')}</span>}
             </span>
             <button type="button" className="sampler-toggle" aria-label={`${s.enabled ? 'disable' : 'enable'} ${s.id}`} onClick={() => setOrder(order.map((x, j) => (j === i ? { ...x, enabled: !x.enabled } : x)))}>
               {s.enabled ? t('disable') : t('enable')}

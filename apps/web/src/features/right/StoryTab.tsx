@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { ArrowRight, ArrowSquareOut, ArrowsLeftRight, Book, CaretDown, CaretUp, ChartBar, Copy, ImageSquare, CornersOut, DownloadSimple, MagnifyingGlass, Sword, Article } from '@phosphor-icons/react';
-import { countTokens, exportPlaintext, exportScenario, exportStoryFile, searchLore } from '@novelwriter/core';
+import { backendCaps, countTokens, exportPlaintext, exportScenario, exportStoryFile, searchLore } from '@novelwriter/core';
 import { download, safeFileName, useStory, useStoryMeta } from '../../store/story.ts';
 import { useSettings } from '../../store/settings.ts';
 import { useUI } from '../../store/ui.ts';
@@ -32,6 +32,10 @@ export function StoryTab() {
   const ui = useUI.getState();
   const [q, setQ] = useState('');
   const [exportOpen, setExportOpen] = useState(false);
+  const tokenProbs = useSettings((x) => x.tokenProbabilities);
+  const editorProbs = useSettings((x) => x.editorTokenProbabilities);
+  const modelInfo = useStory((x) => x.modelInfo)();
+  const logprobsCaps = backendCaps(modelInfo?.flavor ?? 'chat-only').logprobs;
   const adventure = story.mode === 'adventure';
   const results = q ? searchLore(story.lorebook.entries, q).slice(0, 8) : [];
 
@@ -104,10 +108,16 @@ export function StoryTab() {
         />
         <ToggleRow
           title={t('Editor Token Probabilities')}
-          desc={t('Enable to show selectable alternate tokens and probabilities in the editor.') + ' ' + t('(Not available through chat model APIs.)')}
-          on={false}
-          onChange={() => ui.toast(t('Token probabilities are not exposed by the connected chat model APIs.'))}
-          disabled
+          desc={
+            !logprobsCaps
+              ? t('Enable to show selectable alternate tokens and probabilities in the editor.') + ' ' + t('(Not reported by this model.)')
+              : !tokenProbs
+                ? t('Enable to show selectable alternate tokens and probabilities in the editor.') + ' ' + t('Turn on Token Probabilities in AI Settings first.')
+                : t('Enable to show selectable alternate tokens and probabilities in the editor.')
+          }
+          on={tokenProbs && editorProbs && !!logprobsCaps}
+          onChange={(v) => useSettings.getState().set({ editorTokenProbabilities: v })}
+          disabled={!tokenProbs || !logprobsCaps}
         />
       </div>
 

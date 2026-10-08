@@ -127,3 +127,22 @@ describe('diffDocs', () => {
     }
   });
 });
+
+describe('token probabilities on history', () => {
+  it('follows later edits and drops edited tokens', async () => {
+    const { setNodeProbs, visibleTokenProbs } = await import('../src/history.ts');
+    let h = createHistory();
+    h = commit(h, 'prompt', [{ pos: 0, removed: [], inserted: [{ text: 'Once ', origin: 'prompt' }] }]).history;
+    const r = commit(h, 'ai', [{ pos: 5, removed: [], inserted: [{ text: 'upon a time', origin: 'ai' }] }]);
+    h = setNodeProbs(r.history, r.node.id, [
+      { o: 0, t: 'upon', lp: -0.1, top: [] },
+      { o: 4, t: ' a', lp: -0.2, top: [] },
+      { o: 6, t: ' time', lp: -1.5, top: [] },
+    ]);
+    expect(visibleTokenProbs(h).map((x) => [x.from, x.to])).toEqual([[5, 9], [9, 11], [11, 16]]);
+    // Insert "Hi " at the start: everything shifts by 3. Then edit inside " a".
+    h = commit(h, 'user', [{ pos: 0, removed: [], inserted: [{ text: 'Hi ', origin: 'user' }] }]).history;
+    h = commit(h, 'edit', [{ pos: 12, removed: [{ text: 'a', origin: 'ai' }], inserted: [{ text: 'the', origin: 'edit' }] }]).history;
+    expect(visibleTokenProbs(h).map((x) => [x.from, x.to, x.prob.t])).toEqual([[8, 12, 'upon'], [16, 21, ' time']]);
+  });
+});

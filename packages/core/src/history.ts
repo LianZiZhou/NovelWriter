@@ -1,6 +1,6 @@
 import { applyChanges, revertChanges } from './doc.ts';
 import { uid } from './util.ts';
-import type { Change, History, HistoryNode, HistoryNodeType, Span } from './types.ts';
+import type { TokenProb, Change, History, HistoryNode, HistoryNodeType, Span } from './types.ts';
 
 export function createHistory(): History {
   return {
@@ -204,4 +204,45 @@ export function structureStats(h: History): StructureStats {
     mostRetries,
     averageRetries: retryParents ? Math.round((retrySum / retryParents) * 100) / 100 : 0,
   };
+}
+
+/** How many AI nodes keep their token probabilities (older ones are dropped to bound story size). */
+export const MAX_PROB_NODES = 30;
+
+/** Attach token probabilities to a node and drop them from the oldest nodes beyond the limit. */
+export function setNodeProbs(h: History, id: string, probs: TokenProb[]): History {
+  const nodes = { ...h.nodes, [id]: { ...h.nodes[id], probs } };
+  const withProbs = Object.values(nodes)
+    .filter((n) => n.probs?.length)
+    .sort((a, b) => b.time - a.time);
+  for (const n of withProbs.slice(MAX_PROB_NODES)) nodes[n.id] = { ...n, probs: undefined };
+  return { ...h, nodes };
+}
+
+/**
+ * Token probabilities of AI text still present in the current document, as absolute text ranges.
+ * Offsets are carried through later edits; tokens touched by an edit are dropped.
+ */
+export function visibleTokenProbs(h: History): { from: number; to: number; prob: TokenProb; node: string }[] {
+  const path = pathTo(h, h.current);
+  const out: { from: number; to: number; prob: TokenProb; node: string }[] = [];
+  for (let i = 0; i < path.length; i++) {
+    const n = h.nodes[path[i]];
+    if (!n.probs?.length || n.type !== 'ai' || !n.changes[0]) continue;
+    const base = n.changes[0].pos;
+    let ranges = n.probs.map((p) => ({ from: base + p.o, to: base + p.o + p.t.length, prob: p, node: n.id }));
+    // Later changes on the path (and the node's own changes after the first) shift or remove ranges.
+    const later: Change[] = [...n.changes.slice(1)];
+    for (let j = i + 1; j < path.length; j++) later.push(...h.nodes[path[j]].changes);
+    for (const c of later) {
+      const removed = c.removed.reduce((a, s) => a + s.text.length, 0);
+      const inserted = c.inserted.reduce((a, s) => a + s.text.length, 0);
+      const end = c.pos + removed;
+      ranges = ranges
+        .filter((r) => r.to <= c.pos || r.from >= end)
+        .map((r) => (r.from >= end ? { ...r, from: r.from + inserted - removed, to: r.to + inserted - removed } : r));
+    }
+    out.push(...ranges);
+  }
+  return out.sort((a, b) => a.from - b.from);
 }

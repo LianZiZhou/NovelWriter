@@ -2,7 +2,7 @@ import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { EditorContent, useEditor } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import { TextSelection } from '@tiptap/pm/state';
-import { keyRegexes, type LoreEntry } from '@novelwriter/core';
+import { keyRegexes, visibleTokenProbs, type LoreEntry } from '@novelwriter/core';
 import { useStory } from '../../store/story.ts';
 import { useSettings } from '../../store/settings.ts';
 import { useUI } from '../../store/ui.ts';
@@ -22,7 +22,11 @@ import {
   countMatches,
   pmChange,
   REDECORATE,
+  TOKEN_PROBS,
+  TokenProbs,
+  type TokenRange,
 } from './pm.ts';
+import { TokenPopover } from '../tokenprobs/TokenProbs.tsx';
 import { EditorContextMenu, type MenuState } from './ContextMenu.tsx';
 import { FindBar } from './FindBar.tsx';
 import { SelectionToolbar } from './SelectionToolbar.tsx';
@@ -54,6 +58,9 @@ export const StoryEditor = memo(function StoryEditor() {
   const loreKeysOn = useSettings((s) => s.editorLoreKeys);
   const showToolbar = useSettings((s) => s.showEditorToolbar);
   const visibilityRange = useSettings((s) => s.paragraphVisibilityRange);
+  const showProbs = useSettings((s) => s.tokenProbabilities && s.editorTokenProbabilities);
+  const historyStep = useStory((s) => s.current?.history.current);
+  const [tokenPick, setTokenPick] = useState<{ range: TokenRange; rect: DOMRect } | null>(null);
   const findOpen = useUI((s) => s.findOpen);
   const generating = useStory((s) => s.generating);
   const [menu, setMenu] = useState<MenuState | null>(null);
@@ -100,6 +107,7 @@ export const StoryEditor = memo(function StoryEditor() {
       }),
       OriginMark,
       NovelPlugins(opts),
+      TokenProbs((range, rect) => setTokenPick({ range, rect })),
     ],
     content: initialContent,
     editorProps: {
@@ -215,6 +223,15 @@ export const StoryEditor = memo(function StoryEditor() {
     editor?.setEditable(!generating, false);
   }, [editor, generating]);
 
+  // Editor Token Probabilities: re-place token ranges when the history step changes (generation, undo, jump).
+  useEffect(() => {
+    if (!editor) return;
+    const h = useStory.getState().current?.history;
+    const ranges = showProbs && h ? visibleTokenProbs(h) : [];
+    editor.view.dispatch(editor.state.tr.setMeta(EXTERNAL, true).setMeta(TOKEN_PROBS, ranges));
+    if (!showProbs) setTokenPick(null);
+  }, [editor, showProbs, historyStep, storyId]);
+
   // Paragraph Visibility Range: off-screen paragraphs skip layout and paint (content-visibility), except a band
   // of `visibilityRange` characters around the caret, which stays fully rendered for editing and selection.
   const keepStyle = useRef<HTMLStyleElement | null>(null);
@@ -279,6 +296,7 @@ export const StoryEditor = memo(function StoryEditor() {
       )}
       <EditorContent editor={editor} />
       {showToolbar && editor && !generating && <SelectionToolbar editor={editor} />}
+      {tokenPick && <TokenPopover range={tokenPick.range} rect={tokenPick.rect} onClose={() => setTokenPick(null)} />}
       {menu && editor && <EditorContextMenu state={menu} editor={editor} onClose={() => setMenu(null)} />}
     </div>
   );

@@ -2,7 +2,7 @@ import { docText, plainDoc } from './doc.ts';
 import { biasGroup, contextConfig, emptyLorebook, migrateStory, newLoreCategory, newLoreEntry, newStory } from './defaults.ts';
 import { flatten } from './history.ts';
 import { uid } from './util.ts';
-import type { ContextConfig, LoreCategory, LoreEntry, Lorebook, PhraseBiasGroup, Placeholder, Story } from './types.ts';
+import type { ContextConfig, GenerationParams, LoreCategory, LoreEntry, Lorebook, PhraseBiasGroup, Placeholder, SamplerId, Story } from './types.ts';
 
 // ---------------------------------------------------------------- story files
 
@@ -135,8 +135,8 @@ export function importFile(name: string, content: string | Uint8Array): ImportRe
     return { kind: 'story', story: s, needsPlaceholders: s.placeholders.length > 0 };
   }
   if ('storyContainerVersion' in data) return { kind: 'story', story: importNovelAIStory(data), needsPlaceholders: false };
-  if ('presetVersion' in data || 'parameters' in data) {
-    return { kind: 'preset', preset: { name: String(data.name ?? 'Imported Preset'), params: importParams(data.parameters as Record<string, unknown>) } };
+  if ('presetVersion' in data || 'parameters' in data || ('temperature' in data && 'max_length' in data)) {
+    return { kind: 'preset', preset: importPreset(data, name.replace(/\.[^.]+$/, '') || 'Imported Preset') };
   }
   if ('colors' in data && 'fonts' in data) return { kind: 'theme', theme: data };
   throw new Error('Unrecognized file format.');
@@ -258,11 +258,16 @@ export function mergeLorebook(into: Lorebook, add: Lorebook): Lorebook {
 
 // ---------------------------------------------------------------- NovelAI story / scenario
 
-function importParams(raw: Record<string, unknown> | undefined): Story['params'] {
+const NAI_ORDER: Record<string, SamplerId> = { temperature: 'temperature', top_k: 'top_k', top_p: 'top_p', tfs: 'tfs', top_a: 'top_a', typical_p: 'typical_p', mirostat: 'mirostat', math1: 'unified', min_p: 'min_p' };
+const NAI_ORDER_IDS: Record<number, SamplerId> = { 0: 'temperature', 1: 'top_k', 2: 'top_p', 3: 'tfs', 4: 'top_a', 5: 'typical_p', 8: 'mirostat', 9: 'unified', 10: 'min_p' };
+const PHRASE_REP_PEN = ['off', 'very_light', 'light', 'medium', 'aggressive', 'very_aggressive'] as const;
+
+/** NovelAI generation parameters (`textGenerationSettingsVersion` 3-5) to ours. */
+export function importParams(raw: Record<string, unknown> | undefined): Story['params'] {
   const base = newStory().params;
   if (!raw) return base;
   const n = (k: string, d: number) => (typeof raw[k] === 'number' ? (raw[k] as number) : d);
-  return {
+  const out: GenerationParams = {
     ...base,
     temperature: n('temperature', base.temperature),
     maxLength: n('max_length', base.maxLength / 4) * 4,
@@ -278,9 +283,79 @@ function importParams(raw: Record<string, unknown> | undefined): Story['params']
     repetitionPenaltySlope: n('repetition_penalty_slope', base.repetitionPenaltySlope),
     repetitionPenaltyFrequency: n('repetition_penalty_frequency', base.repetitionPenaltyFrequency),
     repetitionPenaltyPresence: n('repetition_penalty_presence', base.repetitionPenaltyPresence),
+    repetitionPenaltyWhitelist: typeof raw.repetition_penalty_default_whitelist === 'boolean' ? raw.repetition_penalty_default_whitelist : base.repetitionPenaltyWhitelist,
     mirostatTau: n('mirostat_tau', base.mirostatTau),
     mirostatLr: n('mirostat_lr', base.mirostatLr),
+    unifiedLinear: n('math1_temp', base.unifiedLinear),
+    unifiedQuad: n('math1_quad', base.unifiedQuad),
+    unifiedConf: n('math1_quad_entropy_scale', base.unifiedConf),
   };
+  if (typeof raw.phrase_rep_pen === 'string' && (PHRASE_REP_PEN as readonly string[]).includes(raw.phrase_rep_pen)) out.phraseRepPen = raw.phrase_rep_pen as GenerationParams['phraseRepPen'];
+  if (Array.isArray(raw.order)) {
+    // Either [{id, enabled}] (v3+) or plain numeric ids (older presets: listed ones are enabled).
+    const listed: { id: SamplerId; enabled: boolean }[] = [];
+    for (const o of raw.order as unknown[]) {
+      const id = typeof o === 'number' ? NAI_ORDER_IDS[o] : typeof o === 'object' && o ? NAI_ORDER[String((o as { id?: unknown }).id)] : undefined;
+      if (id && !listed.some((x) => x.id === id)) listed.push({ id, enabled: typeof o === 'number' ? true : (o as { enabled?: boolean }).enabled !== false });
+    }
+    if (listed.length) out.order = [...listed, ...base.order.filter((b) => !listed.some((x) => x.id === b.id)).map((b) => ({ ...b, enabled: false }))];
+  }
+  return out;
+}
+
+/** Export in NovelAI's preset layout, plus our own fields under `novelwriter` (context size, dynamic range). */
+export function exportPreset(name: string, p: GenerationParams): string {
+  const inv = Object.fromEntries(Object.entries(NAI_ORDER).map(([k, v]) => [v, k]));
+  return JSON.stringify(
+    {
+      presetVersion: 3,
+      name,
+      id: uid(),
+      parameters: {
+        textGenerationSettingsVersion: 5,
+        temperature: p.temperature,
+        max_length: Math.round(p.maxLength / 4),
+        min_length: p.minLength,
+        top_k: p.topK,
+        top_p: p.topP,
+        top_a: p.topA,
+        typical_p: p.typicalP,
+        tail_free_sampling: p.tailFreeSampling,
+        repetition_penalty: p.repetitionPenalty,
+        repetition_penalty_range: p.repetitionPenaltyRange,
+        repetition_penalty_slope: p.repetitionPenaltySlope,
+        repetition_penalty_frequency: p.repetitionPenaltyFrequency,
+        repetition_penalty_presence: p.repetitionPenaltyPresence,
+        repetition_penalty_default_whitelist: p.repetitionPenaltyWhitelist,
+        phrase_rep_pen: p.phraseRepPen,
+        mirostat_tau: p.mirostatTau,
+        mirostat_lr: p.mirostatLr,
+        math1_temp: p.unifiedLinear,
+        math1_quad: p.unifiedQuad,
+        math1_quad_entropy_scale: p.unifiedConf,
+        min_p: p.minP,
+        order: p.order.map((o) => ({ id: inv[o.id], enabled: o.enabled })),
+      },
+      novelwriter: { maxContext: p.maxContext, dynamicPenaltyRange: p.dynamicPenaltyRange },
+    },
+    null,
+    2,
+  );
+}
+
+/** Read a preset: ours (old `novelwriter` params), NovelAI `.preset`, or `.gensettings` / `.generationset`. */
+export function importPreset(raw: unknown, fallbackName = 'Imported Preset'): { name: string; params: GenerationParams } {
+  const d = (raw ?? {}) as Record<string, unknown>;
+  const name = String(d.name ?? fallbackName);
+  // Our own pre-release export: full params under `novelwriter`.
+  if (d.novelwriter && !d.parameters && typeof d.novelwriter === 'object' && 'temperature' in (d.novelwriter as object)) {
+    return { name, params: { ...newStory().params, ...(d.novelwriter as Partial<GenerationParams>) } };
+  }
+  const params = importParams((d.parameters ?? d) as Record<string, unknown>);
+  const extra = (d.novelwriter ?? {}) as { maxContext?: number; dynamicPenaltyRange?: boolean };
+  if (typeof extra.maxContext === 'number') params.maxContext = extra.maxContext;
+  if (typeof extra.dynamicPenaltyRange === 'boolean') params.dynamicPenaltyRange = extra.dynamicPenaltyRange;
+  return { name, params };
 }
 
 function importNovelAIScenario(d: Record<string, unknown>): Story {

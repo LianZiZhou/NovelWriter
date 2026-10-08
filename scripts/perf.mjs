@@ -28,7 +28,8 @@ function makeDoc(chars) {
 }
 
 async function api(path, init) {
-  const r = await fetch(new URL(path, base), { ...init, headers: { 'content-type': 'application/json', ...(init?.headers ?? {}) } });
+  const headers = init?.body ? { 'content-type': 'application/json' } : {};
+  const r = await fetch(new URL(path, base), { ...init, headers });
   if (!r.ok) throw new Error(`${path}: ${r.status}`);
   return r.status === 204 ? null : r.json().catch(() => null);
 }

@@ -80,3 +80,22 @@ describe('tokenizer', () => {
     expect(tokenize('雨が降る').join('')).toBe('雨が降る');
   });
 });
+
+describe('presets', () => {
+  it('round-trips through the NovelAI preset layout', async () => {
+    const { exportPreset, importPreset, defaultParams } = await import('../src/index.ts');
+    const p = defaultParams({ temperature: 0.85, maxLength: 1200, topK: 250, minP: 0.05, phraseRepPen: 'medium', unifiedQuad: 0.3, maxContext: 16384 });
+    p.order = [...p.order].reverse().map((o, i) => ({ ...o, enabled: i % 2 === 0 }));
+    const back = importPreset(JSON.parse(exportPreset('X', p)));
+    expect(back.name).toBe('X');
+    expect(back.params).toEqual(p);
+  });
+  it('reads an older NovelAI preset with numeric sampler order', async () => {
+    const { importFile } = await import('../src/index.ts');
+    const r = importFile('Fresh Coffee.preset', JSON.stringify({ presetVersion: 2, name: 'Fresh Coffee', parameters: { temperature: 1, max_length: 40, top_k: 25, top_p: 1, tail_free_sampling: 0.925, repetition_penalty: 1.9, order: [3, 0, 1] } }));
+    expect(r.kind).toBe('preset');
+    if (r.kind !== 'preset') return;
+    expect(r.preset.params).toMatchObject({ temperature: 1, maxLength: 160, topK: 25, tailFreeSampling: 0.925, repetitionPenalty: 1.9 });
+    expect(r.preset.params.order.filter((o) => o.enabled).map((o) => o.id)).toEqual(['tfs', 'temperature', 'top_k']);
+  });
+});

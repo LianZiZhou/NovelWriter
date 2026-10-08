@@ -28,6 +28,7 @@ import {
 } from './features/modals/MiscModals.tsx';
 import { Logo } from './components/Logo.tsx';
 import { ScriptsModal } from './features/scripts/ScriptsModal.tsx';
+import { TokenProbsModal } from './features/tokenprobs/TokenProbs.tsx';
 
 function ModalHost() {
   const modal = useUI((s) => s.modal);
@@ -68,6 +69,8 @@ function ModalHost() {
       return <HistoryTreeModal onClose={close} />;
     case 'samplers':
       return <SamplersModal onClose={close} />;
+    case 'tokenProbs':
+      return <TokenProbsModal onClose={close} />;
     case 'scripts':
       return <ScriptsModal onClose={close} />;
     case 'confirm':
@@ -129,6 +132,8 @@ function useGlobalHotkeys() {
       if (is('lorebook')) return act(() => ui.open('lorebook'));
       if (is('contextViewer')) return act(() => ui.open('contextViewer', { which: 'last' }));
       if (is('userScripts')) return act(() => ui.open('scripts'));
+      if (is('tokenProbs')) return act(() => ui.open('tokenProbs'));
+      if (is('editorTokenProbs')) return act(() => settings.set({ editorTokenProbabilities: !settings.editorTokenProbabilities }));
       if (is('focusEditor')) return act(() => (document.querySelector('.ProseMirror') as HTMLElement | null)?.focus());
       if (is('focusInput')) return act(() => (document.querySelector('.control-row input') as HTMLElement | null)?.focus());
       if (is('redoList')) return act(() => window.dispatchEvent(new Event('nw:redo-list')));

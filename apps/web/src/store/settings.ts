@@ -32,6 +32,12 @@ export interface Settings {
   showMinibar: boolean;
   /** Characters around the caret always kept rendered; 0 = never skip rendering ("No Unloading"). */
   paragraphVisibilityRange: number;
+  /** Ask supporting models for token probabilities. */
+  tokenProbabilities: boolean;
+  /** Show them in the editor (click a token to pick an alternative). */
+  editorTokenProbabilities: boolean;
+  /** Alternatives requested per token. */
+  logprobsCount: number;
   ttsSpeakHypebot: boolean;
   ttsTestText: string;
   ttsSavedVoices: SavedVoice[];
@@ -100,6 +106,8 @@ export const DEFAULT_HOTKEYS: Record<string, string> = {
   contextViewer: 'Alt-k',
   userScripts: 'Alt-x',
   tokenizer: 'Alt-t',
+  tokenProbs: 'Mod-Alt-t',
+  editorTokenProbs: 'Alt-Shift-e',
   closeModal: 'Escape',
   toggleInputBox: 'Alt-j',
   toggleHighlighting: 'Alt-h',
@@ -140,6 +148,9 @@ export const DEFAULT_SETTINGS: Settings = {
   showIdenticon: false,
   showMinibar: false,
   paragraphVisibilityRange: 1000,
+  tokenProbabilities: false,
+  editorTokenProbabilities: false,
+  logprobsCount: 10,
   ttsSpeakHypebot: false,
   ttsTestText: 'This is a test for text to speech. A little harsh, a little slow, but always on point.',
   ttsSavedVoices: [],
@@ -220,7 +231,8 @@ export const useSettings = create<SettingsState>((set, get) => ({
       /* server unreachable: keep defaults */
     }
     // Hotkey maps saved before the current defaults are dropped rather than merged.
-    const savedHotkeys = saved.hotkeysVersion === HOTKEYS_VERSION ? (saved.hotkeys ?? {}) : {};
+    // Version 2+ maps only gain new actions later, so they are merged; version 1 maps are dropped.
+    const savedHotkeys = (saved.hotkeysVersion ?? 1) >= 2 ? (saved.hotkeys ?? {}) : {};
     const merged = { ...DEFAULT_SETTINGS, ...saved, hotkeys: { ...DEFAULT_HOTKEYS, ...savedHotkeys }, hotkeysVersion: HOTKEYS_VERSION };
     // Built-in themes were renamed; keep users on the same theme.
     merged.themeName = merged.themeName.replace(/^NovelAI /, 'NovelWriter ');

@@ -16,6 +16,8 @@ export const HOTKEY_LABELS: Record<string, string> = {
   contextViewer: 'Open Context Viewer',
   userScripts: 'Open User Scripts Modal',
   tokenizer: 'Open Tokenizer',
+  tokenProbs: 'Open Token Probabilities',
+  editorTokenProbs: 'Toggle Editor Token Probabilities',
   closeModal: 'Close Modal',
   toggleInputBox: 'Toggle Input Box',
   toggleHighlighting: 'Toggle Highlighting',
@@ -37,7 +39,7 @@ export const HOTKEY_LABELS: Record<string, string> = {
 export const FIXED_HOTKEYS = new Set(['closeModal', 'bold', 'italic', 'underline', 'strike', 'find']);
 
 /** Bump when defaults change so saved maps from older versions are replaced. */
-export const HOTKEYS_VERSION = 2;
+export const HOTKEYS_VERSION = 3;
 
 const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform);
 

@@ -28,7 +28,7 @@ await page.goto(base, { waitUntil: 'networkidle' });
 await step('use the offline demo model by default', async () => {
   await page.evaluate(async () => {
     const s = await (await fetch('/api/settings')).json();
-    await fetch('/api/settings', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...s, defaultModel: { provider: 'demo', id: 'markov' }, language: 'en', rightTab: 'story', rightOpen: true, leftOpen: true, userScriptsAccepted: null }) });
+    await fetch('/api/settings', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...s, defaultModel: { provider: 'demo', id: 'markov' }, language: 'en', rightTab: 'story', rightOpen: true, leftOpen: true, userScriptsAccepted: null, tokenProbabilities: false, editorTokenProbabilities: false }) });
   });
   await page.reload({ waitUntil: 'networkidle' });
 });
@@ -212,6 +212,28 @@ await step('theme and language switch', async () => {
   await page.waitForSelector('text=Send');
   await page.keyboard.press('Escape');
   await page.waitForTimeout(800); // settings save is debounced
+});
+
+await step('token probabilities: pick an alternative in the editor', async () => {
+  await page.getByRole('button', { name: 'Open Settings' }).first().click();
+  await page.locator('.split-modal .nav button', { hasText: 'AI Settings' }).click();
+  await page.getByRole('switch', { name: 'Enable Token Probabilities' }).click();
+  await page.keyboard.press('Escape');
+  await page.getByRole('tab', { name: 'Story' }).click();
+  await page.getByRole('switch', { name: 'Editor Token Probabilities' }).click();
+  await page.getByRole('button', { name: 'Send' }).click();
+  await page.waitForFunction(() => document.querySelector('.send-btn')?.getAttribute('aria-label') === 'Send');
+  await page.waitForSelector('.ProseMirror .tp');
+  const before = await editorText();
+  await page.locator('.ProseMirror .tp').nth(3).click();
+  await page.waitForSelector('.tp-popover');
+  await page.locator('.tp-popover button:not([disabled])').first().click();
+  await page.waitForFunction(() => document.querySelector('.send-btn')?.getAttribute('aria-label') === 'Send');
+  await page.waitForTimeout(300);
+  assert.notEqual(await editorText(), before, 'text changed after picking an alternative');
+  await page.keyboard.press('Control+Alt+t');
+  await page.waitForSelector('.tp-modal .tp-chip');
+  await page.keyboard.press('Escape');
 });
 
 await step('export story to file', async () => {

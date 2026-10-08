@@ -77,26 +77,41 @@ Credentials are stored in `data/auth.json` on the server and never sent to the b
   rebindable hotkeys, a command palette (Ctrl+K), English and Simplified Chinese UI,
   drag-and-drop import, mobile layout.
 
-### Differences from NovelAI
-
-pi-ai talks to chat models, so continuation runs through a chat request. The assembled context is
-the user message, with instructions in the system prompt. Samplers that the provider's API doesn't
-accept are kept in presets but not sent. Phrase bias and banned phrases become prompt instructions,
-and banned phrases are also stripped from the output. Token probabilities are not available through
-these APIs. Token counts use the o200k tokenizer as an approximation.
-
 ### Generation settings
 
 - **Randomness** (temperature): below 1 keeps the text consistent; above 1 makes it more surprising.
 - **Output Length**: about how many characters one Send writes (converted to a token limit).
 - **Context Size**: the most tokens of story, Memory, Author's Note and lore sent per request.
-- **Samplers** (Top-K, Nucleus, Tail-Free, Top-A, Typical, Min-P, Mirostat, Unified): each one trims
-  unlikely tokens before picking. They are applied in the order set in *Change Samplers*; disabled
-  ones are hidden from the sidebar. Only OpenAI-compatible endpoints accept the extra samplers;
-  other providers get temperature and Nucleus.
-- **Repetition Penalty** (Range, Slope, Dynamic Range, Whitelist) and **Phrase Repetition Penalty**:
-  discourage repeating recent tokens or phrases. Sent where the endpoint supports them.
-- **Presence / Frequency**: OpenAI-style alternate penalties. 0 turns them off.
+- **Samplers** (Top-K, Nucleus, Tail-Free, Top-A, Typical, Min-P, Mirostat, Unified): each trims unlikely tokens
+  before one is picked, in the order set in *Change Samplers*.
+- **Repetition Penalty** (Range, Slope), **Phrase Repetition Penalty** (sent as DRY sampling) and
+  **Presence / Frequency** discourage repeating recent tokens or phrases.
+- **Logit Bias** (phrase bias) and **Banned Tokens** raise or lower specific tokens.
+- **Token Probabilities** (Settings → AI Settings) show the alternatives the model considered for each token.
+  Click a token in the editor (*Editor Token Probabilities*) to pick one; the story continues from there.
+
+What reaches the model depends on the server behind it. The Generation tab only shows the settings the
+current model takes. For custom endpoints, choose the *Server type* in Settings → AI Providers.
+
+| Server | Samplers sent | Sampler order | Logit bias | Token probabilities |
+|---|---|---|---|---|
+| llama.cpp | temperature, Top-K, Nucleus, Min-P, Typical, Mirostat, repetition penalty + range, presence/frequency, DRY | yes | yes (server tokenizer) | yes |
+| KoboldCpp | all of the above plus Top-A, Tail-Free, Unified (smoothing), slope | yes | yes | yes |
+| TabbyAPI | like KoboldCpp, plus min tokens | no | yes | yes |
+| vLLM | temperature, Top-K, Nucleus, Min-P, repetition penalty, presence/frequency, min tokens | no | yes | yes |
+| OpenRouter | temperature, Top-K, Nucleus, Top-A, Min-P, repetition penalty, presence/frequency | no | no | yes |
+| OpenAI | temperature, Nucleus, presence/frequency | no | yes (o200k) | yes |
+| Other OpenAI-compatible | temperature, Nucleus, presence/frequency | no | no | no |
+| Claude, Gemini, Bedrock and other chat APIs | temperature | no | no | no |
+
+Where logit bias isn't available, phrase bias and banned phrases become instructions in the system prompt, and
+banned phrases are also removed from the output. As on NovelAI's chat models, only the first token of a biased
+phrase is biased. Stop sequences beyond what an API accepts are applied to the output.
+
+### Differences from NovelAI
+
+pi-ai talks to chat models, so continuation runs through a chat request. The assembled context is the user
+message, with instructions in the system prompt. Token counts use the o200k tokenizer as an approximation.
 
 ## Development
 

@@ -2,7 +2,7 @@ import { Extension, Mark, mergeAttributes } from '@tiptap/core';
 import { Plugin, PluginKey, type EditorState, type Transaction } from '@tiptap/pm/state';
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
 import { Fragment, Slice, type Node as PMNode, type Schema } from '@tiptap/pm/model';
-import { diffDocs, normalize, paragraphs, slice, type Change, type Mark as SpanMark, type Origin, type Span } from '@novelwriter/core';
+import { diffDocs, normalize, paragraphs, slice, type Change, type Mark as SpanMark, type Origin, type Span, type TokenProb } from '@novelwriter/core';
 
 /** Origin of text (prompt / ai / edit / user), rendered as a colored span. */
 export const OriginMark = Mark.create({
@@ -120,7 +120,9 @@ export function pmChange(before: PMNode, after: PMNode, spans: readonly Span[]):
   const overlap = start - Math.min(end.a, end.b);
   if (overlap > 0) endA += overlap;
   const delta = after.childCount - before.childCount;
-  const i0 = indexAt(before, start);
+  // The first changed paragraph must exist in both documents (e.g. trailing paragraphs deleted).
+  const i0 = Math.min(indexAt(before, start), indexAt(after, start));
+  // i1 >= i0 - delta keeps the new range (i0..i1 + delta) non-empty.
   let i1 = Math.max(indexAt(before, endA - 1), i0, i0 - delta);
   // A newline before an empty paragraph takes its origin from the text before it, so keep those together.
   while (i1 + 1 < before.childCount && before.child(i1 + 1).content.size === 0) i1++;
@@ -393,4 +395,81 @@ export function matchOffset(text: string, q: string, n: number): number {
   let i = lower.indexOf(ql);
   for (let k = 0; k < n && i >= 0; k++) i = lower.indexOf(ql, i + ql.length);
   return i;
+}
+
+/** Map ascending plain-text offsets to ProseMirror positions in one pass over the paragraphs. */
+export function offsetsToPositions(doc: PMNode, offsets: readonly number[]): number[] {
+  const out: number[] = [];
+  let i = 0;
+  let textStart = 0;
+  doc.forEach((para, paraPos) => {
+    const len = para.content.size;
+    while (i < offsets.length && offsets[i] <= textStart + len) {
+      out.push(paraPos + 1 + Math.max(0, offsets[i] - textStart));
+      i++;
+    }
+    textStart += len + 1;
+  });
+  while (i < offsets.length) {
+    out.push(doc.content.size - 1);
+    i++;
+  }
+  return out;
+}
+
+export interface TokenRange {
+  from: number;
+  to: number;
+  node: string;
+  prob: TokenProb;
+}
+
+const tokenKey = new PluginKey<DecorationSet>('nw-token-probs');
+/** Transaction meta carrying a new set of token ranges (plain-text offsets) to decorate. */
+export const TOKEN_PROBS = 'nw-token-probs';
+
+function probClass(lp: number): string {
+  const p = Math.exp(lp);
+  return p < 0.2 ? 'tp tp-low' : p < 0.6 ? 'tp tp-mid' : 'tp tp-high';
+}
+
+/** Editor Token Probabilities: colour generated tokens by probability; clicking one reports it. */
+export function TokenProbs(onClick: (r: TokenRange, rect: DOMRect) => void) {
+  return Extension.create({
+    name: 'tokenProbs',
+    addProseMirrorPlugins() {
+      return [
+        new Plugin({
+          key: tokenKey,
+          state: {
+            init: () => DecorationSet.empty,
+            apply(tr, set) {
+              const ranges = tr.getMeta(TOKEN_PROBS) as TokenRange[] | undefined;
+              if (ranges) {
+                const pos = offsetsToPositions(tr.doc, ranges.flatMap((r) => [r.from, r.to]));
+                return DecorationSet.create(
+                  tr.doc,
+                  ranges.map((r, i) => Decoration.inline(pos[2 * i], pos[2 * i + 1], { class: probClass(r.prob.lp) }, { range: r })),
+                );
+              }
+              return tr.docChanged ? set.map(tr.mapping, tr.doc) : set;
+            },
+          },
+          props: {
+            decorations(state) {
+              return tokenKey.getState(state) as DecorationSet;
+            },
+            handleClick(view, pos, event) {
+              const set = tokenKey.getState(view.state) as DecorationSet;
+              const hit = set.find(pos, pos).find((d) => d.from <= pos && pos <= d.to);
+              if (!hit || !(event.target as HTMLElement).closest('.tp')) return false;
+              const el = (event.target as HTMLElement).closest('.tp') as HTMLElement;
+              onClick((hit.spec as { range: TokenRange }).range, el.getBoundingClientRect());
+              return true;
+            },
+          },
+        }),
+      ];
+    },
+  });
 }

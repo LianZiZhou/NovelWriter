@@ -28,6 +28,16 @@ export interface HistoryNode {
   type: HistoryNodeType;
   changes: Change[];
   time: number;
+  /** Token probabilities of an AI generation, offsets relative to the inserted text. */
+  probs?: TokenProb[];
+}
+
+/** A generated token: offset/length in the inserted text, natural-log probability, top alternatives. */
+export interface TokenProb {
+  o: number;
+  t: string;
+  lp: number;
+  top: [string, number][];
 }
 
 export interface History {
@@ -282,4 +292,10 @@ export interface GenerateRequest {
   params?: Partial<GenerationParams>;
   stop?: string[];
   maxTokens?: number;
+  /** Active phrase-bias groups, sent as logit_bias where the backend can tokenize them. */
+  bias?: { phrases: string[]; bias: number }[];
+  /** Banned phrases; single-token ones become logit_bias -100. */
+  banned?: string[];
+  /** Ask for this many top alternatives per token (token probabilities). */
+  logprobs?: number;
 }

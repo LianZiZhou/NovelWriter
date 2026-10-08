@@ -5,6 +5,14 @@ import {
   adventureInput,
   amend,
   applyChange,
+  backendCaps,
+  stripBraces,
+  docLength,
+  slice,
+  visibleTokenProbs,
+  setNodeProbs,
+  type TokenLogprob,
+  type TokenProb,
   buildHypebotRequest,
   buildStoryRequest,
   buildTitleRequest,
@@ -111,6 +119,11 @@ interface StoryState {
   jump: (nodeId: string) => void;
   send: (input?: { text: string; mode?: AdventureInputMode }) => Promise<void>;
   retry: () => Promise<void>;
+  /**
+   * Token probabilities: replace a generated token with an alternative, drop the rest of that generation,
+   * and continue generating from there when it was at the end of the story.
+   */
+  pickAlternative: (nodeId: string, from: number, to: number, text: string) => Promise<void>;
   generateInline: () => Promise<void>;
   stop: () => void;
   generateTitle: () => Promise<void>;
@@ -584,6 +597,22 @@ export const useStory = create<StoryState>((set, get) => ({
     }
   },
 
+  async pickAlternative(nodeId, from, to, text) {
+    const s = get().current;
+    if (!s || get().generating) return;
+    const ranges = visibleTokenProbs(s.history).filter((r) => r.node === nodeId);
+    const end = Math.max(to, ...ranges.map((r) => r.to));
+    const len = docLength(s.doc);
+    const change: Change = { pos: from, removed: slice(s.doc, from, end), inserted: text ? [{ text, origin: 'ai' }] : [] };
+    const doc = canonical(applyChange(s.doc, change));
+    get().update((st) => {
+      st.history = commit(st.history, 'edit', [change]).history;
+      st.doc = doc;
+    });
+    get().editor?.setDoc(doc, from + text.length);
+    if (end >= len) await runGeneration(set, get, { from: docLength(doc) });
+  },
+
   async generateInline() {
     const s = get().current;
     const ed = get().editor;
@@ -664,7 +693,14 @@ async function runGeneration(
   const before = fullText.slice(0, opts.from);
   const after = fullText.slice(opts.from);
   const maxCtx = Math.min(s.params.maxContext, info?.contextWindow ?? Infinity);
-  const req = buildStoryRequest(s, { maxContextTokens: maxCtx, model: model.id, inline: opts.inline ? { before, after } : undefined });
+  const caps = backendCaps(info?.flavor ?? 'chat-only');
+  const req = buildStoryRequest(s, {
+    maxContextTokens: maxCtx,
+    model: model.id,
+    inline: opts.inline ? { before, after } : undefined,
+    nativeBias: caps.tokenizer !== 'none',
+    preamble: settings.preamble,
+  });
   // "Default Bias": keep dinkuses and asterisms out unless the story already uses them.
   const banned = [...s.bannedTokens, ...(settings.defaultBias ? ['***', '⁂'].filter((x) => !fullText.includes(x)) : [])];
   if (banned.length > s.bannedTokens.length) req.system += `\n\nNever write scene-break markers such as ${banned.slice(s.bannedTokens.length).join(' or ')}.`;
@@ -680,7 +716,7 @@ async function runGeneration(
   let raw = '';
   let shown = '';
   let error: string | null = null;
-  const pending: string[] = [];
+  const probs: TokenLogprob[] = [];
   const show = (text: string) => {
     ed?.replaceRange(opts.from, opts.from + shown.length, text ? [{ text, origin: 'ai' }] : []);
     shown = text;
@@ -688,16 +724,24 @@ async function runGeneration(
   };
   try {
     for await (const ev of generateStream(
-      { model, system: req.system, messages: req.messages, params: s.params, maxTokens: req.maxTokens, stop: req.stop },
+      {
+        model,
+        system: req.system,
+        messages: req.messages,
+        params: s.params,
+        maxTokens: req.maxTokens,
+        stop: req.stop,
+        bias: req.bias,
+        banned,
+        logprobs: settings.tokenProbabilities && caps.logprobs ? settings.logprobsCount : undefined,
+      },
       abort.signal,
     )) {
-      if (ev.type === 'delta') {
+      if (ev.type === 'logprobs') probs.push(...ev.tokens);
+      else if (ev.type === 'delta') {
         raw += ev.text;
         if (settings.streamResponses) {
-          if (settings.streamDelay > 0) {
-            pending.push(ev.text);
-            await new Promise((r) => setTimeout(r, settings.streamDelay * 10));
-          }
+          if (settings.streamDelay > 0) await new Promise((r) => setTimeout(r, settings.streamDelay * 10));
           show(postProcess(before, raw, { stop: req.stop, banned }));
         }
       } else if (ev.type === 'error') {
@@ -728,10 +772,18 @@ async function runGeneration(
   if (cur && cur.id === s.id && final) {
     const change: Change = { pos: opts.from, removed: [], inserted: [{ text: final, origin: 'ai' }] };
     const doc = canonical(applyChange(cur.doc, change));
+    const tokenProbs = alignTokenProbs(raw, final, probs);
     get().update((st) => {
-      st.history = commit(st.history, 'ai', [change]).history;
+      const r = commit(st.history, 'ai', [change]);
+      st.history = tokenProbs.length ? setNodeProbs(r.history, r.node.id, tokenProbs) : r.history;
       st.doc = doc;
       st.step = st.step + 1;
+      // "Unbias When Generated": a group switches itself off once one of its phrases has appeared.
+      if (st.phraseBias.some((g) => g.generateOnce && g.enabled)) {
+        st.phraseBias = st.phraseBias.map((g) =>
+          g.generateOnce && g.enabled && g.phrases.some((ph) => !/^\s*\[/.test(ph) && final.includes(stripBraces(ph))) ? { ...g, enabled: false } : g,
+        );
+      }
     });
     // Ensure editor matches canonical doc (e.g. stream disabled).
     if (!settings.streamResponses) ed?.setDoc(doc);
@@ -742,6 +794,34 @@ async function runGeneration(
   }
   set({ generating: false, task: null });
   if (error) ui.toast(error, 'error');
+}
+
+/**
+ * Place streamed token probabilities on the final (post-processed) text: overlap removal, trimming and
+ * spacing fixes shift it relative to the raw output, so it is located by its first characters.
+ */
+export function alignTokenProbs(raw: string, final: string, tokens: TokenLogprob[]): TokenProb[] {
+  if (!tokens.length || !final.trim()) return [];
+  const rawTok = tokens.map((t) => t.token).join('');
+  const body = final.trimStart();
+  const lead = final.length - body.length;
+  const at = rawTok.indexOf(body.slice(0, Math.min(40, body.length)));
+  if (at < 0) return [];
+  const out: TokenProb[] = [];
+  let off = 0;
+  for (const t of tokens) {
+    const len = t.token.length;
+    // Range of this token in the final text, clipped where trimming cut into it (e.g. a leading space).
+    const o = off - at + lead;
+    off += len;
+    const from = Math.max(o, lead);
+    const to = Math.min(o + len, final.length);
+    if (to <= from) continue;
+    const piece = t.token.slice(from - o, to - o);
+    if (final.slice(from, to) !== piece) continue;
+    out.push({ o: from, t: piece, lp: t.logprob, top: t.top.map((x) => [x.token, x.logprob]) });
+  }
+  return out;
 }
 
 function logScripts(set: (p: Partial<StoryState>) => void, get: () => StoryState, r: { logs: string[]; errors: string[] }) {

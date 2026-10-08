@@ -104,7 +104,7 @@ describe('custom OpenAI-compatible provider', () => {
     const baseUrl = `http://127.0.0.1:${port}/v1`;
     const probe = await app.inject({ method: 'POST', url: '/api/custom-providers/probe', payload: { baseUrl } });
     expect(probe.json()).toEqual([{ id: 'fake-model' }]);
-    await app.inject({ method: 'PUT', url: '/api/custom-providers', payload: [{ id: 'fake', name: 'Fake', baseUrl, models: [{ id: 'fake-model' }] }] });
+    await app.inject({ method: 'PUT', url: '/api/custom-providers', payload: [{ id: 'fake', name: 'Fake', baseUrl, flavor: 'vllm', models: [{ id: 'fake-model' }] }] });
     const res = await app.inject({
       method: 'POST',
       url: '/api/generate',

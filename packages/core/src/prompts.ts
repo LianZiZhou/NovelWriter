@@ -16,6 +16,8 @@ export interface StoryRequest {
   context: BuiltContext;
   maxTokens: number;
   stop: string[];
+  /** Active phrase-bias groups, for backends that take logit_bias. */
+  bias: { phrases: string[]; bias: number }[];
 }
 
 function biasInstructions(groups: PhraseBiasGroup[], banned: string[], banBrackets: boolean, avoidOverused: boolean): string {
@@ -40,7 +42,10 @@ export function stripBraces(p: string): string {
  * Build the chat request that continues the story. The assembled NovelAI-style
  * context is sent as a single user message with instructions in the system prompt.
  */
-export function buildStoryRequest(story: Story, opts: { maxContextTokens: number; model?: string; storyText?: string; inline?: { before: string; after: string } }): StoryRequest {
+export function buildStoryRequest(
+  story: Story,
+  opts: { maxContextTokens: number; model?: string; storyText?: string; inline?: { before: string; after: string }; nativeBias?: boolean; preamble?: boolean },
+): StoryRequest {
   const params = story.params;
   const out = outputTokens(params);
   const ctx = buildContext(story, {
@@ -50,7 +55,8 @@ export function buildStoryRequest(story: Story, opts: { maxContextTokens: number
     storyText: opts.inline ? opts.inline.before : opts.storyText,
   });
   const base = story.systemPrompt.trim() || (story.mode === 'adventure' ? DEFAULT_SYSTEM_PROMPT_ADVENTURE : DEFAULT_SYSTEM_PROMPT_STORY);
-  const extra = biasInstructions(ctx.phraseBias, story.bannedTokens, story.banBrackets, story.avoidOverusedWords);
+  // With native logit bias the phrase bias is sent as token biases instead of instructions.
+  const extra = biasInstructions(opts.nativeBias ? [] : ctx.phraseBias, story.bannedTokens, story.banBrackets, story.avoidOverusedWords);
   const lengthHint = `Write roughly ${params.maxLength} characters or less.`;
   let system = [base, extra, lengthHint].filter(Boolean).join('\n\n');
   let user: string;
@@ -60,10 +66,19 @@ export function buildStoryRequest(story: Story, opts: { maxContextTokens: number
     user = `${ctx.text}<GAP/>${opts.inline.after.slice(0, 2000)}`;
   } else {
     user = ctx.text || '(The story has not started yet. Begin it.)';
+    // "Preamble": on a short story, mark the start of the text so the model treats it as prose to continue.
+    if (opts.preamble && ctx.text && ctx.text.length < 1000) user = `⁂\n${user}`;
   }
   const messages: ChatMessage[] = [{ role: 'user', content: user }];
   if (story.prefill) messages.push({ role: 'assistant', content: story.prefill });
-  return { system, messages, context: ctx, maxTokens: out, stop: story.stopSequences.filter(Boolean) };
+  return {
+    system,
+    messages,
+    context: ctx,
+    maxTokens: out,
+    stop: story.stopSequences.filter(Boolean),
+    bias: ctx.phraseBias.filter((g) => g.enabled !== false && g.bias !== 0 && g.phrases.length).map((g) => ({ phrases: g.phrases, bias: g.bias })),
+  };
 }
 
 /**
@@ -189,22 +204,3 @@ export function buildHypebotRequest(story: Story, lastGeneration: string): { sys
 }
 
 /** Map generation parameters to provider sampling fields (OpenAI-compatible names). */
-export function samplingParams(p: GenerationParams): { temperature?: number; samplingParams: Record<string, unknown> } {
-  const on = new Set(p.order.filter((s) => s.enabled).map((s) => s.id));
-  const sp: Record<string, unknown> = {};
-  if (on.has('top_p') && p.topP < 1) sp.top_p = p.topP;
-  if (on.has('top_k') && p.topK > 0) sp.top_k = p.topK;
-  if (on.has('min_p') && p.minP > 0) sp.min_p = p.minP;
-  if (on.has('top_a') && p.topA > 0) sp.top_a = p.topA;
-  if (on.has('typical_p') && p.typicalP < 1) sp.typical_p = p.typicalP;
-  if (on.has('tfs') && p.tailFreeSampling < 1) sp.tfs = p.tailFreeSampling;
-  if (on.has('mirostat') && p.mirostatTau > 0) {
-    sp.mirostat_mode = 2;
-    sp.mirostat_tau = p.mirostatTau;
-    sp.mirostat_eta = p.mirostatLr;
-  }
-  if (p.repetitionPenalty !== 1) sp.repetition_penalty = p.repetitionPenalty;
-  if (p.repetitionPenaltyPresence) sp.presence_penalty = p.repetitionPenaltyPresence;
-  if (p.repetitionPenaltyFrequency) sp.frequency_penalty = p.repetitionPenaltyFrequency;
-  return { temperature: on.has('temperature') ? p.temperature : undefined, samplingParams: sp };
-}

@@ -1,4 +1,4 @@
-import type { GenerateRequest, Preset, Shelf, Story, StoryMeta } from '@novelwriter/core';
+import type { BackendFlavor, GenerateRequest, Preset, Shelf, Story, StoryMeta, TokenLogprob } from '@novelwriter/core';
 
 export interface ProviderInfo {
   id: string;
@@ -21,6 +21,8 @@ export interface ModelInfo {
   maxTokens: number;
   reasoning: boolean;
   api: string;
+  /** Server kind; decides which generation settings reach the model (see core/backend.ts). */
+  flavor: BackendFlavor;
 }
 
 export interface CustomProvider {
@@ -28,6 +30,7 @@ export interface CustomProvider {
   name: string;
   baseUrl: string;
   apiKey?: string;
+  flavor?: BackendFlavor;
   models: { id: string; name?: string; contextWindow?: number; maxTokens?: number }[];
 }
 
@@ -69,7 +72,11 @@ export const api = {
     ),
 };
 
-export type GenerateEvent = { type: 'delta'; text: string } | { type: 'done'; stopReason: string } | { type: 'error'; message: string };
+export type GenerateEvent =
+  | { type: 'delta'; text: string }
+  | { type: 'logprobs'; tokens: TokenLogprob[] }
+  | { type: 'done'; stopReason: string }
+  | { type: 'error'; message: string };
 
 /** Stream a generation from the server (SSE over fetch). */
 export async function* generateStream(req: GenerateRequest, signal: AbortSignal): AsyncGenerator<GenerateEvent> {

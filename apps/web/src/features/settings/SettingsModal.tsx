@@ -80,7 +80,23 @@ function AITab() {
       <Group title="Experimental">
         <ToggleRow title={t('Preamble')} desc={t('The context will have a small preamble prepended to improve generations on low context. The exact behaviour varies per model.')} on={s.preamble} onChange={(v) => s.set({ preamble: v })} />
         <ToggleRow title={t('Default Bias')} desc={t('A default bias will be applied, reducing the likelihood of dinkus (***) and asterism (⁂) to be generated.')} on={s.defaultBias} onChange={(v) => s.set({ defaultBias: v })} />
-        <ToggleRow title={t('Enable Token Probabilities')} desc={t('Token probabilities will not be returned with generation requests. (Not available through chat model APIs.)')} on={false} onChange={() => {}} disabled />
+        <div>
+          <ToggleRow
+            title={t('Enable Token Probabilities')}
+            desc={
+              s.tokenProbabilities
+                ? t('Token probabilities will be returned with generation requests, on models that report them (OpenAI, OpenRouter, llama.cpp, vLLM, KoboldCpp, TabbyAPI and the demo model).')
+                : t('Token probabilities will not be returned with generation requests.')
+            }
+            on={s.tokenProbabilities}
+            onChange={(v) => s.set({ tokenProbabilities: v })}
+          />
+          {s.tokenProbabilities && (
+            <div style={{ marginTop: 14 }}>
+              <SliderSetting small title={t('Alternatives per Token')} value={s.logprobsCount} min={1} max={20} step={1} def={10} onChange={(v) => s.set({ logprobsCount: v })} />
+            </div>
+          )}
+        </div>
       </Group>
     </>
   );

@@ -1,10 +1,11 @@
+import { BACKEND_FLAVORS } from '@novelwriter/core';
 import { useEffect, useRef, useState } from 'react';
 import { ArrowSquareOut, Copy, Key, Plus, SignIn, SignOut, Trash } from '@phosphor-icons/react';
 import { api, openLogin, type CustomProvider, type LoginEvent, type LoginPrompt, type ProviderInfo } from '../../api.ts';
 import { useStory } from '../../store/story.ts';
 import { useUI } from '../../store/ui.ts';
 import { t } from '../../i18n.ts';
-import { Modal, ModalHeader } from '../../components/ui.tsx';
+import { Modal, ModalHeader, Select } from '../../components/ui.tsx';
 
 /** Providers whose OAuth sign-in users are most likely to want, shown first. */
 const FEATURED = ['anthropic', 'openai-codex', 'github-copilot', 'openrouter', 'xai', 'google', 'openai', 'deepseek'];
@@ -187,7 +188,7 @@ function CustomEndpoints({ onChanged }: { onChanged: () => void }) {
         <div className="provider-row" key={c.id}>
           <div className="grow">
             <div style={{ fontWeight: 600 }}>{c.name}</div>
-            <div className="desc">{c.baseUrl} · {c.models.map((m) => m.id).join(', ')}</div>
+            <div className="desc">{c.baseUrl} · {BACKEND_FLAVORS.find((f) => f.id === (c.flavor ?? 'openai-compatible'))?.label} · {c.models.map((m) => m.id).join(', ')}</div>
           </div>
           <button type="button" className="btn small" onClick={() => setDraft({ ...c })}>
             {t('Edit')}
@@ -202,6 +203,18 @@ function CustomEndpoints({ onChanged }: { onChanged: () => void }) {
           <input className="input" placeholder={t('Name')} value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
           <input className="input" placeholder="http://localhost:11434/v1" value={draft.baseUrl} onChange={(e) => setDraft({ ...draft, baseUrl: e.target.value })} />
           <input className="input" type="password" placeholder={`${t('API Key')} (${t('optional')})`} value={draft.apiKey ?? ''} onChange={(e) => setDraft({ ...draft, apiKey: e.target.value })} />
+          <div>
+            <div className="field-label" style={{ marginTop: 0 }}>{t('Server type')}</div>
+            <Select
+              value={draft.flavor ?? 'openai-compatible'}
+              ariaLabel={t('Server type')}
+              onChange={(v) => setDraft({ ...draft, flavor: v })}
+              options={BACKEND_FLAVORS.filter((f) => f.id !== 'openai' && f.id !== 'openrouter').map((f) => ({ value: f.id, label: f.label }))}
+            />
+            <div className="desc" style={{ marginTop: 4 }}>
+              {t('Decides which generation settings are sent: local servers accept most samplers, sampler order, logit bias and token probabilities under their own names.')}
+            </div>
+          </div>
           <div className="row">
             <input
               className="input grow"
