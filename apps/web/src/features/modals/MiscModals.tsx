@@ -16,13 +16,14 @@ import {
   placeholderUses,
   applyPlaceholders,
   storyStats,
+  decodeTokenIds,
   tokenIds,
   tokenize,
   type Change,
   type SamplerId,
   type ToolboxMode,
 } from '@novelwriter/core';
-import { generateText } from '../../api.ts';
+import { api, generateText } from '../../api.ts';
 import { canonical, download, safeFileName, useStory } from '../../store/story.ts';
 import { useUI } from '../../store/ui.ts';
 import { useSettings } from '../../store/settings.ts';
@@ -67,18 +68,23 @@ export function StatsModal({ onClose }: { onClose: () => void }) {
   return (
     <Modal onClose={onClose} width={660} label={t('Story Statistics')} className="stats-modal">
       <ModalHeader plain title={t('Story Statistics')} subtitle={t('Get a perspective on your writing.')} onClose={onClose} />
+      <div className="stats-warning">{t('Statistics are experimental. Counts come from the story history and may change after trimming or flattening.')}</div>
       <div className="modal-body stats-grid">
         <div>
           <div className="stat-group">{t('Data')}</div>
           <Row k="Sections" v={st.sections} />
           <Row k="Lorebook Entries" v={st.lorebookEntries} />
           <Row k="Ephemeral Entries" v={st.ephemeralEntries} />
+          <Row k="Data Blocks" v={st.dataBlocks} />
+          <Row k="On Current Path" dot="var(--text-headings)" v={st.dataBlocksOnPath} />
+          <Row k="Abandoned" dot="var(--bg3)" v={st.dataBlocksAbandoned} />
           <div className="stat-group">{t('Writing')}</div>
           <Row k="Characters" v={st.characters} />
           <Row k="User" dot="var(--text-user)" v={st.charactersByOrigin.user ?? 0} />
           <Row k="AI" dot="var(--text-ai)" v={st.charactersByOrigin.ai ?? 0} />
           <Row k="Edits" dot="var(--text-edit)" v={st.charactersByOrigin.edit ?? 0} />
           <Row k="Prompt" dot="var(--text-prompt)" v={st.charactersByOrigin.prompt ?? 0} />
+          <Row k="Deleted Characters" v={st.deletedCharacters} />
           <Row k="Paragraphs" v={st.paragraphs} />
           <Row k="Words" v={st.words} />
           <Row k="Sentences" v={st.sentences} />
@@ -314,23 +320,71 @@ export function ToolboxModal({ onClose, text, from, to, mode: initialMode }: { o
 
 export function TokenizeModal({ onClose, text: initial, standalone }: { onClose: () => void; text: string; standalone?: boolean }) {
   const [text, setText] = useState(initial);
+  const [kind, setKind] = useState<'o200k' | 'model'>('o200k');
+  const [remote, setRemote] = useState<{ ids: number[]; tokenizer: string } | null>(null);
+  const [remoteError, setRemoteError] = useState('');
+  const [idInput, setIdInput] = useState('');
+  const model = useStory((s) => s.modelInfo)();
+  const ref = useStory((s) => s.resolveModel)();
+  const modelTokenizer = model ? backendCaps(model.flavor ?? 'chat-only').tokenizer : 'none';
   const tokens = useMemo(() => tokenize(text), [text]);
   const ids = useMemo(() => tokenIds(text), [text]);
+  // The current model's own tokenizer, from its server (llama.cpp, vLLM, KoboldCpp, TabbyAPI) or o200k for OpenAI.
+  useEffect(() => {
+    if (kind !== 'model' || !ref) return;
+    const h = setTimeout(() => {
+      api
+        .tokenize(ref, text)
+        .then((r) => {
+          setRemote(r);
+          setRemoteError(r.tokenizer === 'none' ? t("This model's tokenizer isn't available; counts use o200k.") : '');
+        })
+        .catch((e) => setRemoteError((e as Error).message));
+    }, 250);
+    return () => clearTimeout(h);
+  }, [kind, text, ref?.provider, ref?.id]);
+  const decoded = useMemo(() => {
+    const list = idInput.split(/[^\d]+/).filter(Boolean).map(Number);
+    return list.length ? decodeTokenIds(list) : '';
+  }, [idInput]);
   const colors = ['#3c4a7a', '#5b3c7a', '#3c7a5b', '#7a5b3c', '#7a3c4a'];
+  const shownIds = kind === 'model' && remote?.tokenizer === 'remote' ? remote.ids : ids;
   return (
     <Modal onClose={onClose} width={760} label={t('Tokenizer')}>
-      <ModalHeader title={t('Tokenizer')} subtitle={t('{n} tokens · {c} characters', { n: tokens.length, c: text.length })} onClose={onClose} />
+      <ModalHeader title={t('Tokenizer')} subtitle={t('{n} tokens · {c} characters', { n: shownIds.length, c: text.length })} onClose={onClose} />
       <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-        {standalone && <textarea autoFocus className="textarea" style={{ minHeight: 120 }} placeholder={t('Type text to tokenize…')} value={text} onChange={(e) => setText(e.target.value)} />}
-        <div className="ctx-text" style={{ lineHeight: 2 }}>
-          {tokens.map((tk, i) => (
-            <span key={i} title={String(ids[i] ?? '')} style={{ background: colors[i % colors.length], padding: '2px 0', whiteSpace: 'pre-wrap' }}>
-              {tk}
-            </span>
-          ))}
+        <div className="desc">{t('AI models read text as tokens: whole words, pieces of words or single characters. Context sizes and output lengths are counted in tokens.')}</div>
+        <div className="row" style={{ gap: 10, flexWrap: 'wrap' }}>
+          <span className="sub-heading">{t('Tokenizer')}</span>
+          <SegmentedControl
+            value={kind}
+            onChange={setKind}
+            options={[
+              { value: 'o200k', label: 'o200k' },
+              { value: 'model', label: model ? t('Current Model ({name})', { name: model.name }) : t('Current Model') },
+            ]}
+          />
         </div>
-        <div className="desc">{t('Approximate tokenization (o200k). Each model uses its own tokenizer.')}</div>
-        <code style={{ fontSize: 12, wordBreak: 'break-all', opacity: 0.8 }}>[{ids.join(', ')}]</code>
+        {kind === 'model' && modelTokenizer === 'none' && <div className="desc">{t("This model's server doesn't expose its tokenizer; o200k is shown as an approximation.")}</div>}
+        {remoteError && <div className="warning-text" style={{ fontSize: 13 }}>{remoteError}</div>}
+        {standalone || kind === 'model' ? (
+          <textarea autoFocus className="textarea" style={{ minHeight: 120 }} placeholder={t('Type text to tokenize…')} aria-label={t('Text to tokenize')} value={text} onChange={(e) => setText(e.target.value)} />
+        ) : null}
+        {kind === 'o200k' || remote?.tokenizer !== 'remote' ? (
+          <div className="ctx-text" style={{ lineHeight: 2 }}>
+            {tokens.map((tk, i) => (
+              <span key={i} title={String(ids[i] ?? '')} style={{ background: colors[i % colors.length], padding: '2px 0', whiteSpace: 'pre-wrap' }}>
+                {tk}
+              </span>
+            ))}
+          </div>
+        ) : (
+          <div className="desc">{t("Token ids from the model's server (it doesn't return the token text).")}</div>
+        )}
+        <code style={{ fontSize: 12, wordBreak: 'break-all', opacity: 0.8 }}>[{shownIds.join(', ')}]</code>
+        <div className="sub-heading">{t('Token IDs')}</div>
+        <input className="input" value={idInput} placeholder={t('Paste token ids (o200k) to decode them, e.g. 13225, 2375')} aria-label={t('Token IDs')} onChange={(e) => setIdInput(e.target.value)} />
+        {decoded && <div className="ctx-text" style={{ whiteSpace: 'pre-wrap' }}>{decoded}</div>}
       </div>
     </Modal>
   );

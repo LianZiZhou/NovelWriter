@@ -11,6 +11,7 @@ import { Storage } from './storage.ts';
 import { FileCredentialStore } from './credentials.ts';
 import { LLM, type CustomProviderConfig } from './llm.ts';
 import { runLogin } from './auth-ws.ts';
+import { MASK, listVoices, readTTS, synthesize, writeTTS, type TTSConfig } from './tts.ts';
 
 export interface AppOptions {
   dataDir: string;
@@ -149,6 +150,34 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
       send({ type: 'error', message: (e as Error).message });
     }
     reply.raw.end();
+  });
+
+  app.post<{ Body: { model: { provider: string; id: string }; text: string } }>('/api/tokenize', async (req, reply) => {
+    try {
+      return await llm.tokenize(req.body.model, req.body.text ?? '');
+    } catch (e) {
+      return reply.code(400).send({ error: (e as Error).message });
+    }
+  });
+
+  // ------------------------------------------------------------- text to speech
+  app.get('/api/tts/config', async () => {
+    const c = await readTTS(storage);
+    return { ...c, apiKey: c.apiKey ? MASK : '' };
+  });
+  app.put<{ Body: Partial<TTSConfig> }>('/api/tts/config', async (req) => {
+    await writeTTS(storage, req.body);
+    return { ok: true };
+  });
+  app.get('/api/tts/voices', async () => listVoices(await readTTS(storage)));
+  app.post<{ Body: { text: string; voice?: string; model?: string; speed?: number; format?: string } }>('/api/tts', async (req, reply) => {
+    if (!req.body?.text?.trim()) return reply.code(400).send({ error: 'No text' });
+    try {
+      const { audio, type } = await synthesize(await readTTS(storage), req.body);
+      return reply.type(type).send(audio);
+    } catch (e) {
+      return reply.code(502).send({ error: (e as Error).message });
+    }
   });
 
   app.get('/api/health', async () => ({ ok: true }));

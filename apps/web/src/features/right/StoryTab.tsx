@@ -96,7 +96,7 @@ export function StoryTab() {
         <div className="desc">{t('Changes the settings of the AI model.')}</div>
         <Select
           value={story.presetId}
-          ariaLabel={t('Config Preset')}
+          ariaLabel={t('Select a Settings Preset')}
           onChange={(id) => {
             const p = presets.find((x) => x.id === id);
             if (p) store.update((s) => {
@@ -166,7 +166,7 @@ export function StoryTab() {
               type="button"
               className="btn block"
               onClick={async () => {
-                if (await ui.confirm({ title: t('Trim Story'), message: t('Remove undo, redo and retry branches that are not part of the current story?') })) store.trimStory();
+                if (await ui.confirm({ title: t('Trim your Story?'), message: t('Undo, redo and retry branches that are not part of the current story will be removed. This cannot be undone.'), confirmLabel: t('Trim it!'), danger: true })) store.trimStory();
               }}
             >
               {t('Trim Story')}
@@ -175,7 +175,7 @@ export function StoryTab() {
               type="button"
               className="btn block"
               onClick={async () => {
-                if (await ui.confirm({ title: t('Flatten Story'), message: t('Remove all history and branches, keeping only the current text?'), danger: true })) store.flattenStory();
+                if (await ui.confirm({ title: t('Flatten your Story?'), message: t('All history and branches will be removed, keeping only the current text. This cannot be undone.'), confirmLabel: t('Flatten it!'), danger: true })) store.flattenStory();
               }}
             >
               {t('Flatten Story')}

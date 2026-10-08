@@ -5,18 +5,40 @@ import { useStory } from '../../store/story.ts';
 import { useUI } from '../../store/ui.ts';
 import { useSettings } from '../../store/settings.ts';
 import { t } from '../../i18n.ts';
-import { Modal, ModalHeader, Tabs, Toggle } from '../../components/ui.tsx';
+import { Modal, ModalHeader, SegmentedControl, Tabs, Toggle } from '../../components/ui.tsx';
 import { ContextBar, KIND_COLORS, KIND_LABELS } from '../right/AdvancedTab.tsx';
 import { ContextConfigEditor } from '../lorebook/ContextConfigEditor.tsx';
 
 const REASONS: Record<string, string> = {
   included: 'Included',
   trimmed: 'Trimmed to fit',
-  budgetExceeded: 'Over budget',
-  noSpace: 'No space left',
+  budgetExceeded: 'Token budget exceeded',
+  noSpace: 'No space left in context',
   empty: 'Empty',
   notActivated: 'Not activated',
   disabled: 'Disabled',
+};
+/** Why a lore entry is active (or not), as shown next to the inclusion reason. */
+const ACTIVATION: Record<string, string> = {
+  forced: 'Always On',
+  key: 'Key found',
+  cascade: 'Cascading activation',
+  condition: 'Advanced condition',
+  disabled: 'Entry disabled',
+  categoryDisabled: 'Category disabled',
+  noMatch: 'No key found',
+  noText: 'No text',
+};
+const COLUMN_HELP: Record<string, string> = {
+  Stage: 'The insertion stage the entry was added in.',
+  Order: 'Insertion Order: entries with higher numbers are inserted first.',
+  Identifier: 'The source of the text.',
+  Inclusion: 'Whether the text made it into the context.',
+  Reason: 'Why the text was or was not included.',
+  Key: 'The key that activated the lorebook entry.',
+  Reserved: 'Tokens set aside for this entry before others were inserted.',
+  Tokens: 'Tokens used in the context (and the full size when it was trimmed).',
+  'Trim Type': 'How the text was shortened to fit: by newline, sentence or token.',
 };
 
 export function ContextViewerModal({ onClose, which: initial }: { onClose: () => void; which: 'last' | 'current' }) {
@@ -26,7 +48,11 @@ export function ContextViewerModal({ onClose, which: initial }: { onClose: () =>
   const ctx = useMemo<BuiltContext | null>(() => (which === 'last' ? last : useStory.getState().previewContext()), [which, last]);
   const [stage, setStage] = useState<number | null>(null);
   const [showInactive, setShowInactive] = useState(false);
+  const [view, setView] = useState<'text' | 'messages'>('text');
+  const lastRequest = useStory((s) => s.lastRequest);
+  const request = useMemo(() => (which === 'last' ? lastRequest : useStory.getState().previewRequest()), [which, lastRequest]);
   const colors = useSettings((s) => s.contextViewerColors);
+  const ui = useUI.getState();
   const tabs = (
     <div className="ctx-tabs" role="tablist">
       {(['last', 'current'] as const).map((w) => (
@@ -103,6 +129,41 @@ export function ContextViewerModal({ onClose, which: initial }: { onClose: () =>
               ? t('Stage 0: reserved tokens are set aside for every entry that has a reservation.')
               : t('Stage {a}: entries are inserted in order of their Insertion Order.', { a: stageIdx })}
         </div>
+        <div className="row ctx-view-row">
+          <SegmentedControl
+            value={view}
+            onChange={setView}
+            options={[
+              { value: 'text', label: t('Context Text') },
+              { value: 'messages', label: t('Message Format') },
+            ]}
+          />
+          <span className="grow" />
+          <button type="button" className="btn small" onClick={() => ui.open('contextSettings')}>
+            {t('Edit Context Settings')}
+          </button>
+          <button type="button" className="btn small" onClick={() => ui.open('ephemeral')}>
+            {t('Ephemeral Context')}
+          </button>
+          <button type="button" className="btn small" onClick={() => ui.open('systemPrompt', { field: 'system' })}>
+            {t('System Prompt')}
+          </button>
+        </div>
+        {view === 'messages' ? (
+          <div className="ctx-messages">
+            <div className="ctx-stage-note">{t('Transformed context to message format.')}</div>
+            {request ? (
+              [{ role: 'system', content: request.system }, ...request.messages].map((m, i) => (
+                <div key={i} className={`ctx-msg ${m.role}`}>
+                  <div className="ctx-msg-role">{m.role === 'system' ? t('System') : m.role === 'user' ? t('User') : t('Assistant')}</div>
+                  <pre>{m.content}</pre>
+                </div>
+              ))
+            ) : (
+              <div className="muted">{t('No request yet. Send a generation first.')}</div>
+            )}
+          </div>
+        ) : (
         <div className="ctx-text">
           {segments.map((sg, i) =>
             hidden.has(sg.sourceId) ? (
@@ -116,6 +177,7 @@ export function ContextViewerModal({ onClose, which: initial }: { onClose: () =>
             ),
           )}
         </div>
+        )}
         <label className="row ctx-inactive">
           {t('Show non-activated entries')} <Toggle on={showInactive} onChange={setShowInactive} label={t('Show non-activated entries')} />
         </label>
@@ -123,15 +185,11 @@ export function ContextViewerModal({ onClose, which: initial }: { onClose: () =>
           <table className="ctx-table">
             <thead>
               <tr>
-                <th>{t('Stage')}</th>
-                <th>{t('Order')}</th>
-                <th>{t('Identifier')}</th>
-                <th>{t('Inclusion')}</th>
-                <th>{t('Reason')}</th>
-                <th>{t('Key')}</th>
-                <th>{t('Reserved')}</th>
-                <th>{t('Tokens')}</th>
-                <th>{t('Trim Type')}</th>
+                {['Stage', 'Order', 'Identifier', 'Inclusion', 'Reason', 'Key', 'Reserved', 'Tokens', 'Trim Type'].map((h) => (
+                  <th key={h} title={t(COLUMN_HELP[h])}>
+                    {t(h)}
+                  </th>
+                ))}
               </tr>
             </thead>
             <tbody>
@@ -141,7 +199,10 @@ export function ContextViewerModal({ onClose, which: initial }: { onClose: () =>
                   <td>{r.order}</td>
                   <td style={{ color: KIND_COLORS[r.kind] }}>{r.hidden ? `[${t('Hidden')}]` : t(r.label)}</td>
                   <td>{r.included ? '✓' : '✗'}</td>
-                  <td>{t(REASONS[r.reason] ?? r.reason)}{r.activation ? ` (${r.activation})` : ''}</td>
+                  <td>
+                    {t(REASONS[r.reason] ?? r.reason)}
+                    {r.activation ? ` (${t(ACTIVATION[r.activation] ?? r.activation)})` : ''}
+                  </td>
                   <td>{r.key ?? ''}</td>
                   <td>{r.reservedTokens}</td>
                   <td>

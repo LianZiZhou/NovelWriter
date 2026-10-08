@@ -1,14 +1,14 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { ArrowCounterClockwise, CaretDown, CaretUp, Check, DownloadSimple, Eyedropper, GearSix, Plus, SpeakerHigh, Stop, X } from '@phosphor-icons/react';
 import { exportStoryFile, uid } from '@novelwriter/core';
-import { api } from '../../api.ts';
+import { api, type TTSConfig } from '../../api.ts';
 import { DEFAULT_HOTKEYS, DEFAULT_SETTINGS, useSettings, type SavedVoice, type Settings } from '../../store/settings.ts';
 import { download, useStory } from '../../store/story.ts';
 import { useUI } from '../../store/ui.ts';
 import { t } from '../../i18n.ts';
 import { Modal, SegmentedControl, Select, SliderSetting, ToggleRow } from '../../components/ui.tsx';
 import { BUILTIN_THEMES, type Theme, type ThemeColors } from '../../theme/themes.ts';
-import { listVoices, speak, stopSpeaking } from '../tts/tts.ts';
+import { downloadSpeech, listVoices, speak, stopSpeaking } from '../tts/tts.ts';
 import { AvatarTile, HYPEBOT_AVATARS } from '../hypebot/avatars.tsx';
 import { ModelThumb } from '../../components/ModelThumb.tsx';
 import { NEWS } from '../home/news.ts';
@@ -43,8 +43,8 @@ function AITab() {
   return (
     <>
       <Group title="AI Responses">
-        <ToggleRow title={t('Stream AI Responses')} desc={t('AI responses will be streamed, appearing token by token.')} on={s.streamResponses} onChange={(v) => s.set({ streamResponses: v })} />
-        <ToggleRow title={t('Continue Response to End of Sentence')} desc={t('Responses will attempt to continue until the end of a sentence is found.')} on={s.continueToSentenceEnd} onChange={(v) => s.set({ continueToSentenceEnd: v })} />
+        <ToggleRow title={t('Stream AI Responses')} desc={s.streamResponses ? t('AI responses will be streamed, appearing token by token.') : t('Text will only appear when the response has been fully generated.')} on={s.streamResponses} onChange={(v) => s.set({ streamResponses: v })} />
+        <ToggleRow title={t('Continue Response to End of Sentence')} desc={s.continueToSentenceEnd ? t('Responses will attempt to continue until the end of a sentence is found.') : t('Responses may end in the middle of a sentence.')} on={s.continueToSentenceEnd} onChange={(v) => s.set({ continueToSentenceEnd: v })} />
         <ToggleRow
           title={t('Bidirectional Inline Generation')}
           desc={s.bidirectionalInline ? t('Inline generation will also consider the text after the cursor, so the new text bridges into it.') : t('Inline generation will only consider the text before the cursor.')}
@@ -82,10 +82,35 @@ function AITab() {
         </div>
         <SliderSetting title={t('Comment Chance')} value={s.hypebotChance} min={0} max={100} step={1} def={5} onChange={(v) => s.set({ hypebotChance: v })} suffix=" %" defText={t('Default: {v}', { v: '5%' })} />
         <SliderSetting title={t('Comment Streamed Response Delay')} value={s.hypebotDelay} min={0} max={20} step={1} def={0} onChange={(v) => s.set({ hypebotDelay: v })} />
+        <div>
+          <button type="button" className="btn" onClick={() => useStory.setState({ hypebot: null })}>
+            {t('Clear Comments')}
+          </button>
+          <div className="desc" style={{ marginTop: 6 }}>{t("Click HypeBot's avatar next to a comment to ask for a new one.")}</div>
+        </div>
       </Group>
       <Group title="Experimental">
-        <ToggleRow title={t('Preamble')} desc={t('The context will have a small preamble prepended to improve generations on low context. The exact behaviour varies per model.')} on={s.preamble} onChange={(v) => s.set({ preamble: v })} />
-        <ToggleRow title={t('Default Bias')} desc={t('A default bias will be applied, reducing the likelihood of dinkus (***) and asterism (⁂) to be generated.')} on={s.defaultBias} onChange={(v) => s.set({ defaultBias: v })} />
+        <ToggleRow title={t('Preamble')} desc={s.preamble ? t('The context will have a small preamble prepended to improve generations on low context. The exact behaviour varies per model.') : t('No preamble will be added to the context.')} on={s.preamble} onChange={(v) => s.set({ preamble: v })} />
+        <ToggleRow
+          title={t('Show System Prompt Settings')}
+          desc={s.showSystemPromptSettings ? t('The System Prompt and Prefill can be edited from the Advanced tab.') : t('The System Prompt button is hidden; the default system prompt is used unless a story sets its own.')}
+          on={s.showSystemPromptSettings}
+          onChange={(v) => s.set({ showSystemPromptSettings: v })}
+        />
+        <div>
+          <SliderSetting
+            title={t('Max Context Size')}
+            value={s.maxContextCap}
+            min={0}
+            max={200000}
+            step={1000}
+            def={0}
+            onChange={(v) => s.set({ maxContextCap: v })}
+            defText={t('0 = no cap (the preset and model decide)')}
+          />
+          <div className="desc" style={{ marginTop: 6 }}>{t('Caps the context sent with every request, for every story, e.g. to keep costs or latency down.')}</div>
+        </div>
+        <ToggleRow title={t('Default Bias')} desc={s.defaultBias ? t('A default bias will be applied, reducing the likelihood of dinkus (***) and asterism (⁂) to be generated.') : t('No default bias will be applied.')} on={s.defaultBias} onChange={(v) => s.set({ defaultBias: v })} />
         <div>
           <ToggleRow
             title={t('Enable Token Probabilities')}
@@ -135,7 +160,7 @@ function InterfaceTab() {
         <SliderSetting title={t('Max Line Width')} value={s.maxLineWidth} min={40} max={150} step={5} def={100} onChange={(v) => s.set({ maxLineWidth: v })} suffix=" %" defText={t('Default: {v}', { v: '100% (1200px)' })} />
       </Group>
       <Group title="Interaction Settings">
-        <ToggleRow title={t('Gesture Controls')} desc={t('Swiping on touch devices will open and close the sidebars.')} on={s.gestureControls} onChange={(v) => s.set({ gestureControls: v })} />
+        <ToggleRow title={t('Gesture Controls')} desc={s.gestureControls ? t('Swiping on touch devices will open and close the sidebars.') : t('Swiping will not open or close the sidebars.')} on={s.gestureControls} onChange={(v) => s.set({ gestureControls: v })} />
         <ToggleRow
           title={t('Swap Context Menu Controls')}
           desc={s.swapContextMenu ? t('Right click will open the standard context menu. Ctrl+right click will open the NovelWriter context menu.') : t('Right click will open the NovelWriter context menu. Ctrl+right click will open the standard context menu.')}
@@ -146,10 +171,10 @@ function InterfaceTab() {
         <ToggleRow title={t('Context Viewer Colors')} desc={s.contextViewerColors ? t('Text in the context viewer will be color coded based on origin.') : t('Text in the context viewer will not be color coded.')} on={s.contextViewerColors} onChange={(v) => s.set({ contextViewerColors: v })} />
         <ToggleRow title={t('Editor Lorebook Keys')} desc={s.editorLoreKeys ? t('Lorebook keys will be underlined in the editor.') : t('No special styling will be applied to Lorebook keys in the editor.')} on={s.editorLoreKeys} onChange={(v) => s.set({ editorLoreKeys: v })} />
         <ToggleRow title={t('Show Story Title')} desc={s.showStoryTitle ? t('The story title will be shown above the editor.') : t('The story title will be hidden.')} on={s.showStoryTitle} onChange={(v) => s.set({ showStoryTitle: v })} />
-        <ToggleRow title={t('Show Input Box')} desc={t('Type new input in a box next to the Send button instead of the editor.')} on={s.inputBox} onChange={(v) => s.set({ inputBox: v })} />
-        <ToggleRow title={t('Show Editor Toolbar')} desc={t('A toolbar with formatting options will appear when selecting text in the editor.')} on={s.showEditorToolbar} onChange={(v) => s.set({ showEditorToolbar: v })} />
+        <ToggleRow title={t('Show Input Box')} desc={s.inputBox ? t('Type new input in a box next to the Send button instead of the editor.') : t('Type new input directly in the editor.')} on={s.inputBox} onChange={(v) => s.set({ inputBox: v })} />
+        <ToggleRow title={t('Show Editor Toolbar')} desc={s.showEditorToolbar ? t('A toolbar with formatting options will appear when selecting text in the editor.') : t('No toolbar will appear when selecting text.')} on={s.showEditorToolbar} onChange={(v) => s.set({ showEditorToolbar: v })} />
         <ToggleRow title={t('Show Tips')} desc={s.showTips ? t('Tips will be shown below the editor.') : t('Tips will not be shown.')} on={s.showTips} onChange={(v) => s.set({ showTips: v })} />
-        <ToggleRow title={t('Keyboard Displaces Content')} desc={t('The onscreen keyboard of some mobile devices will displace the content of the page.')} on={s.keyboardDisplaces} onChange={(v) => s.set({ keyboardDisplaces: v })} />
+        <ToggleRow title={t('Keyboard Displaces Content')} desc={s.keyboardDisplaces ? t('The onscreen keyboard of some mobile devices will displace the content of the page.') : t('The onscreen keyboard will cover the content of the page.')} on={s.keyboardDisplaces} onChange={(v) => s.set({ keyboardDisplaces: v })} />
         <div>
           <SliderSetting
             title={t('Paragraph Visibility Range')}
@@ -163,7 +188,7 @@ function InterfaceTab() {
             note={!s.paragraphVisibilityRange ? t('No Unloading') : undefined}
           />
         </div>
-        <ToggleRow title={t('Auto Format Text')} desc={t('Generated text will be tidied automatically: doubled spaces, trailing spaces and extra blank lines are removed.')} on={s.autoFormat} onChange={(v) => s.set({ autoFormat: v })} />
+        <ToggleRow title={t('Auto Format Text')} desc={s.autoFormat ? t('Generated text will be tidied automatically: doubled spaces, trailing spaces and extra blank lines are removed.') : t('Generated text will be inserted as it is.')} on={s.autoFormat} onChange={(v) => s.set({ autoFormat: v })} />
       </Group>
       <Group title="Experimental">
         <div>
@@ -373,19 +398,49 @@ function TTSTab() {
     ...saved.map((v) => ({ value: `saved:${v.id}`, label: v.name, group: t('Saved Voices') })),
     ...voices.map((v) => ({ value: v.voiceURI, label: `${v.name} (${v.lang})`, group: t('System Voices') })),
   ];
-  const test = (voice?: SavedVoice) => speak(s.ttsTestText || t('This is a test for text to speech.'), voice);
+  const test = (voice?: SavedVoice) => speak(s.ttsTestText || t('This is a test for text to speech.'), voice ?? {});
+  const [endpointVoices, setEndpointVoices] = useState<string[]>([]);
+  useEffect(() => {
+    if (s.ttsSource === 'endpoint') void api.ttsVoices().then(setEndpointVoices).catch(() => setEndpointVoices([]));
+  }, [s.ttsSource]);
   const randomize = () => {
     if (!draft || !voices.length) return;
     setDraft({ ...draft, voice: voices[Math.floor(Math.random() * voices.length)].voiceURI, rate: Math.round((0.8 + Math.random() * 0.5) * 100) / 100, pitch: Math.round((0.7 + Math.random() * 0.7) * 100) / 100 });
   };
+  const endpoint = s.ttsSource === 'endpoint';
   return (
     <>
-      <div className="settings-grid">
-        <ToggleRow title={t('Speak HypeBot Comments')} desc={s.ttsSpeakHypebot ? t('HypeBot comments will be read aloud.') : t('HypeBot comments will not be read.')} on={s.ttsSpeakHypebot} onChange={(v) => s.set({ ttsSpeakHypebot: v })} />
-        <ToggleRow title={t('Speak AI Outputs')} desc={t('Read new AI generations aloud automatically.')} on={s.ttsSpeakOutputs} onChange={(v) => s.set({ ttsSpeakOutputs: v })} />
+      <div className="settings-group-title">{t('Voice Source')}</div>
+      <SegmentedControl
+        value={s.ttsSource}
+        onChange={(v) => s.set({ ttsSource: v })}
+        options={[
+          { value: 'browser', label: t('Browser Voices') },
+          { value: 'endpoint', label: t('Speech Endpoint') },
+        ]}
+      />
+      <div className="desc" style={{ margin: '8px 0 18px' }}>
+        {endpoint
+          ? t('Speech comes from an OpenAI-compatible /audio/speech endpoint: OpenAI, or a local server such as Kokoro-FastAPI or openedai-speech. The API key is kept on the NovelWriter server.')
+          : t("Speech uses the voices installed in your browser and operating system. Nothing leaves your device.")}
       </div>
-      <div className="settings-group-title">{t('Text To Speech Settings')}</div>
+      {endpoint && <EndpointSettings />}
       <div className="settings-grid">
+        <ToggleRow title={t('Speak Inputs')} desc={s.ttsSpeakInputs ? t('Your own inputs will be read aloud when you send them.') : t('Your inputs will not be read.')} on={s.ttsSpeakInputs} onChange={(v) => s.set({ ttsSpeakInputs: v })} />
+        <ToggleRow title={t('Speak HypeBot Comments')} desc={s.ttsSpeakHypebot ? t('HypeBot comments will be read aloud.') : t('HypeBot comments will not be read.')} on={s.ttsSpeakHypebot} onChange={(v) => s.set({ ttsSpeakHypebot: v })} />
+        <ToggleRow title={t('Speak AI Outputs')} desc={s.ttsSpeakOutputs ? t('New AI generations will be read aloud automatically.') : t('AI generations will not be read automatically.')} on={s.ttsSpeakOutputs} onChange={(v) => s.set({ ttsSpeakOutputs: v })} />
+        <div>
+          <div className="field-label">{t('HypeBot Voice')}</div>
+          <Select
+            value={s.ttsHypebotVoice}
+            ariaLabel={t('HypeBot Voice')}
+            onChange={(v) => s.set({ ttsHypebotVoice: v })}
+            options={[{ value: '', label: t('Same as Story Voice') }, ...(endpoint ? endpointVoices.map((v) => ({ value: v, label: v })) : voiceOptions)]}
+          />
+        </div>
+      </div>
+      {!endpoint && <div className="settings-group-title">{t('Text To Speech Settings')}</div>}
+      <div className="settings-grid" hidden={endpoint}>
         <div>
           <div className="field-label">{t('Story Voice')}</div>
           <div className="row" style={{ gap: 0 }}>
@@ -461,6 +516,88 @@ function TTSTab() {
         </div>
       </div>
     </>
+  );
+}
+
+/** OpenAI-compatible speech endpoint: URL, key, model, voice, streaming, test and download. */
+function EndpointSettings() {
+  const s = useSettings();
+  const [cfg, setCfg] = useState<TTSConfig | null>(null);
+  const [voices, setVoices] = useState<string[]>([]);
+  const [status, setStatus] = useState('');
+  useEffect(() => {
+    void api.ttsConfig().then(setCfg).catch(() => setCfg({ baseUrl: 'https://api.openai.com/v1', apiKey: '', model: 'tts-1', voice: 'alloy' }));
+  }, []);
+  const save = async (next: TTSConfig) => {
+    setCfg(next);
+    try {
+      await api.saveTtsConfig(next);
+      setVoices(await api.ttsVoices());
+      setStatus('');
+    } catch (e) {
+      setStatus((e as Error).message);
+    }
+  };
+  useEffect(() => {
+    if (cfg) void api.ttsVoices().then(setVoices).catch(() => {});
+  }, [cfg?.baseUrl]);
+  if (!cfg) return null;
+  const sample = s.ttsTestText || t('This is a test for text to speech.');
+  return (
+    <div className="settings-grid tts-endpoint">
+      <label className="number-field">
+        <span className="field-label">{t('Endpoint URL')}</span>
+        <input className="input" value={cfg.baseUrl} placeholder="https://api.openai.com/v1" onChange={(e) => setCfg({ ...cfg, baseUrl: e.target.value })} onBlur={() => void save(cfg)} />
+      </label>
+      <label className="number-field">
+        <span className="field-label">{t('API Key')}</span>
+        <input className="input" type="password" value={cfg.apiKey} placeholder={t('Not needed for most local servers')} onChange={(e) => setCfg({ ...cfg, apiKey: e.target.value })} onBlur={() => void save(cfg)} />
+      </label>
+      <label className="number-field">
+        <span className="field-label">{t('Model')}</span>
+        <input className="input" value={cfg.model} placeholder="tts-1" onChange={(e) => setCfg({ ...cfg, model: e.target.value })} onBlur={() => void save(cfg)} />
+      </label>
+      <div className="number-field">
+        <span className="field-label">{t('Story Voice')}</span>
+        <div className="row" style={{ gap: 0 }}>
+          <Select
+            className="grow"
+            value={s.ttsEndpointVoice || cfg.voice}
+            ariaLabel={t('Story Voice')}
+            searchable={voices.length > 8}
+            onChange={(v) => s.set({ ttsEndpointVoice: v })}
+            options={[...new Set([cfg.voice, ...voices])].filter(Boolean).map((v) => ({ value: v, label: v }))}
+          />
+          <button type="button" className="tts-tile cream" aria-label={t('Test voice')} title={t('Test voice')} onClick={() => speak(sample)}>
+            <SpeakerHigh size={16} weight="fill" />
+          </button>
+          <button type="button" className="tts-tile cream" aria-label={t('Stop')} title={t('Stop')} onClick={stopSpeaking}>
+            <Stop size={16} weight="fill" />
+          </button>
+          <button
+            type="button"
+            className="tts-tile"
+            aria-label={t('Download Spoken')}
+            title={t('Download Spoken')}
+            onClick={() => void downloadSpeech(sample, 'tts-test').catch((e) => setStatus((e as Error).message))}
+          >
+            <DownloadSimple size={16} />
+          </button>
+        </div>
+      </div>
+      {status && <div className="warning-text" style={{ gridColumn: '1 / -1' }}>{status}</div>}
+      <div style={{ gridColumn: '1 / -1' }}>
+        <div className="settings-group-title">{t('Streamed TTS Settings')}</div>
+        <ToggleRow
+          title={t('Streamed TTS')}
+          desc={s.ttsStreamed ? t('Long text is sent a few sentences at a time, so speech starts sooner.') : t('The whole text is synthesized before playback starts.')}
+          on={s.ttsStreamed}
+          onChange={(v) => s.set({ ttsStreamed: v })}
+        />
+        <SliderSetting title={t('Speed')} value={s.ttsRate} min={0.5} max={2} step={0.05} def={1} onChange={(v) => s.set({ ttsRate: v })} />
+        <SliderSetting title={t('Volume')} value={s.ttsVolume} min={0} max={1} step={0.05} def={1} onChange={(v) => s.set({ ttsVolume: v })} />
+      </div>
+    </div>
   );
 }
 
@@ -625,7 +762,7 @@ function HotkeysTab() {
   );
 }
 
-function ChangeLogModal({ onClose }: { onClose: () => void }) {
+export function ChangeLogModal({ onClose }: { onClose: () => void }) {
   const [open, setOpen] = useState<string | null>(NEWS[0]?.id ?? null);
   return (
     <Modal onClose={onClose} width={600} label={t('Change Log')} className="changelog-modal">

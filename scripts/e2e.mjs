@@ -18,7 +18,12 @@ const errors = [];
 page.on('pageerror', (e) => errors.push(e.message));
 const step = async (name, fn) => {
   process.stdout.write(`• ${name} … `);
-  await fn();
+  try {
+    await fn();
+  } catch (e) {
+    await page.screenshot({ path: `${out}failure.png` }).catch(() => {});
+    throw e;
+  }
   console.log('ok');
 };
 const editorText = () => page.locator('.ProseMirror').innerText();
@@ -385,6 +390,40 @@ await step('scenario browser and placeholders dialog', async () => {
   await page.getByRole('textbox', { name: 'Your name' }).fill('Bramble');
   await page.getByRole('button', { name: 'Fill Placeholders' }).click();
   await page.waitForFunction(() => document.querySelector('.ProseMirror')?.textContent?.includes('Bramble'));
+});
+
+await step('tutorial, message-format context, tokenizer, speech endpoint settings', async () => {
+  await page.getByRole('button', { name: 'Open Account Menu' }).click();
+  await page.getByRole('button', { name: 'Interactive Tutorials' }).click();
+  const tour = page.getByRole('dialog', { name: 'Interactive Tutorial' });
+  await tour.waitFor();
+  for (let i = 0; i < 6; i++) await tour.getByRole('button', { name: 'Next' }).click();
+  await tour.getByRole('button', { name: 'Finish' }).click();
+  await tour.waitFor({ state: 'detached' });
+
+  await page.locator('.right-tabs').getByRole('tab', { name: 'Advanced' }).click();
+  await page.getByRole('button', { name: 'Current Context' }).click();
+  await page.getByRole('button', { name: 'Message Format' }).click();
+  await page.getByText('Transformed context to message format.').waitFor();
+  assert.ok((await page.locator('.ctx-msg').count()) >= 2, 'system + user messages');
+  await page.keyboard.press('Escape');
+  await page.locator('.right-tabs').getByRole('tab', { name: 'Story' }).click();
+
+  await page.getByRole('button', { name: 'Open Account Menu' }).click();
+  await page.getByRole('button', { name: 'Tokenizer' }).click();
+  await page.getByPlaceholder('Type text to tokenize…').fill('Hello world');
+  await page.getByLabel('Token IDs').fill('13225, 2375');
+  await page.waitForFunction(() => [...document.querySelectorAll('.ctx-text')].some((e) => e.textContent === 'Hello world'));
+  await page.keyboard.press('Escape');
+  await page.getByRole('button', { name: 'Open Account Menu' }).click();
+
+  await page.getByRole('button', { name: 'Open Settings' }).first().click();
+  await page.locator('.split-modal .nav button', { hasText: 'Text To Speech' }).click();
+  await page.getByText('Speech Endpoint', { exact: true }).click();
+  await page.getByText('Endpoint URL').waitFor();
+  await page.getByText('Streamed TTS Settings').waitFor();
+  await page.getByText('Browser Voices', { exact: true }).click();
+  await page.keyboard.press('Escape');
 });
 
 await page.screenshot({ path: `${out}final.png` });

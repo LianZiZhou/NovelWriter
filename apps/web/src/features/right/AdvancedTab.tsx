@@ -3,6 +3,7 @@ import { ArrowClockwise, X } from '@phosphor-icons/react';
 import { exportBiasGroups, storyPlaceholders, type BuiltContext, type ContextSourceKind } from '@novelwriter/core';
 import { download, safeFileName, useStory } from '../../store/story.ts';
 import { useUI } from '../../store/ui.ts';
+import { useSettings } from '../../store/settings.ts';
 import { t } from '../../i18n.ts';
 import { Collapsible, EnterInput, Select, ToggleRow } from '../../components/ui.tsx';
 import { PhraseBiasEditor } from './PhraseBiasEditor.tsx';
@@ -49,6 +50,7 @@ function SectionTitle({ children }: { children: string }) {
 }
 
 export function AdvancedTab() {
+  const showSystemPrompt = useSettings((x) => x.showSystemPromptSettings);
   const story = useStory((s) => s.current)!;
   const lastContext = useStory((s) => s.lastContext);
   const store = useStory.getState();
@@ -85,9 +87,11 @@ export function AdvancedTab() {
               {t('Ephemeral Context')}
             </button>
           </div>
-          <button type="button" className="btn block" style={{ marginTop: 10 }} onClick={() => ui.open('systemPrompt', { field: 'system' })}>
-            {t('Edit System Prompt')}
-          </button>
+          {showSystemPrompt && (
+            <button type="button" className="btn block" style={{ marginTop: 10 }} onClick={() => ui.open('systemPrompt', { field: 'system' })}>
+              {t('Edit System Prompt')}
+            </button>
+          )}
         </Collapsible>
       </div>
 

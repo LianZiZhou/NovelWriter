@@ -39,6 +39,7 @@ import {
   type AdventureInputMode,
   type BuiltContext,
   type Change,
+  type ChatMessage,
   type HistoryNodeType,
   type ModelRef,
   type Preset,
@@ -84,6 +85,10 @@ interface StoryState {
   /** 'story' for normal sends, or the auxiliary task in progress. */
   task: string | null;
   lastContext: BuiltContext | null;
+  /** The last request as sent: system prompt and chat messages (after user scripts). */
+  lastRequest: { system: string; messages: ChatMessage[] } | null;
+  /** What the next request would look like, as system prompt and messages. */
+  previewRequest: () => { system: string; messages: ChatMessage[] } | null;
   hypebot: HypebotComment | null;
   editor: EditorController | null;
   serverDown: boolean;
@@ -109,6 +114,8 @@ interface StoryState {
   setFavorite: (id: string, fav: boolean) => Promise<void>;
   /** Move a story onto a shelf (null = the library root). */
   setShelf: (id: string, shelf: string | null) => Promise<void>;
+  /** Ask HypeBot for a new comment on the recent story (clicking its avatar). */
+  requestHypebot: () => Promise<void>;
   importFiles: (files: FileList | File[]) => Promise<void>;
   saveShelves: (s: Shelf[]) => void;
   savePresets: (p: Preset[]) => void;
@@ -264,6 +271,7 @@ export const useStory = create<StoryState>((set, get) => ({
   generating: false,
   task: null,
   lastContext: null,
+  lastRequest: null,
   hypebot: null,
   editor: null,
   serverDown: false,
@@ -347,6 +355,7 @@ export const useStory = create<StoryState>((set, get) => ({
     const settings = useSettings.getState();
     const preset = get().allPresets().find((x) => x.id === settings.defaultPresetId) ?? BUILTIN_PRESETS[0];
     const s = newStory({
+      mode: settings.defaultMode,
       presetId: preset.id,
       params: cloneJson(preset.params),
       model: settings.defaultModel,
@@ -411,6 +420,11 @@ export const useStory = create<StoryState>((set, get) => ({
     s.favorite = fav;
     const meta = await api.saveStory(s);
     set({ library: upsertMeta(get().library, meta) });
+  },
+
+  async requestHypebot() {
+    const text = docText(get().current?.doc ?? []);
+    await maybeHypebot(set, get, text.slice(-600), true);
   },
 
   async setShelf(id, shelf) {
@@ -568,11 +582,20 @@ export const useStory = create<StoryState>((set, get) => ({
     return ref ? get().models.find((m) => m.provider === ref.provider && m.id === ref.id) : undefined;
   },
 
+  previewRequest() {
+    const s = get().current;
+    if (!s) return null;
+    const info = get().modelInfo();
+    const maxCtx = Math.min(s.params.maxContext, info?.contextWindow ?? Infinity, useSettings.getState().maxContextCap || Infinity);
+    const req = buildStoryRequest(s, { maxContextTokens: maxCtx, model: info?.id, preamble: useSettings.getState().preamble, nativeBias: backendCaps(info?.flavor ?? 'chat-only').tokenizer !== 'none' });
+    return { system: req.system, messages: req.messages };
+  },
+
   previewContext() {
     const s = get().current;
     if (!s) return null;
     const info = get().modelInfo();
-    const maxCtx = Math.min(s.params.maxContext, info?.contextWindow ?? Infinity);
+    const maxCtx = Math.min(s.params.maxContext, info?.contextWindow ?? Infinity, useSettings.getState().maxContextCap || Infinity);
     return buildStoryRequest(s, { maxContextTokens: maxCtx, model: info?.id }).context;
   },
 
@@ -591,6 +614,7 @@ export const useStory = create<StoryState>((set, get) => ({
     if (input && input.text.trim()) {
       const hooked = await runHook(s.scripts, 'onInput', { text: input.text });
       logScripts(set, get, hooked);
+      if (useSettings.getState().ttsSpeakInputs) speak(hooked.value.text);
       let text = s.mode === 'adventure' ? adventureInput(hooked.value.text, input.mode ?? 'do') : hooked.value.text;
       const before = docText(s.doc);
       if (before && !before.endsWith('\n')) text = '\n' + text;
@@ -742,7 +766,7 @@ async function runGeneration(
   const fullText = docText(s.doc);
   const before = fullText.slice(0, opts.from);
   const after = fullText.slice(opts.from);
-  const maxCtx = Math.min(s.params.maxContext, info?.contextWindow ?? Infinity);
+  const maxCtx = Math.min(s.params.maxContext, info?.contextWindow ?? Infinity, useSettings.getState().maxContextCap || Infinity);
   const caps = backendCaps(info?.flavor ?? 'chat-only');
   const req = buildStoryRequest(s, {
     maxContextTokens: maxCtx,
@@ -762,6 +786,7 @@ async function runGeneration(
     req.system = hooked.value.system;
     if (req.messages[0]) req.messages[0] = { ...req.messages[0], content: hooked.value.context };
   }
+  set({ lastRequest: { system: req.system, messages: req.messages } });
   const ed = get().editor;
   let raw = '';
   let shown = '';
@@ -882,10 +907,10 @@ function logScripts(set: (p: Partial<StoryState>) => void, get: () => StoryState
   if (r.errors.length) useUI.getState().toast(r.errors[0], 'error');
 }
 
-async function maybeHypebot(set: (p: Partial<StoryState>) => void, get: () => StoryState, last: string) {
+async function maybeHypebot(set: (p: Partial<StoryState>) => void, get: () => StoryState, last: string, force = false) {
   const st = useSettings.getState();
   if (st.hypebotMode === 'off') return;
-  if (st.hypebotMode === 'automatic' && Math.random() * 100 > st.hypebotChance) return;
+  if (!force && st.hypebotMode === 'automatic' && Math.random() * 100 > st.hypebotChance) return;
   const s = get().current;
   const model = get().resolveModel();
   if (!s || !model) return;

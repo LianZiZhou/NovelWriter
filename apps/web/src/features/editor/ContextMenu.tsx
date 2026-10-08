@@ -5,8 +5,9 @@ import type { Editor } from '@tiptap/react';
 import { LORE_GEN_TYPES, SPECIAL_CHARACTERS, newLoreEntry } from '@novelwriter/core';
 import { useStory } from '../../store/story.ts';
 import { useUI } from '../../store/ui.ts';
+import { useSettings } from '../../store/settings.ts';
 import { t } from '../../i18n.ts';
-import { speak, stopSpeaking } from '../tts/tts.ts';
+import { downloadSpeech, speak, stopSpeaking } from '../tts/tts.ts';
 import { chatAsExcerpt } from '../right/SideChatTab.tsx';
 import { posToOffset, docPlainText } from './pm.ts';
 
@@ -169,6 +170,12 @@ export function EditorContextMenu({ state, editor, onClose }: { state: MenuState
           <>
             <Item label={t('Speak')} onClick={run(() => speak(selText || docPlainText(editor.state.doc).slice(-2000)))} />
             <Item label={t('Stop Speaking')} onClick={run(stopSpeaking)} />
+            {useSettings.getState().ttsSource === 'endpoint' && (
+              <Item
+                label={t('Download Spoken')}
+                onClick={run(() => void downloadSpeech(selText || docPlainText(editor.state.doc).slice(-2000), 'story').catch((e) => ui.toast((e as Error).message, 'error')))}
+              />
+            )}
           </>
         }
       />

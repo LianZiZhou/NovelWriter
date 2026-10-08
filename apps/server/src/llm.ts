@@ -271,6 +271,20 @@ export class LLM {
     return Object.keys(out).length ? out : undefined;
   }
 
+  /** Token ids for `text` with the model's own tokenizer when we can reach it, else none. */
+  async tokenize(ref: { provider: string; id: string }, text: string): Promise<{ tokenizer: 'o200k' | 'remote' | 'none'; ids: number[] }> {
+    const model = this.models.getModel(ref.provider, ref.id);
+    if (!model) throw new Error(`Unknown model ${ref.provider}/${ref.id}`);
+    const flavor = this.flavorOf(model);
+    const kind = backendCaps(flavor).tokenizer;
+    if (kind === 'o200k') {
+      await loadTokenizer();
+      return { tokenizer: kind, ids: tokenIds(text) };
+    }
+    if (kind === 'remote') return { tokenizer: kind, ids: await this.remoteTokenize(model.provider, flavor, text) };
+    return { tokenizer: 'none', ids: [] };
+  }
+
   /** Tokenize with the inference server's own tokenizer (llama.cpp, vLLM, KoboldCpp, TabbyAPI). */
   private async remoteTokenize(provider: string, flavor: BackendFlavor, text: string): Promise<number[]> {
     const c = this.custom.get(provider);

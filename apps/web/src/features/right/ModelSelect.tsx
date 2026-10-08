@@ -28,7 +28,7 @@ export function ModelSelect({ value, onChange, className, placeholder }: { value
         value={value ? key(value) : null}
         options={options}
         searchable={options.length > 8}
-        ariaLabel={t('AI Model')}
+        ariaLabel={t('Select an AI Model')}
         placeholder={models.length ? placeholder ?? t('Connect an AI provider…') : t('Connect an AI provider…')}
         onChange={(v) => {
           const [provider, id] = v.split('\u0000');

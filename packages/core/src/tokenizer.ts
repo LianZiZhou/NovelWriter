@@ -80,3 +80,18 @@ export function tokenize(text: string): string[] {
 export function tokenIds(text: string): number[] {
   return impl ? impl.encode(text) : heuristicEncode(text);
 }
+
+/** Text for o200k token ids (empty until the tokenizer has loaded). Unknown ids are skipped. */
+export function decodeTokenIds(ids: number[]): string {
+  if (!impl) return '';
+  const tk = impl;
+  const valid = ids.filter((id) => {
+    try {
+      tk.decode([id]);
+      return true;
+    } catch {
+      return false;
+    }
+  });
+  return tk.decode(valid);
+}

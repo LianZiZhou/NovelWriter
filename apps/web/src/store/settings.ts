@@ -50,6 +50,10 @@ export interface Settings {
   streamDelay: number;
   continueToSentenceEnd: boolean;
   preamble: boolean;
+  /** Upper bound on context tokens for every story (0 = no cap beyond the preset and model). */
+  maxContextCap: number;
+  /** Show the System Prompt / Prefill button in the Advanced tab. */
+  showSystemPromptSettings: boolean;
   defaultBias: boolean;
   hypebotMode: 'off' | 'automatic' | 'permanent';
   hypebotChance: number;
@@ -72,6 +76,15 @@ export interface Settings {
   ttsPitch: number;
   ttsVolume: number;
   ttsSpeakOutputs: boolean;
+  /** Read the player's own inputs (input box / adventure actions) aloud. */
+  ttsSpeakInputs: boolean;
+  /** Browser voices, or an OpenAI-compatible speech endpoint configured on the server. */
+  ttsSource: 'browser' | 'endpoint';
+  ttsEndpointVoice: string;
+  /** HypeBot's own voice (browser voice URI / "saved:<id>", or endpoint voice name); '' = the story voice. */
+  ttsHypebotVoice: string;
+  /** Endpoint audio is fetched sentence by sentence so playback starts sooner. */
+  ttsStreamed: boolean;
   leftOpen: boolean;
   rightOpen: boolean;
   rightTab: 'story' | 'advanced' | 'generation' | 'chat';
@@ -168,6 +181,8 @@ export const DEFAULT_SETTINGS: Settings = {
   streamDelay: 0,
   continueToSentenceEnd: true,
   preamble: true,
+  maxContextCap: 0,
+  showSystemPromptSettings: true,
   defaultBias: true,
   hypebotMode: 'off',
   hypebotChance: 5,
@@ -188,6 +203,11 @@ export const DEFAULT_SETTINGS: Settings = {
   ttsPitch: 1,
   ttsVolume: 1,
   ttsSpeakOutputs: false,
+  ttsSpeakInputs: false,
+  ttsSource: 'browser',
+  ttsEndpointVoice: '',
+  ttsHypebotVoice: '',
+  ttsStreamed: true,
   leftOpen: true,
   rightOpen: true,
   rightTab: 'story',

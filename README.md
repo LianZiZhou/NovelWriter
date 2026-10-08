@@ -100,7 +100,13 @@ Credentials are stored in `data/auth.json` on the server and never sent to the b
 - **User scripts**: sandboxed hooks to rewrite the context and the AI response.
 - **Screenshot Designer** (title, date, pen name, logo, colours, legend, model, background,
   comment, speech highlighting; PNG, JPG or clipboard).
-- **Hypebot**, browser **text-to-speech**, **19 themes** plus a theme editor, custom CSS,
+- **Text to speech**: browser voices or any OpenAI-compatible `/audio/speech` endpoint (OpenAI, Kokoro-FastAPI,
+  openedai-speech…; the key stays on the server), streamed sentence by sentence, with saved voices, a HypeBot
+  voice, Speak Inputs/Outputs and Download Spoken.
+- **Context Viewer** with stages, inclusion and activation reasons, and the final request in message format
+  (System/User/Assistant); **Tokenizer** with o200k or the current model's own tokenizer and id decoding;
+  **Story Statistics** with data blocks and deleted characters; an **interactive tutorial**.
+- **Hypebot** (click its avatar for a new comment), **19 themes** plus a theme editor, custom CSS,
   rebindable hotkeys, a command palette (Ctrl+K), English and Simplified Chinese UI,
   drag-and-drop import, mobile layout.
 

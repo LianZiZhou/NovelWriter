@@ -25,6 +25,14 @@ export interface ModelInfo {
   flavor: BackendFlavor;
 }
 
+/** OpenAI-compatible speech endpoint (the key comes back masked). */
+export interface TTSConfig {
+  baseUrl: string;
+  apiKey: string;
+  model: string;
+  voice: string;
+}
+
 export interface CustomProvider {
   id: string;
   name: string;
@@ -66,6 +74,13 @@ export const api = {
   logout: (provider: string) => fetch(`/api/auth/${provider}`, { method: 'DELETE' }).then((r) => json<{ ok: true }>(r)),
   customProviders: () => fetch('/api/custom-providers').then((r) => json<CustomProvider[]>(r)),
   saveCustomProviders: (c: CustomProvider[]) => put('/api/custom-providers', c).then((r) => json<{ ok: true }>(r)),
+  tokenize: (model: { provider: string; id: string }, text: string) =>
+    fetch('/api/tokenize', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ model, text }) }).then((r) =>
+      json<{ tokenizer: 'o200k' | 'remote' | 'none'; ids: number[] }>(r),
+    ),
+  ttsConfig: () => fetch('/api/tts/config').then((r) => json<TTSConfig>(r)),
+  saveTtsConfig: (c: TTSConfig) => put('/api/tts/config', c).then((r) => json<{ ok: true }>(r)),
+  ttsVoices: () => fetch('/api/tts/voices').then((r) => json<string[]>(r)),
   probeCustom: (baseUrl: string, apiKey?: string, id?: string) =>
     fetch('/api/custom-providers/probe', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ baseUrl, apiKey, id }) }).then((r) =>
       json<{ id: string }[]>(r),

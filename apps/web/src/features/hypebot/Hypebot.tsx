@@ -4,6 +4,7 @@ import { speak } from '../tts/tts.ts';
 import { pickAvatar } from './avatars.tsx';
 import { useStory } from '../../store/story.ts';
 import { useSettings } from '../../store/settings.ts';
+import { t } from '../../i18n.ts';
 
 /** HypeBot: a reading buddy that comments on new generations. */
 export function Hypebot() {
@@ -23,7 +24,7 @@ export function Hypebot() {
   }, [comment, delay]);
   useEffect(() => {
     if (!comment) return;
-    if (mode !== 'off' && useSettings.getState().ttsSpeakHypebot) speak(comment.text);
+    if (mode !== 'off' && useSettings.getState().ttsSpeakHypebot) speak(comment.text, { hypebot: true });
   }, [comment, mode]);
   useEffect(() => {
     if (!comment) return;
@@ -33,6 +34,7 @@ export function Hypebot() {
       return () => clearTimeout(id);
     }
   }, [comment, mode]);
+  const [asking, setAsking] = useState(false);
   if (mode === 'off' || !comment || !visible) return null;
   const avatar = pickAvatar(avatarSetting, comment.text);
   return (
@@ -40,15 +42,27 @@ export function Hypebot() {
       <div className="bubble">
         <div className="row between">
           <span className="comment-name">HypeBot</span>
-          <button type="button" className="icon-btn" onClick={() => setVisible(false)} aria-label="Dismiss">
+          <button type="button" className="icon-btn" onClick={() => setVisible(false)} aria-label={t('Dismiss')}>
             <X size={12} />
           </button>
         </div>
         <div>{comment.text.slice(0, shown)}</div>
       </div>
-      <div className="avatar" style={{ background: `hsl(${avatar.hue} 30% 22%)` }}>
-        {avatar.icon(30)}
-      </div>
+      <button
+        type="button"
+        className="avatar"
+        style={{ background: `hsl(${avatar.hue} 30% 22%)` }}
+        aria-label={t('Ask HypeBot for a new comment')}
+        title={t('Ask HypeBot for a new comment')}
+        disabled={asking}
+        onClick={async () => {
+          setAsking(true);
+          await useStory.getState().requestHypebot();
+          setAsking(false);
+        }}
+      >
+        {asking ? <span className="spinner" /> : avatar.icon(30)}
+      </button>
     </div>
   );
 }

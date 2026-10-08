@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState } from 'react';
 import {
   ArrowLeft,
+  Bell,
   Books,
   CaretDown,
   CaretLeft,
@@ -10,6 +11,7 @@ import {
   Copy,
   DownloadSimple,
   Funnel,
+  GraduationCap,
   GearSix,
   Heart,
   House,
@@ -35,6 +37,9 @@ import { t } from '../../i18n.ts';
 import { timeAgo, Modal, ModalHeader, Select, Toggle } from '../../components/ui.tsx';
 import { Logo } from '../../components/Logo.tsx';
 import { Identicon } from '../../components/Identicon.tsx';
+import { useTour } from '../tour/Tour.tsx';
+import { NEWS } from '../home/news.ts';
+import { ChangeLogModal } from '../settings/SettingsModal.tsx';
 
 const REPO_URL = 'https://github.com/LianZiZhou/NovelWriter#readme';
 
@@ -147,6 +152,8 @@ function AccountMenu({ onClose }: { onClose: () => void }) {
   const lang = useSettings((s) => s.language);
   const identicon = useSettings((s) => s.showIdenticon);
   const connected = new Set(models.filter((m) => m.provider !== 'demo').map((m) => m.provider)).size;
+  const unseen = useSettings((s) => s.changelogSeen) !== (NEWS[0]?.id ?? '');
+  const [log, setLog] = useState(false);
   return (
     <div className="account-menu">
       <div className="account-head">
@@ -187,6 +194,28 @@ function AccountMenu({ onClose }: { onClose: () => void }) {
       />
       <MenuTile icon={<TextAa size={20} />} label={t('Tokenizer')} onClick={() => ui.open('tokenize', { text: '', standalone: true })} />
       <div className="menu-group">{t('Help')}</div>
+      <MenuTile
+        icon={<GraduationCap size={20} />}
+        label={t('Interactive Tutorials')}
+        onClick={async () => {
+          onClose();
+          if (!useStory.getState().current) await store.createStory();
+          useTour.getState().start();
+        }}
+      />
+      <MenuTile
+        icon={
+          <span className="bell">
+            <Bell size={20} weight={unseen ? 'fill' : 'regular'} />
+            {unseen && <i className="bell-dot" aria-label={t('New!')} />}
+          </span>
+        }
+        label={t("What's New")}
+        onClick={() => {
+          setLog(true);
+          useSettings.getState().set({ changelogSeen: NEWS[0]?.id ?? '' });
+        }}
+      />
       <MenuTile icon={<Keyboard size={20} />} label={t('Hotkeys')} onClick={() => ui.open('settings', { tab: 'hotkeys' })} />
       <MenuTile icon={<Question size={20} />} label={t('Documentation')} href={REPO_URL} />
       <div className="grow" />
@@ -195,7 +224,7 @@ function AccountMenu({ onClose }: { onClose: () => void }) {
         <Select
           className="lang-select"
           value={lang}
-          ariaLabel={t('Language')}
+          ariaLabel={t('Select a language')}
           onChange={(v) => useSettings.getState().set({ language: v })}
           options={[
             { value: 'en', label: '🇬🇧' },
@@ -203,6 +232,7 @@ function AccountMenu({ onClose }: { onClose: () => void }) {
           ]}
         />
       </div>
+      {log && <ChangeLogModal onClose={() => setLog(false)} />}
     </div>
   );
 }
@@ -372,7 +402,7 @@ export function LeftSidebar({ onCollapse, mobileOpen }: { onCollapse: () => void
         >
           <UserCircle size={24} weight="fill" />
         </button>
-        <button type="button" className="hbtn" aria-label={t('Open Settings')} title={t('Open Settings')} onClick={() => ui.open('settings')}>
+        <button type="button" className="hbtn settings-open" aria-label={t('Open Settings')} title={t('Open Settings')} onClick={() => ui.open('settings')}>
           <GearSix size={20} weight="fill" />
         </button>
         <button type="button" className="hbtn" aria-label={t('Close left sidebar')} title={t('Close left sidebar')} onClick={onCollapse}>

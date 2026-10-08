@@ -3944,3 +3944,105 @@
 .placeholder-uses code {
   font-family: var(--font-code);
 }
+
+.stats-warning {
+  font-size: 12px;
+  color: var(--text-placeholder);
+  margin: -6px 0 10px;
+}
+.ctx-view-row {
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+.ctx-messages {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.ctx-msg {
+  background: var(--bg1);
+  border-left: 3px solid var(--bg3);
+  padding: 8px 12px;
+}
+.ctx-msg.system {
+  border-left-color: var(--text-edit);
+}
+.ctx-msg.user {
+  border-left-color: var(--text-user);
+}
+.ctx-msg.assistant {
+  border-left-color: var(--text-ai);
+}
+.ctx-msg-role {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  opacity: 0.7;
+  margin-bottom: 4px;
+}
+.ctx-msg pre {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: inherit;
+  font-size: 14px;
+  max-height: 360px;
+  overflow-y: auto;
+}
+
+/* Interactive tutorial. */
+.tour {
+  position: fixed;
+  inset: 0;
+  z-index: 400;
+}
+.tour-dim {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+}
+.tour-hole {
+  position: absolute;
+  border-radius: 4px;
+  outline: 2px solid var(--text-headings);
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.55);
+  pointer-events: none;
+  transition: all 0.2s ease;
+}
+.tour-card {
+  position: absolute;
+  background: var(--bg1);
+  border: 1px solid var(--bg3);
+  border-radius: 4px;
+  padding: 16px 18px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+}
+.tour-card h3 {
+  margin: 0 0 6px;
+  color: var(--text-headings);
+}
+.tour-card p {
+  margin: 0 0 14px;
+  line-height: 1.5;
+  font-size: 14px;
+}
+.tour-count {
+  font-size: 12px;
+  color: var(--text-placeholder);
+  margin-bottom: 4px;
+}
+.bell {
+  position: relative;
+  display: inline-flex;
+}
+.bell-dot {
+  position: absolute;
+  top: -1px;
+  right: -2px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-headings);
+}

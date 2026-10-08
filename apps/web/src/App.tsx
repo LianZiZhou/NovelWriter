@@ -29,6 +29,7 @@ import {
 import { Logo } from './components/Logo.tsx';
 import { ScriptsModal } from './features/scripts/ScriptsModal.tsx';
 import { TokenProbsModal } from './features/tokenprobs/TokenProbs.tsx';
+import { Tour } from './features/tour/Tour.tsx';
 
 function ModalHost() {
   const modal = useUI((s) => s.modal);
@@ -318,6 +319,7 @@ export function App() {
       {mobile && <div className={`drawer-backdrop ${mobileLeft || mobileRight ? 'show' : ''}`} onClick={() => setUI({ mobileLeft: false, mobileRight: false })} />}
       <ModalHost />
       <ConfirmHost />
+      <Tour />
       <Toasts />
       {dropping && (
         <div className="modal-backdrop" style={{ pointerEvents: 'none' }}>

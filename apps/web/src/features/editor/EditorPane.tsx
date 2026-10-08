@@ -207,7 +207,7 @@ function AdventureBar({ mode, setMode, text, setText, onSend, controls }: { mode
           ))}
         </div>
         <span className="adv-sep" />
-        <button type="button" className="ctrl-btn" aria-label={t('Lorebook')} title={t('Lorebook')} onClick={() => useUI.getState().open('lorebook')}>
+        <button type="button" className="ctrl-btn lorebook-open" aria-label={t('Lorebook')} title={t('Lorebook')} onClick={() => useUI.getState().open('lorebook')}>
           <Book size={18} weight="fill" />
         </button>
         <div className="grow" />
@@ -298,7 +298,7 @@ export function EditorPane() {
               <AdventureBar mode={advMode} setMode={setAdvMode} text={input} setText={setInput} onSend={doSend} controls={controls} />
             ) : (
               <div className="control-bar">
-                <button type="button" className="ctrl-btn" aria-label={t('Lorebook')} title={t('Lorebook')} onClick={() => useUI.getState().open('lorebook')}>
+                <button type="button" className="ctrl-btn lorebook-open" aria-label={t('Lorebook')} title={t('Lorebook')} onClick={() => useUI.getState().open('lorebook')}>
                   <Book size={20} weight="fill" />
                 </button>
                 {inputBox ? (
