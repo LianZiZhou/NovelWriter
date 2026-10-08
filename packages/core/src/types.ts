@@ -72,9 +72,24 @@ export interface PhraseBiasGroup {
   whenInactive: boolean;
 }
 
+export type EquationVariable = 'currentStep' | 'paragraphCount' | 'characterCount' | 'activeEntries' | 'random';
+
+export interface EquationTerm {
+  /** How this term combines with the result so far (ignored on the first term). */
+  operator: '+' | '-' | '*' | '/' | '%';
+  value: number | EquationVariable;
+}
+
 export type Condition =
   | { type: 'true' }
-  | { type: 'keyword'; key: string }
+  | {
+      type: 'keyword';
+      key: string;
+      /** Where to search (default: the story). */
+      location?: 'story' | 'lore' | 'authorsNote' | 'memory';
+      /** Characters searched from the end of the text; 0 or unset = the whole text. */
+      range?: number;
+    }
   | { type: 'loreActive'; entryId: string }
   | { type: 'model'; model: string }
   | { type: 'storyMode'; mode: StoryMode }
@@ -90,6 +105,13 @@ export type Condition =
       variable: 'storyText' | 'memoryText' | 'authorsNoteText';
       op: 'equals' | 'includes' | 'startsWith' | 'endsWith';
       value: string;
+    }
+  | {
+      /** Terms combined strictly left to right (no operator precedence), then compared with `value`. */
+      type: 'equation';
+      terms: EquationTerm[];
+      op: '<' | '<=' | '=' | '>=' | '>' | '!=';
+      value: number;
     }
   | { type: 'and'; conditions: Condition[] }
   | { type: 'or'; conditions: Condition[] }

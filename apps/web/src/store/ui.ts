@@ -19,8 +19,7 @@ export type ModalName =
   | 'historyTree'
   | 'modelPicker'
   | 'samplers'
-  | 'scripts'
-  | 'confirm';
+  | 'scripts';
 
 export interface Toast {
   id: number;
@@ -36,12 +35,21 @@ interface UIState {
   mobileLeft: boolean;
   mobileRight: boolean;
   findOpen: boolean;
+  /** Confirmation dialog, shown above whatever modal is open. */
+  confirmProps: (ConfirmOptions & { resolve: (v: boolean) => void }) | null;
   open: (m: ModalName, props?: Record<string, unknown>) => void;
   close: () => void;
   toast: (text: string, kind?: Toast['kind']) => void;
   dismissToast: (id: number) => void;
   set: (p: Partial<UIState>) => void;
-  confirm: (opts: { title: string; message?: string; confirmLabel?: string; danger?: boolean }) => Promise<boolean>;
+  confirm: (opts: ConfirmOptions) => Promise<boolean>;
+}
+
+export interface ConfirmOptions {
+  title: string;
+  message?: string;
+  confirmLabel?: string;
+  danger?: boolean;
 }
 
 let nextToast = 1;
@@ -53,6 +61,7 @@ export const useUI = create<UIState>((set, get) => ({
   mobileLeft: false,
   mobileRight: false,
   findOpen: false,
+  confirmProps: null,
   open: (modal, modalProps = {}) => set({ modal, modalProps }),
   close: () => set({ modal: null, modalProps: {} }),
   toast(text, kind = 'info') {
@@ -64,7 +73,16 @@ export const useUI = create<UIState>((set, get) => ({
   set: (p) => set(p),
   confirm(opts) {
     return new Promise<boolean>((resolve) => {
-      set({ modal: 'confirm', modalProps: { ...opts, resolve } });
+      get().confirmProps?.resolve(false);
+      set({
+        confirmProps: {
+          ...opts,
+          resolve: (v) => {
+            set({ confirmProps: null });
+            resolve(v);
+          },
+        },
+      });
     });
   },
 }));

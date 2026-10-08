@@ -13,7 +13,9 @@ import {
   Image as ImageIcon,
   Lightbulb,
   MagnifyingGlass,
+  PencilSimple,
   Plus,
+  SidebarSimple,
   Question,
   Trash,
   UploadSimple,
@@ -35,8 +37,10 @@ import {
   type LoreCategory,
   type LoreEntry,
   type Lorebook,
+  MAX_SEARCH_RANGE,
 } from '@novelwriter/core';
 import { download, safeFileName, useStory } from '../../store/story.ts';
+import { useSettings } from '../../store/settings.ts';
 import { useUI } from '../../store/ui.ts';
 import { t } from '../../i18n.ts';
 import { EnterInput, Modal, Select, Tabs, ToggleRow } from '../../components/ui.tsx';
@@ -52,7 +56,8 @@ export function LorebookModal({ onClose, entryId, generate }: { onClose: () => v
   const store = useStory.getState();
   const ui = useUI.getState();
   const lb = story.lorebook;
-  const [sel, setSel] = useState<Selection>(entryId ? { kind: 'entry', id: entryId } : lb.entries[0] ? { kind: 'entry', id: lb.entries[0].id } : null);
+  const [sel, setSel] = useState<Selection>(entryId ? { kind: 'entry', id: entryId } : null);
+  const docked = useSettings((s) => s.loreDocked);
   const [search, setSearch] = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
   const [sort, setSort] = useState<'default' | 'alpha' | 'recent'>('default');
@@ -96,10 +101,9 @@ export function LorebookModal({ onClose, entryId, generate }: { onClose: () => v
     if (sel?.kind === 'entry' && ids.includes(sel.id)) setSel(null);
   };
 
-  const exportSelection = (ids?: Set<string>) => {
-    const sub: Lorebook = ids ? { ...lb, entries: lb.entries.filter((e) => ids.has(e.id)) } : lb;
-    download(`${safeFileName(story.title)}.lorebook`, exportLorebook(sub));
-  };
+  const subset = (ids?: Set<string>): Lorebook => (ids ? { ...lb, entries: lb.entries.filter((e) => ids.has(e.id)) } : lb);
+  const exportSelection = (ids?: Set<string>) => download(`${safeFileName(story.title)}.lorebook`, exportLorebook(subset(ids)));
+  const pngTarget = useRef<Set<string> | undefined>(undefined);
 
   const renderEntry = (e: LoreEntry) => (
     <div
@@ -109,10 +113,17 @@ export function LorebookModal({ onClose, entryId, generate }: { onClose: () => v
     >
       <div className="row" style={{ gap: 8 }}>
         {multi && <span className={`checkbox ${multi.has(e.id) ? 'on' : ''}`} style={{ width: 18, height: 18 }}>{multi.has(e.id) && <Check size={12} weight="bold" />}</span>}
-        <div className="name grow">{e.displayName || t('Unnamed')}</div>
+        <div className="name grow">{e.displayName || t('Unnamed Entry')}</div>
+        {e.hidden && (
+          <span title={t('Hidden Entry')} aria-label={t('Hidden Entry')} style={{ display: 'inline-flex', opacity: 0.7 }}>
+            <EyeSlash size={14} />
+          </span>
+        )}
         {activeIds.has(e.id) && <span title={t('Active in current context')} style={{ width: 8, height: 8, borderRadius: 4, background: 'var(--text-headings)', flex: 'none' }} />}
       </div>
-      {e.forceActivation ? (
+      {e.hidden ? (
+        <div className="keys">{t('Hidden Entry')}</div>
+      ) : e.forceActivation ? (
         <div className="keys">{t('Always On')}</div>
       ) : e.keys.length ? (
         <div className="keys">{e.keys.join(', ')}</div>
@@ -147,7 +158,7 @@ export function LorebookModal({ onClose, entryId, generate }: { onClose: () => v
   const selCat = sel?.kind === 'category' ? lb.categories.find((c) => c.id === sel.id) : undefined;
 
   return (
-    <Modal onClose={onClose} width={1136} className="lore-modal" label={t('Lorebook')}>
+    <Modal onClose={onClose} width={docked ? 760 : 1136} className={`lore-modal ${docked ? 'docked' : ''}`} label={t('Lorebook')} docked={docked}>
       <div className="lore-side">
         <div className="lore-title">
           <span className="heading">
@@ -162,6 +173,16 @@ export function LorebookModal({ onClose, entryId, generate }: { onClose: () => v
             </button>
             <button type="button" className="square-btn" aria-label={t('Embed Lorebook in PNG')} title={t('Embed Lorebook in PNG')} onClick={() => pngRef.current?.click()}>
               <ImageIcon size={16} />
+            </button>
+            <button
+              type="button"
+              className={`square-btn ${docked ? 'active' : ''}`}
+              aria-label={docked ? t('Undock Lorebook') : t('Dock Lorebook')}
+              title={docked ? t('Undock Lorebook') : t('Dock Lorebook as a side panel')}
+              aria-pressed={docked}
+              onClick={() => useSettings.getState().set({ loreDocked: !docked })}
+            >
+              <SidebarSimple size={16} />
             </button>
           </span>
           <input
@@ -185,7 +206,8 @@ export function LorebookModal({ onClose, entryId, generate }: { onClose: () => v
               e.target.value = '';
               if (!f) return;
               try {
-                const out = embedPngLorebook(new Uint8Array(await f.arrayBuffer()), lb);
+                const out = embedPngLorebook(new Uint8Array(await f.arrayBuffer()), subset(pngTarget.current));
+                pngTarget.current = undefined;
                 download(`${safeFileName(story.title)}.png`, out.slice().buffer, 'image/png');
               } catch (err) {
                 ui.toast((err as Error).message, 'error');
@@ -222,7 +244,7 @@ export function LorebookModal({ onClose, entryId, generate }: { onClose: () => v
         )}
         {searchOpen && (
           <div className="lib-search">
-            <input autoFocus className="input" placeholder={t('Search for an entry')} value={search} onChange={(e) => setSearch(e.target.value)} />
+            <input autoFocus className="input" placeholder={t('Search Lorebook Entries')} aria-label={t('Search Lorebook Entries')} value={search} onChange={(e) => setSearch(e.target.value)} />
           </div>
         )}
         {multi && (
@@ -231,15 +253,27 @@ export function LorebookModal({ onClose, entryId, generate }: { onClose: () => v
             <button type="button" className="btn small" onClick={() => setMulti(new Set(entries.map((e) => e.id)))}>
               {t('All')}
             </button>
-            <button type="button" className="btn small" disabled={!multi.size} onClick={() => exportSelection(multi)}>
-              {t('Export')}
+            <button type="button" className="btn small" disabled={!multi.size} onClick={() => exportSelection(multi)} title={t('Export Selected')}>
+              {t('Export Selected')}
+            </button>
+            <button
+              type="button"
+              className="btn small"
+              disabled={!multi.size}
+              title={t('Export Selected to PNG')}
+              onClick={() => {
+                pngTarget.current = new Set(multi);
+                pngRef.current?.click();
+              }}
+            >
+              {t('PNG')}
             </button>
             <button
               type="button"
               className="btn small danger"
               disabled={!multi.size}
               onClick={async () => {
-                if (await ui.confirm({ title: t('Delete'), message: t('Delete {n} entries?', { n: multi.size }), danger: true, confirmLabel: t('Delete') })) {
+                if (await ui.confirm({ title: t('Delete Selected?'), message: t('Delete {n} entries?', { n: multi.size }), danger: true, confirmLabel: t('Delete') })) {
                   deleteEntries([...multi]);
                   setMulti(new Set());
                 }
@@ -257,12 +291,12 @@ export function LorebookModal({ onClose, entryId, generate }: { onClose: () => v
               <div key={c.id} className="lore-cat">
                 <div className={`cat-head ${sel?.kind === 'category' && sel.id === c.id ? 'active' : ''}`} style={sel?.kind === 'category' && sel.id === c.id ? { background: 'var(--bg2)' } : undefined} onClick={() => setSel({ kind: 'category', id: c.id })}>
                   <div className="row between">
-                    <span style={{ fontWeight: 600, opacity: c.enabled ? 1 : 0.5 }}>{c.name}</span>
+                    <span style={{ fontWeight: 600, opacity: c.enabled ? 1 : 0.5 }}>{c.name || t('Unnamed Category')}</span>
                     <span className="row" style={{ gap: 12 }} onClick={(e) => e.stopPropagation()}>
-                      <button type="button" className="icon-btn" aria-label={t('Add')} onClick={() => addEntry(c.id)}>
+                      <button type="button" className="icon-btn" aria-label={t('Add Entry to Category')} title={t('Add Entry to Category')} onClick={() => addEntry(c.id)}>
                         <Plus size={18} weight="bold" />
                       </button>
-                      <button type="button" className="icon-btn" aria-label={c.open ? t('Collapse') : t('Expand')} onClick={() => updateCat(c.id, { open: !c.open })}>
+                      <button type="button" className="icon-btn" aria-label={c.open ? t('Minimize') : t('Expand')} title={c.open ? t('Minimize') : t('Expand')} onClick={() => updateCat(c.id, { open: !c.open })}>
                         {c.open ? <CaretUp size={16} weight="fill" /> : <CaretDown size={16} weight="fill" />}
                       </button>
                     </span>
@@ -275,7 +309,7 @@ export function LorebookModal({ onClose, entryId, generate }: { onClose: () => v
                           type="button"
                           aria-label={t('Delete')}
                           onClick={async () => {
-                            if (await ui.confirm({ title: t('Delete Category'), message: t('Entries in this category will be kept without a category.'), danger: true, confirmLabel: t('Delete') })) {
+                            if (await ui.confirm({ title: t('Delete Category?'), message: t('Entries in this category will be kept without a category. To delete them too, use Delete Containing Entries in the category settings first.'), danger: true, confirmLabel: t('Delete') })) {
                               setLb((l) => ({ ...l, categories: l.categories.filter((x) => x.id !== c.id), entries: l.entries.map((e) => (e.category === c.id ? { ...e, category: null } : e)) }));
                               setSel(null);
                             }
@@ -292,6 +326,7 @@ export function LorebookModal({ onClose, entryId, generate }: { onClose: () => v
             );
           })}
           {lb.entries.length === 0 && lb.categories.length === 0 && <div className="muted" style={{ padding: 20, fontSize: 14 }}>{t('No entries yet. Add one below.')}</div>}
+          {search && entries.length === 0 && <div className="muted" style={{ padding: 20, fontSize: 14 }}>{t('No entries match your search.')}</div>}
         </div>
         <div className="lore-bottom">
           <button type="button" className="btn" style={{ background: 'var(--bg3)' }} onClick={() => addEntry(null)}>
@@ -308,15 +343,105 @@ export function LorebookModal({ onClose, entryId, generate }: { onClose: () => v
         ) : selCat ? (
           <CategoryEditor key={selCat.id} cat={selCat} update={(p) => updateCat(selCat.id, p)} onClose={onClose} />
         ) : (
-          <div className="row between" style={{ alignItems: 'flex-start' }}>
-            <div className="empty-state" style={{ minHeight: 300 }}>{t('Select or create an entry.')}</div>
-            <button type="button" className="icon-btn" onClick={onClose} aria-label={t('Close')}>
-              <X size={22} weight="bold" />
-            </button>
-          </div>
+          <LoreWelcome orderByKey={lb.settings.orderByKeyLocations} setOrderByKey={(v) => setLb((l) => ({ ...l, settings: { ...l.settings, orderByKeyLocations: v } }))} total={lb.entries.length} active={activeIds.size} categories={lb.categories.length} onClose={onClose} onAddEntry={() => addEntry(null)} onAddCategory={addCategory} onImport={() => fileRef.current?.click()} />
         )}
       </div>
     </Modal>
+  );
+}
+
+function LoreWelcome({ orderByKey, setOrderByKey, total, active, categories, onClose, onAddEntry, onAddCategory, onImport }: { orderByKey: boolean; setOrderByKey: (v: boolean) => void; total: number; active: number; categories: number; onClose: () => void; onAddEntry: () => void; onAddCategory: () => void; onImport: () => void }) {
+  return (
+    <div className="lore-welcome">
+      <div className="row between" style={{ alignItems: 'flex-start' }}>
+        <h2 className="lore-welcome-title">
+          <Book size={26} weight="fill" /> {t('Welcome to the Lorebook')}
+        </h2>
+        <button type="button" className="icon-btn" onClick={onClose} aria-label={t('Close')}>
+          <X size={22} weight="bold" />
+        </button>
+      </div>
+      <p>{t('The Lorebook is where you keep the details of your world: characters, places, factions, objects and ideas. Each entry has Activation Keys; when a key appears in the recent story, the entry is added to the context so the AI remembers it.')}</p>
+      <ul>
+        <li>{t('Keep entries short and factual. Start with the name of the subject.')}</li>
+        <li>{t('Use several keys for names and nicknames. Keys are case-insensitive; /regex/ and A & B keys are supported.')}</li>
+        <li>{t('Group entries in categories to share settings, headers and subcontexts.')}</li>
+        <li>{t('Always On entries are always in the context; use them sparingly.')}</li>
+      </ul>
+      <div className="lore-welcome-stats">
+        <span>
+          <b>{total}</b> {t('entries')}
+        </span>
+        <span>
+          <b>{active}</b> {t('active now')}
+        </span>
+        <span>
+          <b>{categories}</b> {t('categories')}
+        </span>
+      </div>
+      <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+        <button type="button" className="btn primary" onClick={onAddEntry}>
+          <Plus size={14} weight="bold" /> {t('New Entry')}
+        </button>
+        <button type="button" className="btn" onClick={onAddCategory}>
+          <Plus size={14} weight="bold" /> {t('New Category')}
+        </button>
+        <button type="button" className="btn" onClick={onImport}>
+          <UploadSimple size={14} /> {t('Import')}
+        </button>
+      </div>
+      <div className="desc">{t('Select an entry on the left to edit it. You can also import SillyTavern, Agnai and AI Dungeon lorebooks.')}</div>
+      <div className="heading">{t('Lorebook Settings')}</div>
+      <ToggleRow
+        title={t('Order by Key Location')}
+        desc={orderByKey ? t('Entries with the same priority are inserted in the order their keys appear in the story.') : t('Entries with the same priority are inserted in lorebook order.')}
+        on={orderByKey}
+        onChange={setOrderByKey}
+      />
+    </div>
+  );
+}
+
+function KeyChip({ k, hit, onChange, onRemove }: { k: string; hit: boolean; onChange: (v: string) => void; onRemove: () => void }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(k);
+  const regex = isRegexKey(k);
+  const invalid = regex && !compileRegexKey(k);
+  if (editing) {
+    return (
+      <span className={`key-chip editing ${regex ? 'regex' : ''}`}>
+        <input
+          autoFocus
+          value={draft}
+          aria-label={t('Edit key')}
+          title={t('Press Enter to save edit')}
+          size={Math.max(4, draft.length)}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={() => setEditing(false)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              if (draft.trim()) onChange(draft.trim());
+              setEditing(false);
+            } else if (e.key === 'Escape') {
+              e.stopPropagation();
+              setDraft(k);
+              setEditing(false);
+            }
+          }}
+        />
+      </span>
+    );
+  }
+  return (
+    <span className={`key-chip ${regex ? 'regex' : ''} ${hit ? 'active' : ''}`} title={invalid ? t('Invalid regex') : hit ? t('Found in recent story') : t('Click a key to edit it.')} style={invalid ? { outline: '1px solid var(--warning)' } : undefined}>
+      <button type="button" className="key-text" onClick={() => (setDraft(k), setEditing(true))} aria-label={`${t('Edit key')} ${k}`}>
+        {k}
+      </button>
+      <button type="button" aria-label={t('Remove')} onClick={onRemove}>
+        <X size={12} />
+      </button>
+    </span>
   );
 }
 
@@ -331,12 +456,35 @@ function EntryEditor({ entry, categories, update, onClose, active, generate }: {
   const [tab, setTab] = useState<'entry' | 'placement' | 'bias' | 'conditions'>('entry');
   const [genOpen, setGenOpen] = useState(!!generate);
   const story = useStory((s) => s.current)!;
-  const recent = docText(story.doc).slice(-entry.searchRange);
+  const recent = entry.searchRange > 0 ? docText(story.doc).slice(-entry.searchRange) : '';
+  const [revealed, setRevealed] = useState(false);
+  if (entry.hidden && !revealed) {
+    return (
+      <>
+        <div className="lore-head">
+          <span className="lore-name" style={{ opacity: 0.6 }}>{t('Hidden Entry')}</span>
+          <button type="button" className="icon-btn" onClick={onClose} aria-label={t('Close')}>
+            <X size={24} weight="bold" />
+          </button>
+        </div>
+        <div className="lore-hidden">
+          <EyeSlash size={40} weight="thin" />
+          <p>{t("This lorebook entry is hidden. Its contents are kept out of sight so they don't spoil the story; the entry still works as usual.")}</p>
+          <button type="button" className="btn" onClick={() => setRevealed(true)}>
+            <Eye size={14} /> {t('Reveal Entry')}
+          </button>
+        </div>
+      </>
+    );
+  }
   return (
     <>
       <div className="lore-head">
-        <input className="lore-name" value={entry.displayName} onChange={(e) => update({ displayName: e.target.value })} aria-label={t('Entry name')} />
-        <button type="button" className="title-btn" style={{ height: 36 }} aria-label={entry.hidden ? t('Show') : t('Hide')} title={t('Hidden')} onClick={() => update({ hidden: !entry.hidden })}>
+        <input className="lore-name" value={entry.displayName} placeholder={t('Unnamed Entry')} onChange={(e) => update({ displayName: e.target.value })} aria-label={t('Entry name')} />
+        <button type="button" className="title-btn" style={{ height: 36 }} aria-label={entry.hidden ? t('Unhide Entry') : t('Hide Entry')} title={entry.hidden ? t('Hidden Entry: its text is concealed in the Lorebook until revealed.') : t('Hide Entry')} onClick={() => {
+            if (!entry.hidden) setRevealed(true);
+            update({ hidden: !entry.hidden });
+          }}>
           {entry.hidden ? <EyeSlash size={18} /> : <Eye size={18} />}
         </button>
         <button type="button" className={`enabled-btn ${entry.enabled ? '' : 'off'}`} onClick={() => update({ enabled: !entry.enabled })} aria-pressed={entry.enabled}>
@@ -398,7 +546,7 @@ function EntryEditor({ entry, categories, update, onClose, active, generate }: {
                   </div>
                   <div className="desc" style={{ marginTop: 4, opacity: 1 }}>{t('Activates the entry when found within the recent story.')}</div>
                 </div>
-                <button type="button" className={`btn ${entry.forceActivation ? 'primary' : 'dark'}`} style={{ border: '1px solid var(--bg1)', fontWeight: 700 }} onClick={() => update({ forceActivation: !entry.forceActivation })} aria-pressed={entry.forceActivation}>
+                <button type="button" title={t('Always On entries are always included in the context, regardless of keys.')} className={`btn ${entry.forceActivation ? 'primary' : 'dark'}`} style={{ border: '1px solid var(--bg1)', fontWeight: 700 }} onClick={() => update({ forceActivation: !entry.forceActivation })} aria-pressed={entry.forceActivation}>
                   {entry.forceActivation ? <Check size={12} weight="bold" /> : <X size={12} weight="bold" />} {t('Always On')}
                 </button>
               </div>
@@ -407,8 +555,6 @@ function EntryEditor({ entry, categories, update, onClose, active, generate }: {
                 <div className="chips" style={entry.keys.length ? undefined : { justifyContent: 'center', alignItems: 'center' }}>
                   {entry.keys.length === 0 && <b>{t('No Keys set.')}</b>}
                   {entry.keys.map((k, i) => {
-                    const regex = isRegexKey(k);
-                    const invalid = regex && !compileRegexKey(k);
                     let hit = false;
                     try {
                       const re = compileRegexKey(k);
@@ -417,12 +563,13 @@ function EntryEditor({ entry, categories, update, onClose, active, generate }: {
                       /* ignore */
                     }
                     return (
-                      <span key={i} className={`key-chip ${regex ? 'regex' : ''} ${hit && active ? 'active' : ''}`} title={invalid ? t('Invalid regex') : hit ? t('Found in recent story') : ''} style={invalid ? { outline: '1px solid var(--warning)' } : undefined}>
-                        {k}
-                        <button type="button" aria-label={t('Remove')} onClick={() => update({ keys: entry.keys.filter((_, j) => j !== i) })}>
-                          <X size={12} />
-                        </button>
-                      </span>
+                      <KeyChip
+                        key={`${i}:${k}`}
+                        k={k}
+                        hit={hit && active}
+                        onChange={(v) => update({ keys: entry.keys.map((x, j) => (j === i ? v : x)) })}
+                        onRemove={() => update({ keys: entry.keys.filter((_, j) => j !== i) })}
+                      />
                     );
                   })}
                 </div>
@@ -443,7 +590,8 @@ function EntryEditor({ entry, categories, update, onClose, active, generate }: {
             <div className="placement-grid">
               <label className="number-field">
                 <span style={{ fontWeight: 600, fontSize: 14 }}>{t('Search Range')}</span>
-                <input className="input" type="number" min={0} max={10000} value={entry.searchRange} onChange={(e) => update({ searchRange: Math.min(10000, Math.max(0, Number(e.target.value))) })} />
+                <input className="input" type="number" min={0} max={MAX_SEARCH_RANGE} value={entry.searchRange} onChange={(e) => update({ searchRange: Math.min(MAX_SEARCH_RANGE, Math.max(0, Number(e.target.value))) })} />
+                <span className="desc">{t('Characters from the end of the story searched for keys (up to 50,000). 0 turns story key search off.')}</span>
               </label>
             </div>
             <ToggleRow title={t('Key-Relative Insertion')} desc={t('Inserts the entry relative to the last matching key. Positive positions go after the key, negative before it.')} on={entry.keyRelative} onChange={(v) => update({ keyRelative: v })} />
@@ -466,10 +614,13 @@ function EntryEditor({ entry, categories, update, onClose, active, generate }: {
 function CategoryEditor({ cat, update, onClose }: { cat: LoreCategory; update: (p: Partial<LoreCategory>) => void; onClose: () => void }) {
   const [tab, setTab] = useState<'settings' | 'defaults' | 'subcontext' | 'bias'>('settings');
   const store = useStory.getState();
+  const count = useStory((s) => s.current?.lorebook.entries.filter((e) => e.category === cat.id).length ?? 0);
+  const defaults = cat.categoryDefaults;
+  const setDefaults = (p: Partial<LoreEntry>) => update({ categoryDefaults: { ...defaults, ...p } });
   return (
     <>
       <div className="lore-head">
-        <input className="lore-name" value={cat.name} onChange={(e) => update({ name: e.target.value })} aria-label={t('Category name')} />
+        <input className="lore-name" value={cat.name} placeholder={t('Unnamed Category')} onChange={(e) => update({ name: e.target.value })} aria-label={t('Category name')} />
         <button type="button" className={`enabled-btn ${cat.enabled ? '' : 'off'}`} onClick={() => update({ enabled: !cat.enabled })}>
           {cat.enabled ? <Check size={14} weight="bold" /> : <X size={14} weight="bold" />} {cat.enabled ? t('Enabled') : t('Disabled')}
         </button>
@@ -484,35 +635,73 @@ function CategoryEditor({ cat, update, onClose }: { cat: LoreCategory; update: (
         tabs={[
           { value: 'settings', label: t('Settings') },
           { value: 'defaults', label: t('Defaults') },
-          { value: 'subcontext', label: t('Subcontext') },
+          { value: 'subcontext', label: t('Subcontext Settings') },
           { value: 'bias', label: t('Phrase Bias') },
         ]}
       />
       <div className="lore-body">
         {tab === 'settings' && (
-          <div>
-            <div className="heading">{t('Lorebook Entry Header')}</div>
-            <div style={{ margin: '4px 0 12px' }}>{t('The text entered here will be automatically placed above any entry in this category.')}</div>
-            <input className="input" style={{ height: 42 }} placeholder={t('Enter default entry header...')} value={cat.entryHeader} onChange={(e) => update({ entryHeader: e.target.value })} />
-          </div>
+          <>
+            <ToggleRow title={t('Enable Lorebook Category')} desc={cat.enabled ? t('Entries in this category can activate.') : t('No entry in this category will activate.')} on={cat.enabled} onChange={(v) => update({ enabled: v })} />
+            <div>
+              <div className="heading">{t('Lorebook Entry Header')}</div>
+              <div style={{ margin: '4px 0 12px' }}>{t('The text entered here will be automatically placed above any entry in this category.')}</div>
+              <input className="input" style={{ height: 42 }} placeholder={t('Enter default entry header...')} value={cat.entryHeader} onChange={(e) => update({ entryHeader: e.target.value })} />
+            </div>
+            <div>
+              <div className="heading">{t('Delete Containing Entries')}</div>
+              <div style={{ margin: '4px 0 12px' }}>{t('Deletes every entry in this category ({n}). The category itself stays.', { n: count })}</div>
+              <button
+                type="button"
+                className="btn danger"
+                disabled={!count}
+                onClick={async () => {
+                  if (await useUI.getState().confirm({ title: t('Delete Containing Entries?'), message: t('Delete {n} entries?', { n: count }), danger: true, confirmLabel: t('Delete') }))
+                    store.update((s) => void (s.lorebook = { ...s.lorebook, entries: s.lorebook.entries.filter((e) => e.category !== cat.id) }));
+                }}
+              >
+                <Trash size={14} /> {t('Delete Containing Entries')}
+              </button>
+            </div>
+          </>
         )}
         {tab === 'defaults' && (
           <>
-            <ToggleRow title={t('Use Category Defaults')} desc={t('New entries in this category start with these placement settings.')} on={cat.useCategoryDefaults} onChange={(v) => update({ useCategoryDefaults: v })} />
-            <ContextConfigEditor
-              value={{ ...store.current!.contextSettings.loreDefaults, ...(cat.categoryDefaults.contextConfig ?? {}) }}
-              onChange={(c) => update({ categoryDefaults: { ...cat.categoryDefaults, contextConfig: c } })}
-            />
+            <ToggleRow title={t('Use Category Defaults')} desc={t('New entries in this category start with these settings.')} on={cat.useCategoryDefaults} onChange={(v) => update({ useCategoryDefaults: v })} />
+            <div className="heading">{t('Default Entry Settings')}</div>
+            <label className="number-field" style={{ maxWidth: 240 }}>
+              <span style={{ fontWeight: 600, fontSize: 14 }}>{t('Search Range')}</span>
+              <input
+                className="input"
+                type="number"
+                min={0}
+                max={MAX_SEARCH_RANGE}
+                value={defaults.searchRange ?? 1000}
+                onChange={(e) => setDefaults({ searchRange: Math.min(MAX_SEARCH_RANGE, Math.max(0, Number(e.target.value))) })}
+              />
+            </label>
+            <ToggleRow title={t('Always On')} on={!!defaults.forceActivation} onChange={(v) => setDefaults({ forceActivation: v })} />
+            <ToggleRow title={t('Key-Relative Insertion')} on={!!defaults.keyRelative} onChange={(v) => setDefaults({ keyRelative: v })} />
+            <ToggleRow title={t('Cascading Activation')} on={!!defaults.nonStoryActivatable} onChange={(v) => setDefaults({ nonStoryActivatable: v })} />
+            <div className="heading">{t('Default Placement Settings')}</div>
+            <ContextConfigEditor value={{ ...store.current!.contextSettings.loreDefaults, ...(defaults.contextConfig ?? {}) }} onChange={(c) => setDefaults({ contextConfig: c })} />
             <button
               type="button"
               className="btn"
-              onClick={() =>
+              disabled={!count}
+              onClick={async () => {
+                if (!(await useUI.getState().confirm({ title: t('Update All Entries?'), message: t('Apply these default settings to the {n} entries in this category?', { n: count }), confirmLabel: t('Update') }))) return;
+                const { searchRange, forceActivation, keyRelative, nonStoryActivatable, contextConfig } = defaults;
+                const patch: Partial<LoreEntry> = Object.fromEntries(Object.entries({ searchRange, forceActivation, keyRelative, nonStoryActivatable }).filter(([, v]) => v !== undefined));
                 store.update((s) => {
-                  s.lorebook = { ...s.lorebook, entries: s.lorebook.entries.map((e) => (e.category === cat.id && cat.categoryDefaults.contextConfig ? { ...e, contextConfig: { ...cat.categoryDefaults.contextConfig } } : e)) };
-                })
-              }
+                  s.lorebook = {
+                    ...s.lorebook,
+                    entries: s.lorebook.entries.map((e) => (e.category === cat.id ? { ...e, ...patch, ...(contextConfig ? { contextConfig: { ...contextConfig } } : {}), lastUpdatedAt: Date.now() } : e)),
+                  };
+                });
+              }}
             >
-              {t('Apply defaults to all entries in this category')}
+              {t('Update All Entries')}
             </button>
           </>
         )}

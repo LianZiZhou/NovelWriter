@@ -36,7 +36,7 @@ function ModalHost() {
   const close = useUI((s) => s.close);
   const hasStory = useStory((s) => !!s.current);
   if (!modal) return null;
-  const needsStory = !['settings', 'palette', 'confirm', 'tokenize'].includes(modal);
+  const needsStory = !['settings', 'palette', 'tokenize'].includes(modal);
   if (needsStory && !hasStory) return null;
   switch (modal) {
     case 'lorebook':
@@ -73,11 +73,15 @@ function ModalHost() {
       return <TokenProbsModal onClose={close} />;
     case 'scripts':
       return <ScriptsModal onClose={close} />;
-    case 'confirm':
-      return <ConfirmModal onClose={close} title={p.title} message={p.message} confirmLabel={p.confirmLabel} danger={p.danger} resolve={p.resolve} />;
     default:
       return null;
   }
+}
+
+function ConfirmHost() {
+  const c = useUI((s) => s.confirmProps);
+  if (!c) return null;
+  return <ConfirmModal title={c.title} message={c.message} confirmLabel={c.confirmLabel} danger={c.danger} resolve={c.resolve} />;
 }
 
 function Toasts() {
@@ -313,6 +317,7 @@ export function App() {
       {showRight && <RightSidebar mobileOpen={mobileRight} onCollapse={() => (mobile ? setUI({ mobileRight: false }) : setSettings({ rightOpen: false }))} />}
       {mobile && <div className={`drawer-backdrop ${mobileLeft || mobileRight ? 'show' : ''}`} onClick={() => setUI({ mobileLeft: false, mobileRight: false })} />}
       <ModalHost />
+      <ConfirmHost />
       <Toasts />
       {dropping && (
         <div className="modal-backdrop" style={{ pointerEvents: 'none' }}>

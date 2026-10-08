@@ -70,6 +70,15 @@ describe('buildContext', () => {
     expect(rest).toBe('One.\nTwo.');
   });
 
+  it('inserts key-relative entries next to their key even when placed before the story', () => {
+    const s = newStory({ doc: [{ text: 'Para one.\nThe dragon wakes.\nPara three.\nPara four.', origin: 'prompt' }] });
+    const e = newLoreEntry({ displayName: 'Dragon', text: 'DRAGON LORE', keys: ['dragon'], keyRelative: true });
+    e.contextConfig = { ...e.contextConfig, budgetPriority: 900, insertionType: 'newline', insertionPosition: 0 };
+    s.lorebook.entries.push(e);
+    const c = buildContext(s, { maxContextTokens: 2000, outputTokens: 100 });
+    expect(c.text).toContain('The dragon wakes.\nDRAGON LORE\nPara three.');
+  });
+
   it('includes active ephemeral entries', () => {
     const s = newStory({ doc: [{ text: 'a\nb\nc', origin: 'prompt' }], step: 4 });
     const e = parseEphemeral('{+3~10,-2:EPH}', 0)!;

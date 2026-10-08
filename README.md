@@ -68,11 +68,16 @@ Credentials are stored in `data/auth.json` on the server and never sent to the b
   (`{+3~10,-2:text}` relative or `{12~10,-2:text}` absolute steps, also typed straight into the
   story), a context viewer with stages and inclusion reasons, editable context
   settings, system prompt and prefill.
-- **Lorebook**: entries with plain, `/regex/` and `A & B` keys, search range, Always On,
-  hidden entries, cascading activation, key-relative insertion, categories with subcontexts,
-  entry headers and defaults, phrase bias per entry/category, advanced conditions
-  (AND/OR/NOT, keyword, random, numeric and string comparisons…), an AI lore generator,
-  import/export (NovelAI `.lorebook` JSON compatible) and PNG embedding.
+- **Lorebook**: entries with plain, `/regex/` and `A & B` keys (click a key to edit it), search range up to
+  50,000 characters, Always On, hidden entries (Reveal Entry), cascading activation, key-relative insertion
+  (works whatever the budget order), Order by Key Location, categories (enable/disable, entry headers,
+  default entry and placement settings with Update All Entries, subcontexts, bias when all entries are
+  inactive, Delete Containing Entries), phrase bias per entry/category, advanced conditions (AND/OR/NOT,
+  keyword match in the story, active entries, Memory or Author's Note with a range, equations evaluated
+  left to right, random, numeric and string comparisons; up to 30 activation passes), an AI lore generator
+  (custom types, other entries as context, saved history), multiselect export/PNG/delete, a welcome page,
+  a docked side-panel mode, import/export (NovelAI `.lorebook` JSON compatible, SillyTavern World Info and
+  character books, Agnai memory books, AI Dungeon World Info) and PNG embedding.
 - **Generation settings**: presets (built-in and custom, import/export), randomness, output
   length, context size, sampler order and toggles, repetition penalties.
 - **Phrase bias, banned phrases, stop sequences, Avoid Overused Words.**

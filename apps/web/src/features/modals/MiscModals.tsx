@@ -30,11 +30,8 @@ import { Modal, ModalHeader, SegmentedControl, Select, SliderSetting, Tabs, Togg
 import { SAMPLER_INFO } from '../right/GenerationTab.tsx';
 import { matchHotkey } from '../../hotkeys.ts';
 
-export function ConfirmModal({ onClose, title, message, confirmLabel, danger, resolve }: { onClose: () => void; title: string; message?: string; confirmLabel?: string; danger?: boolean; resolve: (v: boolean) => void }) {
-  const done = (v: boolean) => {
-    resolve(v);
-    onClose();
-  };
+export function ConfirmModal({ title, message, confirmLabel, danger, resolve }: { title: string; message?: string; confirmLabel?: string; danger?: boolean; resolve: (v: boolean) => void }) {
+  const done = (v: boolean) => resolve(v);
   return (
     <Modal onClose={() => done(false)} width={440} label={title}>
       <ModalHeader title={title} onClose={() => done(false)} />

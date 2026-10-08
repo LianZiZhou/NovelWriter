@@ -1,4 +1,9 @@
-import type { Condition, LoreCategory, LoreEntry, Lorebook, StoryMode } from './types.ts';
+import type { Condition, EquationTerm, LoreCategory, LoreEntry, Lorebook, StoryMode } from './types.ts';
+
+/** Largest search range NovelAI allows. */
+export const MAX_SEARCH_RANGE = 50000;
+/** Activation passes before giving up on conditions that keep flipping each other. */
+const MAX_PASSES = 30;
 
 export interface KeyMatch {
   key: string;
@@ -87,14 +92,59 @@ export interface ConditionEnv {
   mode: StoryMode;
   activeIds: Set<string>;
   random: () => number;
+  /** Text of the currently active entries (for Keyword Match in Active Lorebook Entries). */
+  activeText?: () => string;
+}
+
+function compare(v: number, op: '<' | '<=' | '=' | '>=' | '>' | '!=', value: number): boolean {
+  switch (op) {
+    case '<': return v < value;
+    case '<=': return v <= value;
+    case '=': return v === value;
+    case '>=': return v >= value;
+    case '>': return v > value;
+    case '!=': return v !== value;
+  }
+}
+
+function variable(name: string, env: ConditionEnv): number {
+  switch (name) {
+    case 'currentStep': return env.currentStep;
+    case 'paragraphCount': return env.storyText.split('\n').filter((l) => l.trim()).length;
+    case 'characterCount': return env.storyText.length;
+    case 'activeEntries': return env.activeIds.size;
+    case 'random': return Math.floor(env.random() * 100);
+  }
+  return 0;
+}
+
+/** Evaluate equation terms left to right: `2 + 3 * 4` is 20. Division by zero gives 0. */
+export function evalEquation(terms: EquationTerm[], env: ConditionEnv): number {
+  let acc = 0;
+  terms.forEach((term, i) => {
+    const v = typeof term.value === 'number' ? term.value : variable(term.value, env);
+    if (i === 0) return void (acc = v);
+    switch (term.operator) {
+      case '+': acc += v; break;
+      case '-': acc -= v; break;
+      case '*': acc *= v; break;
+      case '/': acc = v === 0 ? 0 : acc / v; break;
+      case '%': acc = v === 0 ? 0 : acc % v; break;
+    }
+  });
+  return acc;
 }
 
 export function evalCondition(c: Condition, env: ConditionEnv): boolean {
   switch (c.type) {
     case 'true':
       return true;
-    case 'keyword':
-      return matchKey(c.key, env.storyText) !== null;
+    case 'keyword': {
+      const text = c.location === 'memory' ? env.memoryText : c.location === 'authorsNote' ? env.authorsNoteText : c.location === 'lore' ? (env.activeText?.() ?? '') : env.storyText;
+      return matchKey(c.key, c.range && c.range > 0 ? text.slice(-c.range) : text) !== null;
+    }
+    case 'equation':
+      return compare(evalEquation(c.terms, env), c.op, c.value);
     case 'loreActive':
       return env.activeIds.has(c.entryId);
     case 'model':
@@ -110,15 +160,7 @@ export function evalCondition(c: Condition, env: ConditionEnv): boolean {
           : c.variable === 'paragraphCount'
             ? env.storyText.split('\n').filter((l) => l.trim()).length
             : env.storyText.length;
-      switch (c.op) {
-        case '<': return v < c.value;
-        case '<=': return v <= c.value;
-        case '=': return v === c.value;
-        case '>=': return v >= c.value;
-        case '>': return v > c.value;
-        case '!=': return v !== c.value;
-      }
-      return false;
+      return compare(v, c.op, c.value);
     }
     case 'string': {
       const v = c.variable === 'storyText' ? env.storyText : c.variable === 'memoryText' ? env.memoryText : env.authorsNoteText;
@@ -198,9 +240,10 @@ export function activateLorebook(input: ActivationInput): Activation[] {
       env.activeIds.add(e.id);
       continue;
     }
-    const range = Math.max(0, Math.min(e.searchRange || 1000, 10000));
+    // A range of 0 means keys are never searched in the story (conditions and cascading still apply).
+    const range = Math.max(0, Math.min(e.searchRange ?? 1000, MAX_SEARCH_RANGE));
     const offset = Math.max(0, storyText.length - range);
-    const m = matchEntry(e, storyText.slice(offset));
+    const m = range > 0 ? matchEntry(e, storyText.slice(offset)) : null;
     if (m) {
       results.set(e.id, { entry: e, active: true, reason: 'key', match: { ...m, index: m.index + offset }, matchedIn: 'story' });
       env.activeIds.add(e.id);
@@ -209,9 +252,11 @@ export function activateLorebook(input: ActivationInput): Activation[] {
     pending.push(e);
   }
 
-  // Advanced conditions and cascading activation iterate to a fixpoint.
+  env.activeText = () => [...env.activeIds].map((id) => lorebook.entries.find((x) => x.id === id)?.text ?? '').join('\n');
+
+  // Advanced conditions and cascading activation iterate to a fixpoint (capped, in case conditions loop).
   let changed = true;
-  while (changed) {
+  for (let pass = 0; changed && pass < MAX_PASSES; pass++) {
     changed = false;
     for (const e of pending) {
       if (results.get(e.id)?.active) continue;

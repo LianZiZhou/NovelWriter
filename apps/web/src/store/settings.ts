@@ -58,6 +58,8 @@ export interface Settings {
   highlightSpeech: boolean;
   highlightSpeechInverted: boolean;
   showTips: boolean;
+  /** Lorebook shown as a side panel instead of a modal. */
+  loreDocked: boolean;
   /** Name shown on screenshots. */
   penName: string;
   inputBox: boolean;
@@ -174,6 +176,7 @@ export const DEFAULT_SETTINGS: Settings = {
   highlightSpeech: false,
   highlightSpeechInverted: false,
   showTips: true,
+  loreDocked: false,
   penName: '',
   inputBox: false,
   editorSpellcheck: false,

@@ -259,7 +259,18 @@ export function assemble(candidates: Candidate[], maxTokens: number): Omit<Built
   // Where the (trimmed) story starts within the original story text, for key-relative insertion.
   let storyTrimStart = 0;
 
-  for (const c of order) {
+  // Key-relative entries wait for the story when it is placed after them, so they can find their key.
+  const queue = [...order];
+  const deferred: Candidate[] = [];
+  const storyPending = () => queue.some((x, j) => j >= qi && x.kind === 'story');
+  let qi = 0;
+  for (; qi < queue.length; qi++) {
+    const c = queue[qi];
+    if (c.keyOffset !== undefined && !segments.some((s) => s.kind === 'story') && storyPending()) {
+      deferred.push(c);
+      continue;
+    }
+    if (c.kind === 'story' && deferred.length) queue.splice(qi + 1, 0, ...deferred.splice(0));
     const own = reserved.get(c.id) ?? 0;
     reservedTotal -= own;
     // A text this long can't fit anyway; skip the exact count (it costs a full tokenization of the story).
@@ -430,7 +441,11 @@ export function buildContext(story: Story, opts: BuildContextOptions): BuiltCont
   candidates.push({ id: 'authorsNote', label: "Author's Note", kind: 'authorsNote', text: stripComments(story.authorsNote), config: cs.authorsNote, index: index++ });
 
   const subcontextMembers = new Map<string, Candidate[]>();
-  for (const a of activations) {
+  // "Order by Key Location": entries whose keys appear later in the story come later among equal priorities.
+  const ordered = story.lorebook.settings.orderByKeyLocations
+    ? [...activations].sort((a, b) => (a.matchedIn === 'story' ? (a.match?.index ?? -1) : -1) - (b.matchedIn === 'story' ? (b.match?.index ?? -1) : -1))
+    : activations;
+  for (const a of ordered) {
     if (!a.active || !a.entry.text) continue;
     const e = a.entry;
     const cat = e.category ? catById.get(e.category) : undefined;

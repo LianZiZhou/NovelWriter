@@ -134,6 +134,33 @@ await step('memory and lorebook activation show in the context viewer', async ()
   await page.getByRole('tab', { name: 'Story' }).click();
 });
 
+await step('lorebook: welcome, key editing, hidden entries, confirm over the modal', async () => {
+  await page.getByRole('button', { name: 'Lorebook', exact: true }).first().click();
+  await page.waitForSelector('.lore-welcome');
+  await page.locator('.lore-item').first().click();
+  await page.getByRole('button', { name: 'Edit key mara' }).click();
+  await page.getByLabel('Edit key', { exact: true }).fill('Mara');
+  await page.getByLabel('Edit key', { exact: true }).press('Enter');
+  await page.getByRole('button', { name: 'Edit key Mara' }).waitFor();
+  await page.getByRole('button', { name: 'Hide Entry' }).click();
+  await page.getByLabel('Entry Text').waitFor(); // hiding it yourself keeps it open
+  await page.keyboard.press('Escape');
+  await page.getByRole('button', { name: 'Lorebook', exact: true }).first().click();
+  await page.locator('.lore-item').first().click();
+  await page.getByRole('button', { name: 'Reveal Entry' }).click();
+  await page.getByRole('button', { name: 'Unhide Entry' }).click();
+  // A confirmation opens above the lorebook and cancelling it keeps the lorebook open.
+  await page.getByRole('button', { name: /^Category$/ }).click();
+  await page.locator('.cat-head.active').getByRole('button', { name: 'Delete' }).click();
+  await page.getByRole('dialog', { name: 'Delete Category?' }).getByRole('button', { name: 'Cancel' }).click();
+  assert.equal(await page.locator('.lore-modal').count(), 1, 'lorebook stays open');
+  await page.locator('.cat-head.active').getByRole('button', { name: 'Delete' }).click();
+  await page.getByRole('dialog', { name: 'Delete Category?' }).getByRole('button', { name: 'Delete' }).click();
+  assert.equal(await page.locator('.lore-cat').count(), 0);
+  await page.keyboard.press('Escape');
+  assert.equal(await page.locator('.lore-modal').count(), 0);
+});
+
 await step('text adventure input', async () => {
   await page.getByRole('button', { name: 'create a new story' }).click();
   await page.getByRole('button', { name: /Text Adventure/ }).first().click();

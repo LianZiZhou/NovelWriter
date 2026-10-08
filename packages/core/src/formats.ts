@@ -118,6 +118,8 @@ export function importFile(name: string, content: string | Uint8Array): ImportRe
     return { kind: 'story', story: newStory({ title, doc, history: flatten(doc) }), needsPlaceholders: false };
   }
   const data = JSON.parse(trimmed) as Record<string, unknown>;
+  const foreign = importForeignLorebook(data);
+  if (foreign) return { kind: 'lorebook', lorebook: foreign };
   if (Array.isArray(data)) return { kind: 'bias', groups: data.map(importBiasGroup) };
   if (data.format === 'novelwriter-story') {
     const s = migrateStory({ ...(data.story as Story), id: uid() });
@@ -219,6 +221,67 @@ export function importLorebook(raw: Record<string, unknown>): Lorebook {
   );
   const settings = (raw.settings ?? {}) as Lorebook['settings'];
   return { entries, categories, settings: { orderByKeyLocations: Boolean(settings.orderByKeyLocations) } };
+}
+
+const str = (v: unknown): string => (typeof v === 'string' ? v : v == null ? '' : String(v));
+const strList = (v: unknown): string[] =>
+  (Array.isArray(v) ? v.map(str) : typeof v === 'string' ? v.split(',') : []).map((k) => k.trim()).filter(Boolean);
+
+function foreignEntry(p: { name: string; text: string; keys: string[]; enabled?: boolean; constant?: boolean; order?: number }): LoreEntry {
+  const e = newLoreEntry({ displayName: p.name || p.keys[0] || 'Entry', text: p.text, keys: p.keys, enabled: p.enabled ?? true, forceActivation: !!p.constant });
+  // Higher order/priority goes in earlier, like NovelAI's budget priority.
+  if (p.order !== undefined && Number.isFinite(p.order)) e.contextConfig = { ...e.contextConfig, budgetPriority: Math.round(p.order) };
+  return e;
+}
+
+/**
+ * Lorebooks from other tools: SillyTavern World Info (and character-card `character_book`), Agnai memory books and
+ * AI Dungeon World Info exports. Returns null for anything else.
+ */
+export function importForeignLorebook(data: unknown): Lorebook | null {
+  const lb = (entries: LoreEntry[]): Lorebook => ({ ...emptyLorebook(), entries });
+  // AI Dungeon: a bare array (or { worldInfo: [...] }) of { keys: "a, b", entry | value }.
+  const aid = Array.isArray(data) ? data : Array.isArray((data as { worldInfo?: unknown })?.worldInfo) ? (data as { worldInfo: unknown[] }).worldInfo : null;
+  if (aid) {
+    const items = aid as Record<string, unknown>[];
+    if (!items.length || !items.every((x) => x && typeof x === 'object' && 'keys' in x && ('entry' in x || 'value' in x))) return null;
+    return lb(items.map((x) => foreignEntry({ name: str(x.name ?? x.title), text: str(x.entry ?? x.value), keys: strList(x.keys) })));
+  }
+  if (!data || typeof data !== 'object') return null;
+  const d = data as Record<string, unknown>;
+  // Character cards carry their lorebook in data.character_book.
+  const card = (d.data as Record<string, unknown> | undefined)?.character_book ?? d.character_book;
+  if (card && typeof card === 'object') return importForeignLorebook(card);
+  // Agnai memory book.
+  if (d.kind === 'memory' && Array.isArray(d.entries)) {
+    return lb(
+      (d.entries as Record<string, unknown>[]).map((x) =>
+        foreignEntry({ name: str(x.name), text: str(x.entry), keys: strList(x.keywords), enabled: x.enabled === undefined ? true : Boolean(x.enabled), order: Number(x.priority ?? NaN) }),
+      ),
+    );
+  }
+  // SillyTavern World Info: entries is an object keyed by uid. Character-book (V2 spec): an array with keys/content.
+  const stEntries = d.entries && !Array.isArray(d.entries) && typeof d.entries === 'object' ? Object.values(d.entries as Record<string, unknown>) : Array.isArray(d.entries) && (d.entries as Record<string, unknown>[]).every((x) => x && 'content' in x) ? (d.entries as unknown[]) : null;
+  if (stEntries) {
+    return lb(
+      (stEntries as Record<string, unknown>[]).map((x) => {
+        const e = foreignEntry({
+          name: str(x.comment || x.name),
+          text: str(x.content),
+          keys: strList(x.key ?? x.keys),
+          enabled: x.disable !== undefined ? !x.disable : x.enabled === undefined ? true : Boolean(x.enabled),
+          constant: Boolean(x.constant),
+          order: Number(x.order ?? x.insertion_order ?? NaN),
+        });
+        // Secondary keys with "AND ANY" logic map onto NovelAI's A & B keys.
+        const secondary = strList(x.keysecondary ?? x.secondary_keys);
+        if ((x.selective ?? false) && secondary.length) e.keys = e.keys.flatMap((k) => secondary.map((s) => `${k} & ${s}`));
+        if (typeof x.scanDepth === 'number' && x.scanDepth > 0) e.searchRange = Math.min(50000, x.scanDepth * 400);
+        return e;
+      }),
+    );
+  }
+  return null;
 }
 
 /** Export in the NovelAI lorebook JSON layout (lorebookVersion 5). */

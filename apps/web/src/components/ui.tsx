@@ -244,6 +244,9 @@ export function Select<V extends string>({
   );
 }
 
+let modalSeq = 0;
+const modalStack: number[] = [];
+
 export function Modal({
   onClose,
   children,
@@ -252,6 +255,7 @@ export function Modal({
   label,
   noPad,
   height,
+  docked,
 }: {
   onClose: () => void;
   children: ReactNode;
@@ -260,10 +264,20 @@ export function Modal({
   label?: string;
   noPad?: boolean;
   height?: number | string;
+  /** Side panel at the right edge; the rest of the app stays usable. */
+  docked?: boolean;
 }) {
+  // Only the topmost modal answers Escape (a confirmation can open over another modal).
+  const id = useRef(0);
+  if (!id.current) id.current = ++modalSeq;
+  useEffect(() => {
+    const me = id.current;
+    modalStack.push(me);
+    return () => void modalStack.splice(modalStack.indexOf(me), 1);
+  }, []);
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
+      if (e.key === 'Escape' && modalStack[modalStack.length - 1] === id.current) {
         e.stopPropagation();
         onClose();
       }
@@ -272,7 +286,7 @@ export function Modal({
     return () => window.removeEventListener('keydown', h, true);
   }, [onClose]);
   return createPortal(
-    <div className="modal-backdrop fade-in" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+    <div className={`modal-backdrop fade-in ${docked ? 'docked' : ''}`} onMouseDown={(e) => !docked && e.target === e.currentTarget && onClose()}>
       <div className={`modal ${className}`} role="dialog" aria-modal="true" aria-label={label} style={{ width, height, padding: noPad ? 0 : undefined }}>
         {children}
       </div>
