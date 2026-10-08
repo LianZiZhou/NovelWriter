@@ -53,7 +53,7 @@ import { useSettings } from './settings.ts';
 import { useUI } from './ui.ts';
 import { t } from '../i18n.ts';
 import { speak } from '../features/tts/tts.ts';
-import { runHook } from '../features/scripts/runner.ts';
+import { hasHook, runScriptHook } from '../features/scripts/host.ts';
 
 /** Implemented by the editor component so the store can drive it. Offsets are plain-text offsets. */
 export interface EditorController {
@@ -93,7 +93,6 @@ interface StoryState {
   editor: EditorController | null;
   serverDown: boolean;
   activeShelf: string | null;
-  scriptLogs: string[];
 
   init: () => Promise<void>;
   reload: () => Promise<void>;
@@ -124,6 +123,8 @@ interface StoryState {
 
   /** Apply a user edit made in the editor (computed incrementally by the editor). */
   editorChanged: (change: Change) => void;
+  /** Replace plain-text range [from, to) with `text` as one undoable edit (scripts, find & replace). */
+  replaceText: (from: number, to: number, text: string, origin?: Span['origin']) => void;
   undo: () => void;
   redo: (childId?: string) => void;
   jump: (nodeId: string) => void;
@@ -153,9 +154,13 @@ let navSeq = 0;
 let initPromise: Promise<void> | null = null;
 let lastEditAt = 0;
 
+/** A save is scheduled but hasn't started; flushed when the page is hidden or closed. */
+let pendingSave: (() => void) | null = null;
+
 function scheduleSave(get: () => StoryState, set: (p: Partial<StoryState>) => void) {
   clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => whenIdle(async () => {
+  const save = async () => {
+    pendingSave = null;
     const s = get().current;
     if (!s) return;
     try {
@@ -164,7 +169,23 @@ function scheduleSave(get: () => StoryState, set: (p: Partial<StoryState>) => vo
     } catch {
       set({ serverDown: true });
     }
-  }), 600);
+  };
+  pendingSave = () => {
+    clearTimeout(saveTimer);
+    pendingSave = null;
+    const s = get().current;
+    if (!s) return;
+    // keepalive lets the request outlive the page, but only for small bodies (64 KB); larger ones go out normally.
+    const body = JSON.stringify(s);
+    void fetch(`/api/stories/${s.id}`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body, keepalive: body.length < 60000 }).catch(() => {});
+  };
+  saveTimer = setTimeout(() => whenIdle(() => void save()), 600);
+}
+
+if (typeof window !== 'undefined') {
+  const flush = () => pendingSave?.();
+  window.addEventListener('pagehide', flush);
+  document.addEventListener('visibilitychange', () => document.visibilityState === 'hidden' && flush());
 }
 
 /** Run off the typing path: serializing a long story takes a while. */
@@ -276,7 +297,6 @@ export const useStory = create<StoryState>((set, get) => ({
   editor: null,
   serverDown: false,
   activeShelf: null,
-  scriptLogs: [],
 
   init() {
     initPromise ??= get().reload();
@@ -527,6 +547,22 @@ export const useStory = create<StoryState>((set, get) => ({
     });
   },
 
+  replaceText(from, to, text, origin = 'edit') {
+    const s = get().current;
+    if (!s) return;
+    const len = docText(s.doc).length;
+    const a = Math.max(0, Math.min(len, from));
+    const b = Math.max(a, Math.min(len, to));
+    const change: Change = { pos: a, removed: slice(s.doc, a, b), inserted: text ? [{ text, origin }] : [] };
+    if (!change.removed.length && !change.inserted.length) return;
+    const doc = canonical(applyChange(s.doc, change));
+    get().update((st) => {
+      st.history = commit(st.history, origin === 'ai' ? 'ai' : 'edit', [change]).history;
+      st.doc = doc;
+    });
+    get().editor?.setDoc(doc);
+  },
+
   undo() {
     const s = get().current;
     if (!s || get().generating) return;
@@ -539,6 +575,7 @@ export const useStory = create<StoryState>((set, get) => ({
       st.doc = doc;
     });
     get().editor?.setDoc(doc, pos);
+    if (hasHook('onHistoryNavigated')) void runScriptHook('onHistoryNavigated', { action: 'undo', nodeId: get().current?.history.current });
   },
 
   redo(childId) {
@@ -552,6 +589,7 @@ export const useStory = create<StoryState>((set, get) => ({
       st.doc = doc;
     });
     get().editor?.setDoc(doc);
+    if (hasHook('onHistoryNavigated')) void runScriptHook('onHistoryNavigated', { action: 'redo', nodeId: get().current?.history.current });
   },
 
   jump(nodeId) {
@@ -564,6 +602,7 @@ export const useStory = create<StoryState>((set, get) => ({
       st.doc = doc;
     });
     get().editor?.setDoc(doc);
+    if (hasHook('onHistoryNavigated')) void runScriptHook('onHistoryNavigated', { action: 'jump', nodeId });
   },
 
   resolveModel() {
@@ -612,10 +651,10 @@ export const useStory = create<StoryState>((set, get) => ({
 
     // Player/user input from the input box or adventure bar is appended first.
     if (input && input.text.trim()) {
-      const hooked = await runHook(s.scripts, 'onInput', { text: input.text });
-      logScripts(set, get, hooked);
-      if (useSettings.getState().ttsSpeakInputs) speak(hooked.value.text);
-      let text = s.mode === 'adventure' ? adventureInput(hooked.value.text, input.mode ?? 'do') : hooked.value.text;
+      const hooked = hasHook('onTextAdventureInput') ? await runScriptHook('onTextAdventureInput', { text: input.text, mode: input.mode ?? 'do' }) : { text: input.text };
+      s = get().current!;
+      if (useSettings.getState().ttsSpeakInputs) speak(hooked.text);
+      let text = s.mode === 'adventure' ? adventureInput(hooked.text, input.mode ?? 'do') : hooked.text;
       const before = docText(s.doc);
       if (before && !before.endsWith('\n')) text = '\n' + text;
       if (s.mode === 'adventure') text += '\n';
@@ -758,6 +797,15 @@ async function runGeneration(
   get: () => StoryState,
   opts: { from: number; inline?: boolean },
 ): Promise<void> {
+  // Scripts may cancel the generation or change the story before the context is built.
+  if (hasHook('onGenerationRequested') || hasHook('onBeforeContextBuild')) {
+    const atEnd = opts.from >= docText(get().current!.doc).length;
+    set({ generating: true, task: 'story' });
+    const req = await runScriptHook('onGenerationRequested', { inline: !!opts.inline, cancel: false });
+    if (req.cancel) return void set({ generating: false, task: null });
+    await runScriptHook('onBeforeContextBuild', {});
+    if (atEnd) opts = { ...opts, from: docText(get().current!.doc).length };
+  }
   const s = get().current!;
   const ui = useUI.getState();
   const settings = useSettings.getState();
@@ -780,11 +828,11 @@ async function runGeneration(
   if (banned.length > s.bannedTokens.length) req.system += `\n\nNever write scene-break markers such as ${banned.slice(s.bannedTokens.length).join(' or ')}.`;
   set({ generating: true, task: 'story', lastContext: req.context });
   abort = new AbortController();
-  if (s.scripts.some((x) => x.enabled)) {
-    const hooked = await runHook(s.scripts, 'onContextBuilt', { system: req.system, context: req.messages[0]?.content ?? '' });
-    logScripts(set, get, hooked);
-    req.system = hooked.value.system;
-    if (req.messages[0]) req.messages[0] = { ...req.messages[0], content: hooked.value.context };
+  if (hasHook('onContextBuilt')) {
+    const hooked = await runScriptHook('onContextBuilt', { system: req.system, context: req.messages[0]?.content ?? '', messages: req.messages });
+    req.system = String(hooked.system ?? req.system);
+    req.messages = Array.isArray(hooked.messages) && hooked.messages !== req.messages ? hooked.messages : req.messages;
+    if (req.messages[0] && typeof hooked.context === 'string') req.messages[0] = { ...req.messages[0], content: hooked.context };
   }
   set({ lastRequest: { system: req.system, messages: req.messages } });
   const ed = get().editor;
@@ -832,11 +880,7 @@ async function runGeneration(
     trimToSentence: settings.continueToSentenceEnd && !abort.signal.aborted,
     minLength: s.params.minLength,
   });
-  if (final && s.scripts.some((x) => x.enabled)) {
-    const hooked = await runHook(s.scripts, 'onResponse', { text: final });
-    logScripts(set, get, hooked);
-    final = hooked.value.text;
-  }
+  if (final && hasHook('onResponse')) final = String((await runScriptHook('onResponse', { text: final, inline: !!opts.inline })).text ?? final);
   if (settings.autoFormat) final = autoFormat(final);
   if (opts.inline && after && !/^\s/.test(after) && final && !/\s$/.test(final)) final += ' ';
   if (!final.trim()) final = '';
@@ -863,6 +907,7 @@ async function runGeneration(
     // Ensure editor matches canonical doc (e.g. stream disabled).
     if (!settings.streamResponses) ed?.setDoc(doc);
     if (settings.ttsSpeakOutputs) speak(final);
+    if (hasHook('onGenerationEnd')) void runScriptHook('onGenerationEnd', { text: final });
     void maybeHypebot(set, get, final);
   } else if (!final) {
     ed?.setDoc(get().current?.doc ?? []);
@@ -897,14 +942,6 @@ export function alignTokenProbs(raw: string, final: string, tokens: TokenLogprob
     out.push({ o: from, t: piece, lp: t.logprob, top: t.top.map((x) => [x.token, x.logprob]) });
   }
   return out;
-}
-
-function logScripts(set: (p: Partial<StoryState>) => void, get: () => StoryState, r: { logs: string[]; errors: string[] }) {
-  if (!r.logs.length && !r.errors.length) return;
-  const stamp = new Date().toLocaleTimeString();
-  const lines = [...r.logs.map((l) => `[${stamp}] ${l}`), ...r.errors.map((e) => `[${stamp}] ERROR ${e}`)];
-  set({ scriptLogs: [...get().scriptLogs, ...lines].slice(-200) });
-  if (r.errors.length) useUI.getState().toast(r.errors[0], 'error');
 }
 
 async function maybeHypebot(set: (p: Partial<StoryState>) => void, get: () => StoryState, last: string, force = false) {

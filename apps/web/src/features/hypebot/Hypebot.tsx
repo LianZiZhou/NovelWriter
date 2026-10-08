@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { memo, useEffect, useState } from 'react';
 import { X } from '@phosphor-icons/react';
 import { speak } from '../tts/tts.ts';
 import { pickAvatar } from './avatars.tsx';
@@ -7,7 +7,7 @@ import { useSettings } from '../../store/settings.ts';
 import { t } from '../../i18n.ts';
 
 /** HypeBot: a reading buddy that comments on new generations. */
-export function Hypebot() {
+export const Hypebot = memo(function Hypebot() {
   const comment = useStory((s) => s.hypebot);
   const mode = useSettings((s) => s.hypebotMode);
   const avatarSetting = useSettings((s) => s.hypebotAvatar);
@@ -65,4 +65,4 @@ export function Hypebot() {
       </button>
     </div>
   );
-}
+});

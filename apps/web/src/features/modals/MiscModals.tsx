@@ -24,6 +24,7 @@ import {
   type ToolboxMode,
 } from '@novelwriter/core';
 import { api, generateText } from '../../api.ts';
+import { invoke, useScripts } from '../scripts/host.ts';
 import { canonical, download, safeFileName, useStory } from '../../store/story.ts';
 import { useUI } from '../../store/ui.ts';
 import { useSettings } from '../../store/settings.ts';
@@ -203,7 +204,9 @@ const TOOLBOX_MODES: { id: ToolboxMode; label: string }[] = [
 /** Writer's Toolbox: rework a selection (or fill in text at the cursor) with one of NovelAI's tools. */
 export function ToolboxModal({ onClose, text, from, to, mode: initialMode }: { onClose: () => void; text: string; from: number; to: number; mode?: ToolboxMode }) {
   const empty = !text.trim();
-  const [mode, setMode] = useState<ToolboxMode>(initialMode ?? (empty ? 'infill' : 'rewriteStyle'));
+  const [mode, setMode] = useState<ToolboxMode | `script:${string}`>(initialMode ?? (empty ? 'infill' : 'rewriteStyle'));
+  const scriptOptions = useScripts((x) => x.extensions).filter((e) => e.type === 'toolboxOption');
+  const scriptOption = mode.startsWith('script:') ? scriptOptions.find((e) => `script:${e.key}` === mode) : undefined;
   const [concept, setConcept] = useState('');
   const [strength, setStrength] = useState(1);
   const [instruction, setInstruction] = useState('');
@@ -221,7 +224,13 @@ export function ToolboxModal({ onClose, text, from, to, mode: initialMode }: { o
     abort.current = new AbortController();
     try {
       const full = docText(s.doc);
-      const req = buildToolboxRequest(s, source, mode, { concept, strength, instruction, before: full.slice(0, from), after: full.slice(to) });
+      if (mode.startsWith('script:')) {
+        // A Writer's Toolbox option added by a script: it gets the text and returns the replacement.
+        const out = scriptOption ? await invoke(scriptOption.scriptKey, scriptOption.onRun, { text: source, before: full.slice(0, from), after: full.slice(to) }) : '';
+        setResult(typeof out === 'string' ? out : '');
+        return;
+      }
+      const req = buildToolboxRequest(s, source, mode as ToolboxMode, { concept, strength, instruction, before: full.slice(0, from), after: full.slice(to) });
       const maxTokens = mode === 'infill' ? [16, 80, 300, 700][strength] : Math.max(200, Math.ceil(source.length / 2));
       const out = await generateText({ model, ...req, maxTokens, params: { temperature: 0.8 } }, abort.current.signal, setResult);
       setResult(out.trim());
@@ -250,11 +259,15 @@ export function ToolboxModal({ onClose, text, from, to, mode: initialMode }: { o
     onClose();
   };
   const strengthKey = mode === 'transform' || mode === 'expand' || mode === 'condense' || mode === 'infill' ? mode : null;
-  const modes = empty ? TOOLBOX_MODES.filter((m) => m.id === 'infill' || m.id === 'custom') : TOOLBOX_MODES.filter((m) => m.id !== 'infill');
+  const modes: { id: string; label: string }[] = [
+    ...(empty ? TOOLBOX_MODES.filter((m) => m.id === 'infill' || m.id === 'custom') : TOOLBOX_MODES.filter((m) => m.id !== 'infill')),
+    ...(empty ? [] : scriptOptions.map((e) => ({ id: `script:${e.key}`, label: e.label ?? e.id }))),
+  ];
   return (
     <Modal onClose={onClose} width={820} label={t("Writer's Toolbox")}>
       <ModalHeader title={t("Writer's Toolbox")} onClose={onClose} />
-      <Tabs value={mode} onChange={(m) => (setMode(m), setResult(''))} tabs={modes.map((m) => ({ value: m.id, label: t(m.label) }))} />
+      <Tabs value={mode as string} onChange={(m) => (setMode(m as typeof mode), setResult(''))} tabs={modes.map((m) => ({ value: m.id, label: m.id.startsWith('script:') ? m.label : t(m.label) }))} />
+      {scriptOption && <div className="desc" style={{ marginTop: 8 }}>{scriptOption.description ?? ''} <span className="muted">({scriptOption.scriptName})</span></div>}
       <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 12, paddingTop: 16 }}>
         {mode === 'infill' ? (
           <div className="desc">{t('Generates new text at the cursor that bridges what comes before and after it.')}</div>

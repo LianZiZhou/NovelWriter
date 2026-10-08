@@ -247,6 +247,8 @@ export interface EditorOptionsRef {
   find: () => FindState;
   /** Global regexes for enabled lorebook keys, when the editor should mark them. */
   loreKeys?: () => RegExp[];
+  /** Decorations from user scripts: regex rules per paragraph and markers at plain-text offsets (CSS already sanitized). */
+  scripts?: () => { rules: { re: RegExp; style: string; title?: string }[]; markers: { from: number; to: number; style: string; title?: string }[] };
 }
 
 const decoKey = new PluginKey<DecorationSet>('nw-decorations');
@@ -257,10 +259,15 @@ interface DecoContext {
   adventure: boolean;
   speech: boolean;
   loreKeys: RegExp[];
+  scriptRules: { re: RegExp; style: string; title?: string }[];
 }
 
 function decoContext(opts: EditorOptionsRef): DecoContext {
-  return { adventure: opts.adventure(), speech: opts.highlightSpeech(), loreKeys: opts.loreKeys?.() ?? [] };
+  return { adventure: opts.adventure(), speech: opts.highlightSpeech(), loreKeys: opts.loreKeys?.() ?? [], scriptRules: opts.scripts?.().rules ?? [] };
+}
+
+function scriptAttrs(style: string, title?: string): Record<string, string> {
+  return { class: 'script-deco', style, ...(title ? { title } : {}) };
 }
 
 function decorateParagraph(para: PMNode, pos: number, ctx: DecoContext, decos: Decoration[]): void {
@@ -294,6 +301,15 @@ function decorateParagraph(para: PMNode, pos: number, ctx: DecoContext, decos: D
       decos.push(Decoration.inline(start + i, start + i + m[0].length, { class: 'lore-key' }));
     }
   }
+  for (const rule of ctx.scriptRules) {
+    rule.re.lastIndex = 0;
+    let n = 0;
+    for (const m of text.matchAll(rule.re)) {
+      if (!m[0] || ++n > 500) break;
+      const i = m.index ?? 0;
+      decos.push(Decoration.inline(start + i, start + i + m[0].length, scriptAttrs(rule.style, rule.title)));
+    }
+  }
 }
 
 function buildDecorations(doc: PMNode, opts: EditorOptionsRef): DecorationSet {
@@ -303,9 +319,19 @@ function buildDecorations(doc: PMNode, opts: EditorOptionsRef): DecorationSet {
   }
   const ctx = decoContext(opts);
   const find = opts.find();
+  const markers = opts.scripts?.().markers ?? [];
   let hit = 0;
+  let offset = 0;
   doc.forEach((para, pos) => {
     decorateParagraph(para, pos, ctx, decos);
+    // Script markers are plain-text ranges; clip each to this paragraph.
+    const len = para.textContent.length;
+    for (const mk of markers) {
+      const a = Math.max(mk.from, offset);
+      const b = Math.min(mk.to, offset + len);
+      if (b > a) decos.push(Decoration.inline(pos + 1 + a - offset, pos + 1 + b - offset, scriptAttrs(mk.style, mk.title)));
+    }
+    offset += len + 1;
     if (find.query) {
       const start = pos + 1;
       for (const m of findMatches(para.textContent, find)) {
@@ -373,7 +399,7 @@ export function NovelPlugins(opts: EditorOptionsRef) {
             init: (_, state) => buildDecorations(state.doc, opts),
             apply(tr, set, oldState, newState) {
               // Option changes (and find, whose "current" hit depends on every match before it) rebuild everything.
-              if (tr.getMeta(REDECORATE) || opts.find().query) return buildDecorations(newState.doc, opts);
+              if (tr.getMeta(REDECORATE) || opts.find().query || opts.scripts?.().markers.length) return buildDecorations(newState.doc, opts);
               if (!tr.docChanged) return set;
               if (newState.doc.childCount <= 1 || oldState.doc.childCount <= 1) return buildDecorations(newState.doc, opts);
               const start = oldState.doc.content.findDiffStart(newState.doc.content);

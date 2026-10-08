@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Book,
   CaretDown,
@@ -48,6 +48,8 @@ import { ContextConfigEditor } from './ContextConfigEditor.tsx';
 import { ConditionsEditor } from './ConditionsEditor.tsx';
 import { LoreGenerator } from './LoreGenerator.tsx';
 import { PhraseBiasEditor } from '../right/PhraseBiasEditor.tsx';
+import { hasHook, runScriptHook, useScripts } from '../scripts/host.ts';
+import { ScriptPanels } from '../scripts/ScriptUI.tsx';
 
 type Selection = { kind: 'entry'; id: string } | { kind: 'category'; id: string } | null;
 
@@ -58,6 +60,10 @@ export function LorebookModal({ onClose, entryId, generate }: { onClose: () => v
   const lb = story.lorebook;
   const [sel, setSel] = useState<Selection>(entryId ? { kind: 'entry', id: entryId } : null);
   const docked = useSettings((s) => s.loreDocked);
+  // Scripts hear which entry is open (onLorebookEntrySelected).
+  useEffect(() => {
+    if (sel?.kind === 'entry' && hasHook('onLorebookEntrySelected')) void runScriptHook('onLorebookEntrySelected', { entryId: sel.id });
+  }, [sel?.kind === 'entry' ? sel.id : null]);
   const [search, setSearch] = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
   const [sort, setSort] = useState<'default' | 'alpha' | 'recent'>('default');
@@ -453,7 +459,8 @@ function toggleSet(s: Set<string>, id: string): Set<string> {
 }
 
 function EntryEditor({ entry, categories, update, onClose, active, generate }: { entry: LoreEntry; categories: LoreCategory[]; update: (p: Partial<LoreEntry>) => void; onClose: () => void; active: boolean; generate?: string }) {
-  const [tab, setTab] = useState<'entry' | 'placement' | 'bias' | 'conditions'>('entry');
+  const [tab, setTab] = useState<'entry' | 'placement' | 'bias' | 'conditions' | 'script'>('entry');
+  const scriptPanels = useScripts((x) => x.extensions).some((e) => e.type === 'lorebookPanel');
   const [genOpen, setGenOpen] = useState(!!generate);
   const story = useStory((s) => s.current)!;
   const recent = entry.searchRange > 0 ? docText(story.doc).slice(-entry.searchRange) : '';
@@ -503,9 +510,11 @@ function EntryEditor({ entry, categories, update, onClose, active, generate }: {
           { value: 'conditions', label: t('Advanced Conditions') },
           { value: 'placement', label: t('Placement') },
           { value: 'bias', label: t('Phrase Bias') },
+          ...(scriptPanels ? [{ value: 'script' as const, label: t('Script') }] : []),
         ]}
       />
       <div className="lore-body">
+        {tab === 'script' && <ScriptPanels type="lorebookPanel" />}
         {tab === 'entry' && (
           <>
             <div>

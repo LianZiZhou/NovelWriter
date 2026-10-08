@@ -270,6 +270,8 @@ export interface Story {
   styleTag: number;
   /** The new-story Genre & Tags prompt was answered or dismissed. */
   attgPrompted: boolean;
+  /** Per-script data kept with the story (`api.v1.storyStorage` / `historyStorage`). */
+  scriptStorage?: Record<string, Record<string, unknown>>;
 }
 
 /** A Side Chat conversation: talk with the model about the story without touching it. */
@@ -293,6 +295,12 @@ export interface UserScript {
   name: string;
   enabled: boolean;
   code: string;
+  /** TypeScript is compiled in the browser before the script runs. */
+  language?: 'js' | 'ts';
+  /** Permissions the user has granted (a script declares what it needs in its @meta block). */
+  granted?: string[];
+  /** Values for the script's config fields. */
+  config?: Record<string, unknown>;
 }
 
 export interface Placeholder {

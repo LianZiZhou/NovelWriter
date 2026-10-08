@@ -30,6 +30,8 @@ import { Logo } from './components/Logo.tsx';
 import { ScriptsModal } from './features/scripts/ScriptsModal.tsx';
 import { TokenProbsModal } from './features/tokenprobs/TokenProbs.tsx';
 import { Tour } from './features/tour/Tour.tsx';
+import { initScripts } from './features/scripts/host.ts';
+import { ScriptModals } from './features/scripts/ScriptUI.tsx';
 
 function ModalHost() {
   const modal = useUI((s) => s.modal);
@@ -263,6 +265,7 @@ function Minibar({ onExpand }: { onExpand: () => void }) {
 export function App() {
   // Only the story id: subscribing to the whole story would re-render the app on every keystroke.
   const storyId = useStory((s) => s.current?.id);
+  useEffect(() => initScripts(), []);
   const page = useStory((s) => s.page);
   const serverDown = useStory((s) => s.serverDown);
   const leftOpen = useSettings((s) => s.leftOpen);
@@ -318,6 +321,7 @@ export function App() {
       {showRight && <RightSidebar mobileOpen={mobileRight} onCollapse={() => (mobile ? setUI({ mobileRight: false }) : setSettings({ rightOpen: false }))} />}
       {mobile && <div className={`drawer-backdrop ${mobileLeft || mobileRight ? 'show' : ''}`} onClick={() => setUI({ mobileLeft: false, mobileRight: false })} />}
       <ModalHost />
+      <ScriptModals />
       <ConfirmHost />
       <Tour />
       <Toasts />

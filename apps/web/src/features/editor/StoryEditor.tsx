@@ -4,6 +4,7 @@ import { MagicWand } from '@phosphor-icons/react';
 import StarterKit from '@tiptap/starter-kit';
 import { TextSelection } from '@tiptap/pm/state';
 import { keyRegexes, visibleTokenProbs, type LoreEntry } from '@novelwriter/core';
+import { safeStyle, useScripts } from '../scripts/host.ts';
 import { useStory } from '../../store/story.ts';
 import { useSettings } from '../../store/settings.ts';
 import { useUI } from '../../store/ui.ts';
@@ -87,6 +88,7 @@ export const StoryEditor = memo(function StoryEditor() {
       placeholder: () => t('Enter your prompt here...'),
       find: () => findRef.current,
       loreKeys: () => loreKeyCache.get(),
+      scripts: () => scriptDecorations(),
     }),
     [],
   );
@@ -213,6 +215,14 @@ export const StoryEditor = memo(function StoryEditor() {
       if (el) el.scrollTop = el.scrollHeight;
     });
   }, [editor, storyId]);
+
+  // Scripts changed their decorations.
+  useEffect(() => {
+    if (!editor) return;
+    return useScripts.subscribe((st, prev) => {
+      if (st.decorations !== prev.decorations) editor.view.dispatch(editor.state.tr.setMeta(EXTERNAL, true).setMeta(REDECORATE, true));
+    });
+  }, [editor]);
 
   // Re-render decorations when display options change.
   useEffect(() => {
@@ -359,3 +369,27 @@ export const StoryEditor = memo(function StoryEditor() {
     </div>
   );
 });
+
+/** Script decoration rules (compiled, cached until scripts change them) and markers. */
+let scriptDecoCache: { src: unknown; value: ReturnType<typeof compileScriptDecorations> } | null = null;
+function compileScriptDecorations(all: ReturnType<typeof useScripts.getState>['decorations']) {
+  const rules: { re: RegExp; style: string; title?: string }[] = [];
+  const markers: { from: number; to: number; style: string; title?: string }[] = [];
+  for (const d of Object.values(all)) {
+    for (const r of d.rules ?? []) {
+      try {
+        const flags = String(r.flags ?? '').replace(/[^imsu]/g, '');
+        rules.push({ re: new RegExp(String(r.pattern), `${flags}g`), style: safeStyle(r.style), title: r.title });
+      } catch {
+        /* invalid pattern: skip */
+      }
+    }
+    for (const m of d.markers ?? []) if (Number.isFinite(m.from) && Number.isFinite(m.to)) markers.push({ from: m.from, to: m.to, style: safeStyle(m.style), title: m.title });
+  }
+  return { rules, markers };
+}
+function scriptDecorations() {
+  const all = useScripts.getState().decorations;
+  if (scriptDecoCache?.src !== all) scriptDecoCache = { src: all, value: compileScriptDecorations(all) };
+  return scriptDecoCache.value;
+}

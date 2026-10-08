@@ -9,6 +9,7 @@ import { useSettings } from '../../store/settings.ts';
 import { t } from '../../i18n.ts';
 import { downloadSpeech, speak, stopSpeaking } from '../tts/tts.ts';
 import { chatAsExcerpt } from '../right/SideChatTab.tsx';
+import { invoke, useScripts } from '../scripts/host.ts';
 import { posToOffset, docPlainText } from './pm.ts';
 
 export interface MenuState {
@@ -62,6 +63,7 @@ export function EditorContextMenu({ state, editor, onClose }: { state: MenuState
 
   const { from, to } = editor.state.selection;
   const selText = docPlainText(editor.state.doc).slice(posToOffset(editor.state.doc, from), posToOffset(editor.state.doc, to));
+  const scriptButtons = useScripts((x) => x.extensions).filter((e) => e.type === 'contextMenuButton');
   const run = (fn: () => void) => () => {
     fn();
     onClose();
@@ -161,6 +163,23 @@ export function EditorContextMenu({ state, editor, onClose }: { state: MenuState
       />
       <Item label={t('Generate Inline')} shortcut={`${mod}+⇧+⏎`} onClick={run(() => void store.generateInline())} />
       <Item label={t("Writer's Toolbox")} onClick={run(() => ui.open('toolbox', { text: selText, from: posToOffset(editor.state.doc, from), to: posToOffset(editor.state.doc, to) }))} />
+      {scriptButtons.length > 0 && (
+        <Item
+          label={t('User Scripts')}
+          sub={
+            <div className="submenu-scroll">
+              {scriptButtons.map((b) => (
+                <Item
+                  key={b.key}
+                  label={b.label ?? b.id}
+                  desc={b.scriptName}
+                  onClick={run(() => void invoke(b.scriptKey, b.onClick, { text: selText, from: posToOffset(editor.state.doc, from), to: posToOffset(editor.state.doc, to) }))}
+                />
+              ))}
+            </div>
+          }
+        />
+      )}
       <div className="sep" />
       <Item label={t('Tokenize')} disabled={!state.hasSelection} onClick={run(() => ui.open('tokenize', { text: selText }))} />
       <Item label={t('Screenshot')} disabled={!state.hasSelection} onClick={run(() => ui.open('screenshot', { from: posToOffset(editor.state.doc, from), to: posToOffset(editor.state.doc, to) }))} />

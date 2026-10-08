@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { ArrowClockwise, X } from '@phosphor-icons/react';
 import { exportBiasGroups, storyPlaceholders, type BuiltContext, type ContextSourceKind } from '@novelwriter/core';
-import { download, safeFileName, useStory } from '../../store/story.ts';
+import { download, safeFileName, useStory, useStoryMeta } from '../../store/story.ts';
 import { useUI } from '../../store/ui.ts';
 import { useSettings } from '../../store/settings.ts';
 import { t } from '../../i18n.ts';
@@ -51,7 +51,8 @@ function SectionTitle({ children }: { children: string }) {
 
 export function AdvancedTab() {
   const showSystemPrompt = useSettings((x) => x.showSystemPromptSettings);
-  const story = useStory((s) => s.current)!;
+  // Not the document: this tab shouldn't re-render on every keystroke.
+  const story = useStoryMeta()!;
   const lastContext = useStory((s) => s.lastContext);
   const store = useStory.getState();
   const ui = useUI.getState();

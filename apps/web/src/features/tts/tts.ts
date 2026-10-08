@@ -1,4 +1,5 @@
 import { useSettings, type SavedVoice } from '../../store/settings.ts';
+import { useUI } from '../../store/ui.ts';
 
 /**
  * Text to speech from two sources: the browser's SpeechSynthesis voices, or an OpenAI-compatible
@@ -88,7 +89,6 @@ async function speakEndpoint(text: string, voice: string): Promise<void> {
   const my = ++generation;
   // Streamed: fetch the next chunk while the current one plays. Otherwise synthesize everything in one request.
   const chunks = s.ttsStreamed ? speechChunks(text) : [text];
-  const { useUI } = await import('../../store/ui.ts');
   let next: Promise<Blob> | null = fetchSpeech(chunks[0], voice);
   for (let i = 0; i < chunks.length; i++) {
     let blob: Blob;

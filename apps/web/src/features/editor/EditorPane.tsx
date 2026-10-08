@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { memo, useEffect, useRef, useState } from 'react';
 import { ArrowClockwise, ArrowUUpLeft, ArrowUUpRight, Book, CaretRight, ChatCircle, DiceFive, PersonSimpleRun, Plus, TextAlignLeft, TreeStructure, X } from '@phosphor-icons/react';
 import { canRedo, canUndo, retryOptions, type AdventureInputMode, type HistoryNode } from '@novelwriter/core';
 import { useStory } from '../../store/story.ts';
@@ -7,6 +7,7 @@ import { useUI } from '../../store/ui.ts';
 import { t } from '../../i18n.ts';
 import { StoryEditor } from './StoryEditor.tsx';
 import { Hypebot } from '../hypebot/Hypebot.tsx';
+import { ScriptToolbar } from '../scripts/ScriptUI.tsx';
 
 /** [title, text, optional settings tab the tip links to]. */
 const TIPS: [string, string, string?][] = [
@@ -26,7 +27,8 @@ const TIPS: [string, string, string?][] = [
   ['Command Palette', 'Press Ctrl+K to open the command palette and reach any action quickly.'],
 ];
 
-function TipBar() {
+/** Memoized: it has no props, so typing in the editor doesn't re-render it. */
+const TipBar = memo(function TipBar() {
   const showTips = useSettings((s) => s.showTips);
   const dismissed = useSettings((s) => s.dismissedTips);
   const tips = TIPS.filter(([title]) => !dismissed.includes(title));
@@ -58,7 +60,7 @@ function TipBar() {
       </button>
     </div>
   );
-}
+});
 
 const GENRE_HINTS = ['Fantasy', 'Science Fiction', 'Mystery', 'Romance', 'Horror', 'Thriller', 'Historical', 'Slice of Life', 'Adventure', 'Literary'];
 
@@ -293,6 +295,7 @@ export function EditorPane() {
       <div className="bottom-area">
         <div className="bottom-inner">
           {branchOpen ? <RedoStrip options={branchOptions} onClose={() => setBranchOpen(false)} /> : <TipBar />}
+          <ScriptToolbar />
           <div className={`control-row ${adventure ? 'adventure' : ''}`}>
             {adventure ? (
               <AdventureBar mode={advMode} setMode={setAdvMode} text={input} setText={setInput} onSend={doSend} controls={controls} />

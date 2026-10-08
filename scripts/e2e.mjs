@@ -193,9 +193,11 @@ await step('user scripts hook the AI response', async () => {
   // First use shows the consent notice; later runs reuse the saved answer.
   const gotIt = page.getByRole('button', { name: 'Got it' });
   if (await gotIt.isVisible({ timeout: 1500 }).catch(() => false)) await gotIt.click();
-  await page.locator('.modal').getByRole('button', { name: 'Add' }).click();
+  await page.locator('.modal').getByRole('button', { name: 'New Script' }).click();
+  // The first API version (api.hooks.register) still works.
   await page.getByRole('textbox', { name: 'Script', exact: true }).fill("api.hooks.register('onResponse', ({ text }) => ({ text: text + ' [[SCRIPTED]]' }));");
-  await page.locator('.modal [role=switch]').first().click();
+  await page.locator('.modal').getByRole('button', { name: 'Save', exact: true }).click();
+  await page.locator('.scripts-item.active [role=switch]').click();
   await page.keyboard.press('Escape');
   await page.getByRole('button', { name: 'Send' }).click();
   await page.waitForFunction(() => document.querySelector('.ProseMirror')?.textContent?.includes('[[SCRIPTED]]'));
@@ -424,6 +426,90 @@ await step('tutorial, message-format context, tokenizer, speech endpoint setting
   await page.getByText('Streamed TTS Settings').waitFor();
   await page.getByText('Browser Voices', { exact: true }).click();
   await page.keyboard.press('Escape');
+});
+
+await step('scripts: sandbox, examples with buttons, windows, panels, decorations, TypeScript, hang guard', async () => {
+  await page.locator('.right-tabs').getByRole('tab', { name: 'Advanced' }).click();
+  await page.getByRole('button', { name: /Edit User Scripts/ }).click();
+  const modal = page.locator('.scripts-modal');
+  // Network access is blocked inside the sandbox.
+  await modal.getByRole('button', { name: 'New Script' }).click();
+  await page.getByLabel('Script name').fill('Net Probe');
+  await page.getByRole('textbox', { name: 'Script', exact: true }).fill(
+    "try { await fetch('/api/health'); api.v1.log('NET:open'); } catch (e) { api.v1.log('NET:blocked'); }\napi.v1.log('parent:' + (() => { try { return String(parent.document.title); } catch { return 'unreachable'; } })());",
+  );
+  await modal.getByRole('button', { name: 'Save', exact: true }).click();
+  await page.locator('.scripts-item.active [role=switch]').click();
+  await modal.getByRole('tab', { name: 'Logs' }).click();
+  await modal.locator('.scripts-logs', { hasText: 'NET:blocked' }).waitFor();
+  assert.ok((await modal.locator('.scripts-logs').innerText()).includes('parent:unreachable'));
+  await page.locator('.scripts-item.active [role=switch]').click();
+
+  for (const name of ['Find & Replace (script)', 'Bookmarks', 'Smart Summarizer']) {
+    await modal.getByRole('button', { name: 'Add an example' }).click();
+    await page.getByRole('option', { name }).click();
+    await page.locator('.scripts-item.active [role=switch]').click();
+    // Bookmarks draws its markers as soon as it loads, so it asks for editorDecorations right away.
+    if (name === 'Bookmarks') await page.getByRole('dialog', { name: /Allow/ }).getByRole('button', { name: 'Allow' }).click();
+  }
+  await modal.getByRole('tab', { name: 'Diagnostics' }).click();
+  await modal.locator('.scripts-diag dd', { hasText: /^Running$/ }).waitFor(); // Smart Summarizer is TypeScript: compiled and running
+  await page.keyboard.press('Escape');
+
+  // Find & Replace window from a toolbar button; documentEdit is asked for once.
+  await page.locator('.ProseMirror').click();
+  await page.keyboard.press('Control+End');
+  await page.keyboard.type(' zebra and zebra.');
+  await page.locator('.script-toolbar').getByRole('button', { name: 'Find & Replace' }).click();
+  const win = page.getByRole('dialog', { name: 'Find & Replace' });
+  await win.getByLabel('Find', { exact: true }).fill('zebra');
+  await win.getByText('2 match(es)').waitFor();
+  await win.getByLabel('Replace with').fill('okapi');
+  await win.getByRole('button', { name: 'Replace All' }).click();
+  await page.getByRole('dialog', { name: /Allow/ }).getByRole('button', { name: 'Allow' }).click();
+  await page.waitForFunction(() => document.querySelector('.ProseMirror')?.textContent?.includes('okapi and okapi'));
+  await win.locator('.script-parts').getByRole('button', { name: 'Close' }).click();
+
+  // Bookmarks: context menu button, editor markers, sidebar panel.
+  const p = page.locator('.ProseMirror p').first();
+  await p.click({ clickCount: 3 });
+  await p.click({ button: 'right' });
+  await page.getByRole('menuitem', { name: 'User Scripts' }).hover();
+  await page.getByRole('menuitem', { name: /Bookmark selection/ }).click();
+  await page.waitForSelector('.ProseMirror .script-deco');
+  await page.locator('.right-tabs').getByRole('tab', { name: 'Script Panels' }).click();
+  await page.locator('.script-panel', { hasText: 'Bookmarks' }).waitFor();
+  await page.locator('.right-tabs').getByRole('tab', { name: 'Story' }).click();
+
+  // Smart Summarizer (TypeScript): generation + Memory edit.
+  await page.locator('.script-toolbar').getByRole('button', { name: 'Summarize into Memory' }).click();
+  await page.getByRole('dialog', { name: /Allow/ }).getByRole('button', { name: 'Allow' }).click();
+  await page.waitForFunction(() => document.querySelector('textarea[aria-label="memory"]')?.value.includes('[ Summary ]'), null, { timeout: 30000 });
+
+  // A script that hangs in a hook is stopped and generation carries on.
+  await page.locator('.right-tabs').getByRole('tab', { name: 'Advanced' }).click();
+  await page.getByRole('button', { name: /Edit User Scripts/ }).click();
+  await modal.getByRole('button', { name: 'New Script' }).click();
+  await page.getByRole('textbox', { name: 'Script', exact: true }).fill("api.v1.hooks.register('onContextBuilt', () => { while (true) {} });");
+  await modal.getByRole('button', { name: 'Save', exact: true }).click();
+  await page.locator('.scripts-item.active [role=switch]').click();
+  await page.keyboard.press('Escape');
+  const before = (await editorText()).length;
+  await page.getByRole('button', { name: 'Send' }).click();
+  await page.waitForFunction(() => document.querySelector('.send-btn')?.getAttribute('aria-label') === 'Send', null, { timeout: 30000 });
+  assert.ok((await editorText()).length > before, 'generated despite the hanging script');
+  await page.getByText(/took longer than 5s/).first().waitFor();
+  // Turn every script off again for later runs.
+  await page.getByRole('button', { name: /Edit User Scripts/ }).click();
+  const on = page.locator('.scripts-item [role=switch][aria-checked=true]');
+  while ((await on.count()) > 0) await on.first().click();
+  await page.keyboard.press('Escape');
+  await page.waitForFunction(async () => {
+    const list = await (await fetch('/api/stories')).json();
+    const id = [...list].sort((a, b) => b.updatedAt - a.updatedAt)[0].id;
+    return (await (await fetch(`/api/stories/${id}`)).json()).scripts.every((x) => !x.enabled);
+  }, null, { timeout: 10000, polling: 300 });
+  await page.locator('.right-tabs').getByRole('tab', { name: 'Story' }).click();
 });
 
 await page.screenshot({ path: `${out}final.png` });

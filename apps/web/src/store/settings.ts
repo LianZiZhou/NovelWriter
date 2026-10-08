@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { ModelRef } from '@novelwriter/core';
+import type { ModelRef, UserScript } from '@novelwriter/core';
 import { api } from '../api.ts';
 import { BUILTIN_THEMES, type Theme } from '../theme/themes.ts';
 import { applyTheme } from '../theme/applyTheme.ts';
@@ -87,7 +87,7 @@ export interface Settings {
   ttsStreamed: boolean;
   leftOpen: boolean;
   rightOpen: boolean;
-  rightTab: 'story' | 'advanced' | 'generation' | 'chat';
+  rightTab: 'story' | 'advanced' | 'generation' | 'chat' | 'scripts';
   librarySort: 'recent' | 'alpha' | 'created';
   librarySortAsc: boolean;
   favoritesOnly: boolean;
@@ -95,6 +95,10 @@ export interface Settings {
   shelvesOnTop: boolean;
   favoritesOnTop: boolean;
   userScriptsAccepted: boolean | null;
+  /** Scripts that run in every story. */
+  accountScripts: UserScript[];
+  /** Per-script data kept for all stories (`api.v1.storage`). */
+  scriptStorage: Record<string, Record<string, unknown>>;
   dismissedTips: string[];
   hotkeys: Record<string, string>;
   hotkeysVersion: number;
@@ -218,6 +222,8 @@ export const DEFAULT_SETTINGS: Settings = {
   shelvesOnTop: true,
   favoritesOnTop: false,
   userScriptsAccepted: null,
+  accountScripts: [],
+  scriptStorage: {},
   dismissedTips: [],
   hotkeys: DEFAULT_HOTKEYS,
   hotkeysVersion: HOTKEYS_VERSION,

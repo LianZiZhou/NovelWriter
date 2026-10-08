@@ -97,7 +97,7 @@ Credentials are stored in `data/auth.json` on the server and never sent to the b
   banned tokens, ephemeral context, sampler settings), `.lorebook`, `.preset`/`.gensettings`, `.bias`,
   `.badwords`, `.module` (as a style note; trained modules can't run), KoboldAI saves, AI Dungeon
   adventures/scenarios, SillyTavern/Agnai lorebooks, plain text and PNG-embedded lorebooks.
-- **User scripts**: sandboxed hooks to rewrite the context and the AI response.
+- **User scripts**: story and account scripts in JavaScript or TypeScript with a full API (see below).
 - **Screenshot Designer** (title, date, pen name, logo, colours, legend, model, background,
   comment, speech highlighting; PNG, JPG or clipboard).
 - **Text to speech**: browser voices or any OpenAI-compatible `/audio/speech` endpoint (OpenAI, Kokoro-FastAPI,
@@ -109,6 +109,33 @@ Credentials are stored in `data/auth.json` on the server and never sent to the b
 - **Hypebot** (click its avatar for a new comment), **19 themes** plus a theme editor, custom CSS,
   rebindable hotkeys, a command palette (Ctrl+K), English and Simplified Chinese UI,
   drag-and-drop import, mobile layout.
+
+### User scripts
+
+Scripts extend NovelWriter (Advanced → Edit User Scripts). Each enabled script runs in its own sandbox: a hidden
+iframe with an opaque origin and a Content-Security-Policy that blocks all network access (fetch, WebSocket,
+EventSource, importScripts), which runs the script in a Worker. A script keeps its state between hooks, cannot
+touch the page, your providers or the network, and talks to NovelWriter only through `api.v1`:
+
+- **Hooks**: `onScriptsLoaded`, `onGenerationRequested` (can cancel), `onBeforeContextBuild`, `onContextBuilt`
+  (change the system prompt and context), `onResponse` (change the AI text), `onGenerationEnd`,
+  `onLorebookEntrySelected`, `onTextAdventureInput`, `onHistoryNavigated`.
+- **APIs**: document paragraphs and edits, undo/redo, selection, generate / generate with the story context,
+  Memory / Author's Note / system prompt / prefill, generation settings, lorebook CRUD, tokenizer, TTS,
+  storage (per script, per story, per history step, temporary), timers, random and dice, messaging between
+  scripts, toasts, clipboard, file download, HypeBot comments, config values.
+- **UI**: right-click menu buttons, a toolbar row above Send, Writer's Toolbox options, right-sidebar and lorebook
+  panels, and windows built from parts (row, column, box, Markdown text, button, inputs, checkbox, slider,
+  select, collapsible); editor decorations by regex rule or by range (CSS limited to a safe list).
+- **Permissions** are declared in a `/*@meta { … } */` JSON block (`documentEdit`, `storyEdit`, `lorebookEdit`,
+  `presetEdit`, `editorDecorations`, `clipboardWrite`, `fileDownload`) and asked for on first use. The block also
+  declares config fields, shown on the Config tab.
+- **Limits**: a hook that stays busy for 5 seconds (outside API calls) restarts the script; 20 generations a
+  minute and 3 without user interaction; 1 MB of storage. Add `?noscript=true` to the address to start with every
+  script off.
+- The editor has Info (with an API reference), Code, Config, Storage, Logs and Diagnostics tabs, import/export
+  as `.nwscript`, and five examples: Find & Replace, Bookmarks, Smart Summarizer (TypeScript), Retry Harder and
+  Straight Quotes.
 
 ### Generation settings
 
