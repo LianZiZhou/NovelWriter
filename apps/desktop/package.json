@@ -1,0 +1,25 @@
+{
+  "name": "@novelwriter/desktop",
+  "productName": "NovelWriter",
+  "desktopName": "novelwriter.desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "NovelWriter desktop app (Electron)",
+  "author": "LianZiZhou",
+  "homepage": "https://github.com/LianZiZhou/NovelWriter",
+  "type": "module",
+  "main": "dist/main.mjs",
+  "scripts": {
+    "bundle": "node scripts/bundle.mjs",
+    "start": "electron .",
+    "dev": "npm run build -w @novelwriter/web && npm run bundle && electron .",
+    "dist": "npm run build -w @novelwriter/web && npm run bundle && electron-builder --config electron-builder.config.cjs --publish never",
+    "smoke": "node scripts/smoke.mjs",
+    "icons": "node scripts/make-icons.mjs"
+  },
+  "devDependencies": {
+    "electron": "44.4.5",
+    "electron-builder": "26.15.3",
+    "esbuild": "0.28.2"
+  }
+}

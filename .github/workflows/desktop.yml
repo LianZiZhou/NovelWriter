@@ -1,0 +1,129 @@
+name: Desktop app
+
+on:
+  push:
+    tags: ['v*']
+    branches: ['**']
+    paths: &paths
+      - 'apps/**'
+      - 'packages/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/desktop.yml'
+  pull_request:
+    paths: *paths
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  test:
+    name: Typecheck and tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+
+  build:
+    name: Build (${{ matrix.os }})
+    needs: test
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+
+      # Signing is optional. Without certificates macOS builds are ad-hoc signed and Windows
+      # builds are unsigned, and electron-builder must not go looking for an identity.
+      # Secrets (all optional): MAC_CSC_LINK, MAC_CSC_KEY_PASSWORD (Developer ID .p12, base64),
+      # APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD, APPLE_TEAM_ID (notarization),
+      # WIN_CSC_LINK, WIN_CSC_KEY_PASSWORD (Authenticode .pfx, base64).
+      - name: Configure code signing
+        shell: bash
+        env:
+          MAC_CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+          MAC_CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+        run: |
+          # NAME<<DELIMITER form so multi-line values are safe in $GITHUB_ENV.
+          put() { d="EOF_$(openssl rand -hex 8)"; printf '%s<<%s\n%s\n%s\n' "$1" "$d" "$2" "$d" >> "$GITHUB_ENV"; }
+          if [ "$RUNNER_OS" = "macOS" ] && [ -n "$MAC_CSC_LINK" ]; then
+            put CSC_LINK "$MAC_CSC_LINK"
+            put CSC_KEY_PASSWORD "$MAC_CSC_KEY_PASSWORD"
+            if [ -n "$APPLE_ID" ]; then
+              put APPLE_ID "$APPLE_ID"
+              put APPLE_APP_SPECIFIC_PASSWORD "$APPLE_APP_SPECIFIC_PASSWORD"
+              put APPLE_TEAM_ID "$APPLE_TEAM_ID"
+            fi
+          elif [ "$RUNNER_OS" = "Windows" ] && [ -n "$WIN_CSC_LINK" ]; then
+            put WIN_CSC_LINK "$WIN_CSC_LINK"
+            put WIN_CSC_KEY_PASSWORD "$WIN_CSC_KEY_PASSWORD"
+          else
+            echo "No signing certificate for $RUNNER_OS: building unsigned (macOS: ad-hoc signed)."
+            echo "CSC_IDENTITY_AUTO_DISCOVERY=false" >> "$GITHUB_ENV"
+          fi
+
+      - name: Build installers
+        shell: bash
+        env:
+          # Tag builds carry the tag's version (v1.2.3 -> 1.2.3).
+          NOVELWRITER_VERSION: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '' }}
+        run: npm run desktop:dist
+
+      - name: Smoke test the packaged app
+        if: runner.os == 'Linux'
+        run: xvfb-run -a npm run smoke -w @novelwriter/desktop -- "$PWD/apps/desktop/release/linux-unpacked/novelwriter"
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: novelwriter-${{ runner.os }}
+          if-no-files-found: error
+          path: |
+            apps/desktop/release/*.exe
+            apps/desktop/release/*.dmg
+            apps/desktop/release/*.zip
+            apps/desktop/release/*.AppImage
+            apps/desktop/release/*.deb
+
+  release:
+    name: Publish GitHub Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: novelwriter-*
+          path: installers
+          merge-multiple: true
+      - run: ls -la installers
+      - uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
+        with:
+          files: installers/*
+          fail_on_unmatched_files: true
+          generate_release_notes: true
+          prerelease: ${{ contains(github.ref_name, '-') }}

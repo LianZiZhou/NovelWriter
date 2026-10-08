@@ -11,8 +11,10 @@
     "build": "npm run build -w @novelwriter/web",
     "start": "npm run build && npm run start -w @novelwriter/server",
     "test": "vitest run",
-    "typecheck": "tsc -p packages/core && tsc -p apps/server && tsc -p apps/web",
-    "e2e": "node scripts/e2e.mjs"
+    "typecheck": "tsc -p packages/core && tsc -p apps/server && tsc -p apps/web && tsc -p apps/desktop",
+    "e2e": "node scripts/e2e.mjs",
+    "desktop:dev": "npm run dev -w @novelwriter/desktop",
+    "desktop:dist": "npm run dist -w @novelwriter/desktop"
   },
   "engines": {
     "node": ">=22.19.0"
