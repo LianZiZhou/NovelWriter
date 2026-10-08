@@ -40,7 +40,7 @@ function ModalHost() {
   if (needsStory && !hasStory) return null;
   switch (modal) {
     case 'lorebook':
-      return <LorebookModal onClose={close} entryId={p.entryId} />;
+      return <LorebookModal onClose={close} entryId={p.entryId} generate={p.generate} />;
     case 'settings':
       return <SettingsModal onClose={close} initialTab={p.tab} />;
     case 'contextViewer':
@@ -56,7 +56,7 @@ function ModalHost() {
     case 'storyInfo':
       return <StoryInfoModal onClose={close} />;
     case 'toolbox':
-      return <ToolboxModal onClose={close} text={p.text} from={p.from} to={p.to} />;
+      return <ToolboxModal onClose={close} text={p.text} from={p.from} to={p.to} mode={p.mode} />;
     case 'tokenize':
       return <TokenizeModal onClose={close} text={p.text ?? ''} standalone={p.standalone} />;
     case 'screenshot':

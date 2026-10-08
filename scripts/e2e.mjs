@@ -182,6 +182,70 @@ await step("writer's toolbox rewrites a selection", async () => {
   assert.equal(await page.locator('.modal').count(), 0);
 });
 
+await step("writer's toolbox infills at the cursor", async () => {
+  const p = page.locator('.ProseMirror p').first();
+  await p.click();
+  await page.keyboard.press('End');
+  const before = await editorText();
+  await p.click({ button: 'right' });
+  await page.getByRole('menuitem', { name: "Writer's Toolbox" }).click();
+  await page.getByRole('tab', { name: 'Infill' }).waitFor();
+  await page.locator('.modal').getByRole('button', { name: 'Generate' }).click();
+  await page.locator('.modal').getByRole('button', { name: 'Insert', exact: true }).click();
+  assert.equal(await page.locator('.modal').count(), 0);
+  assert.ok((await editorText()).length > before.length, 'infill inserted text');
+});
+
+await step('find and replace', async () => {
+  await page.locator('.ProseMirror').click();
+  await page.keyboard.press('Control+End');
+  await page.keyboard.type(' findme and findme.');
+  await page.keyboard.press('Control+f');
+  await page.getByRole('textbox', { name: 'Find' }).fill('findme');
+  await page.getByRole('button', { name: 'Toggle Replace' }).click();
+  await page.getByRole('textbox', { name: 'Replace with' }).fill('FOUNDIT');
+  await page.getByRole('button', { name: 'Replace All' }).click();
+  const text = await editorText();
+  assert.equal(text.includes('findme'), false);
+  assert.equal(text.split('FOUNDIT').length - 1, 2);
+  await page.getByRole('textbox', { name: 'Find' }).press('Escape');
+});
+
+await step('instruction lines and ephemeral entries typed in the story', async () => {
+  await page.locator('.ProseMirror').click();
+  await page.keyboard.press('Control+End');
+  await page.keyboard.press('Enter');
+  await page.keyboard.type('{');
+  await page.keyboard.type('Describe the storm');
+  await page.waitForSelector('.ProseMirror p.instruction-line');
+  assert.ok((await editorText()).includes('{ Describe the storm }'), 'brace auto-closed');
+  await page.keyboard.press('End');
+  await page.keyboard.press('Enter');
+  await page.keyboard.type('{');
+  await page.keyboard.type('+0~3,-1:EPHNOTE');
+  await page.getByRole('button', { name: 'Send' }).click();
+  await page.waitForFunction(() => document.querySelector('.send-btn')?.getAttribute('aria-label') === 'Send');
+  assert.equal((await editorText()).includes('EPHNOTE'), false, 'ephemeral line moved out of the story');
+  // Saves are batched; poll until the entry reaches the server.
+  await page.waitForFunction(async () => {
+    const list = await (await fetch('/api/stories')).json();
+    const id = [...list].sort((a, b) => b.updatedAt - a.updatedAt)[0].id;
+    return (await (await fetch(`/api/stories/${id}`)).json()).ephemeral.some((e) => e.text.includes('EPHNOTE'));
+  }, null, { timeout: 10000, polling: 300 });
+});
+
+await step('side chat about the recent story', async () => {
+  await page.getByRole('tab', { name: 'Side Chat' }).click();
+  await page.getByRole('button', { name: 'Chat About the Recent Story' }).click();
+  await page.waitForSelector('.chat-msg.assistant .chat-text:not(:has(.spinner))');
+  await page.waitForFunction(() => !document.querySelector('.side-chat-actions [aria-label="Stop"]'));
+  assert.ok((await page.locator('.chat-msg.assistant').innerText()).length > 5);
+  await page.getByRole('textbox', { name: 'Chat message' }).fill('Who is Mara?');
+  await page.keyboard.press('Enter');
+  await page.waitForFunction(() => document.querySelectorAll('.chat-msg.assistant').length === 2 && !document.querySelector('.side-chat-actions [aria-label="Stop"]'));
+  await page.getByRole('tab', { name: 'Story' }).click();
+});
+
 await step('history tree opens and jumps', async () => {
   await page.locator('.branch-count').click();
   await page.getByRole('button', { name: /History Tree/ }).click();

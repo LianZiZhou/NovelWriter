@@ -1,9 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { DiceFive, X } from '@phosphor-icons/react';
-import { toPng } from 'html-to-image';
+import { toBlob, toJpeg, toPng } from 'html-to-image';
+import { Logo } from '../../components/Logo.tsx';
+import { QUOTE_RE } from '../editor/pm.ts';
 import {
   applyChange,
   buildToolboxRequest,
+  TOOLBOX_STRENGTHS,
   commit,
   docText,
   pathTo,
@@ -23,7 +26,7 @@ import { canonical, download, safeFileName, useStory } from '../../store/story.t
 import { useUI } from '../../store/ui.ts';
 import { useSettings } from '../../store/settings.ts';
 import { t } from '../../i18n.ts';
-import { Modal, ModalHeader, Select, SliderSetting, Tabs, Toggle } from '../../components/ui.tsx';
+import { Modal, ModalHeader, SegmentedControl, Select, SliderSetting, Tabs, Toggle } from '../../components/ui.tsx';
 import { SAMPLER_INFO } from '../right/GenerationTab.tsx';
 import { matchHotkey } from '../../hotkeys.ts';
 
@@ -130,6 +133,20 @@ export function StoryInfoModal({ onClose }: { onClose: () => void }) {
             {task === 'title' ? <span className="spinner" /> : <DiceFive size={20} weight="fill" />}
           </button>
         </div>
+        {story.titleHistory.length > 0 && (
+          <details className="ss-title-history">
+            <summary>{t('Title Generation History')}</summary>
+            <ul>
+              {story.titleHistory.map((h, i) => (
+                <li key={i}>
+                  <button type="button" className={h === story.title ? 'active' : ''} onClick={() => store.update((s) => void (s.title = h))}>
+                    {h}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </details>
+        )}
         <label className="ss-label" htmlFor="ss-desc">{t('Description')}</label>
         <textarea id="ss-desc" className="textarea" style={{ height: 145 }} value={story.description} onChange={(e) => store.update((s) => void (s.description = e.target.value))} />
         <div className="ss-label">{t('Shelf')}</div>
@@ -169,15 +186,28 @@ export function StoryInfoModal({ onClose }: { onClose: () => void }) {
   );
 }
 
-export function ToolboxModal({ onClose, text, from, to }: { onClose: () => void; text: string; from: number; to: number }) {
-  const [mode, setMode] = useState<ToolboxMode>('rewrite');
+const TOOLBOX_MODES: { id: ToolboxMode; label: string }[] = [
+  { id: 'retry', label: 'Retry' },
+  { id: 'transform', label: 'Transform' },
+  { id: 'expand', label: 'Expand' },
+  { id: 'condense', label: 'Condense' },
+  { id: 'rewriteStyle', label: 'Rewrite Style' },
+  { id: 'infill', label: 'Infill' },
+  { id: 'custom', label: 'Custom' },
+];
+
+/** Writer's Toolbox: rework a selection (or fill in text at the cursor) with one of NovelAI's tools. */
+export function ToolboxModal({ onClose, text, from, to, mode: initialMode }: { onClose: () => void; text: string; from: number; to: number; mode?: ToolboxMode }) {
+  const empty = !text.trim();
+  const [mode, setMode] = useState<ToolboxMode>(initialMode ?? (empty ? 'infill' : 'rewriteStyle'));
   const [concept, setConcept] = useState('');
-  const [strength, setStrength] = useState(5);
+  const [strength, setStrength] = useState(1);
   const [instruction, setInstruction] = useState('');
+  const [input, setInput] = useState(text);
   const [result, setResult] = useState('');
   const [busy, setBusy] = useState(false);
   const abort = useRef<AbortController | null>(null);
-  const run = async () => {
+  const run = async (source = input) => {
     const store = useStory.getState();
     const s = store.current;
     const model = store.resolveModel();
@@ -186,8 +216,10 @@ export function ToolboxModal({ onClose, text, from, to }: { onClose: () => void;
     setResult('');
     abort.current = new AbortController();
     try {
-      const req = buildToolboxRequest(s, text, mode, { concept, strength, instruction });
-      const out = await generateText({ model, ...req, maxTokens: Math.max(200, Math.ceil(text.length / 2)), params: { temperature: 0.8 } }, abort.current.signal, setResult);
+      const full = docText(s.doc);
+      const req = buildToolboxRequest(s, source, mode, { concept, strength, instruction, before: full.slice(0, from), after: full.slice(to) });
+      const maxTokens = mode === 'infill' ? [16, 80, 300, 700][strength] : Math.max(200, Math.ceil(source.length / 2));
+      const out = await generateText({ model, ...req, maxTokens, params: { temperature: 0.8 } }, abort.current.signal, setResult);
       setResult(out.trim());
     } catch (e) {
       useUI.getState().toast((e as Error).message, 'error');
@@ -199,9 +231,12 @@ export function ToolboxModal({ onClose, text, from, to }: { onClose: () => void;
     const store = useStory.getState();
     const s = store.current;
     if (!s || !result) return;
+    const full = docText(s.doc);
+    // Infill joins the surrounding text with a space where needed.
+    const pad = mode === 'infill' ? (from > 0 && !/\s$/.test(full.slice(0, from)) && !/^\s/.test(result) ? ' ' : '') : '';
     const change: Change = insertBelow
       ? { pos: to, removed: [], inserted: [{ text: `\n${result}`, origin: 'ai' }] }
-      : { pos: from, removed: slice(s.doc, from, to), inserted: [{ text: result, origin: 'ai' }] };
+      : { pos: from, removed: slice(s.doc, from, to), inserted: [{ text: pad + result, origin: 'ai' }] };
     const doc = canonical(applyChange(s.doc, change));
     store.update((st) => {
       st.history = commit(st.history, 'ai', [change]).history;
@@ -210,31 +245,34 @@ export function ToolboxModal({ onClose, text, from, to }: { onClose: () => void;
     store.editor?.setDoc(doc, from);
     onClose();
   };
+  const strengthKey = mode === 'transform' || mode === 'expand' || mode === 'condense' || mode === 'infill' ? mode : null;
+  const modes = empty ? TOOLBOX_MODES.filter((m) => m.id === 'infill' || m.id === 'custom') : TOOLBOX_MODES.filter((m) => m.id !== 'infill');
   return (
     <Modal onClose={onClose} width={820} label={t("Writer's Toolbox")}>
       <ModalHeader title={t("Writer's Toolbox")} onClose={onClose} />
-      <Tabs
-        value={mode}
-        onChange={setMode}
-        tabs={(['rewrite', 'transform', 'expand', 'condense', 'custom'] as const).map((m) => ({ value: m, label: t(m[0].toUpperCase() + m.slice(1)) }))}
-      />
+      <Tabs value={mode} onChange={(m) => (setMode(m), setResult(''))} tabs={modes.map((m) => ({ value: m.id, label: t(m.label) }))} />
       <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 12, paddingTop: 16 }}>
-        <div className="ctx-text" style={{ minHeight: 60, maxHeight: 160 }}>{text}</div>
+        {mode === 'infill' ? (
+          <div className="desc">{t('Generates new text at the cursor that bridges what comes before and after it.')}</div>
+        ) : (
+          <div className="ctx-text" style={{ minHeight: 60, maxHeight: 160 }}>{input}</div>
+        )}
         {mode === 'transform' && (
-          <div className="row" style={{ gap: 14, alignItems: 'flex-end' }}>
-            <label className="number-field grow">
-              <span style={{ fontWeight: 600, fontSize: 14 }}>{t('Concept')}</span>
-              <input className="input" value={concept} onChange={(e) => setConcept(e.target.value)} placeholder="holiday spirit" />
-            </label>
-            <div style={{ width: 240 }}>
-              <SliderSetting small title={t('Strength')} value={strength} min={1} max={10} step={1} onChange={setStrength} />
-            </div>
+          <label className="number-field">
+            <span style={{ fontWeight: 600, fontSize: 14 }}>{t('Make the text…')}</span>
+            <input className="input" value={concept} onChange={(e) => setConcept(e.target.value)} placeholder={t('e.g. ominous, funny, formal')} />
+          </label>
+        )}
+        {strengthKey && (
+          <div>
+            <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 6 }}>{mode === 'infill' ? t('Length') : t('Strength')}</div>
+            <SegmentedControl value={String(strength)} onChange={(v) => setStrength(Number(v))} options={TOOLBOX_STRENGTHS[strengthKey].map((label, i) => ({ value: String(i), label: t(label) }))} />
           </div>
         )}
         {mode === 'custom' && (
           <label className="number-field">
             <span style={{ fontWeight: 600, fontSize: 14 }}>{t('Instruction')}</span>
-            <input className="input" value={instruction} onChange={(e) => setInstruction(e.target.value)} placeholder={t('e.g. Make it more ominous and add rain')} />
+            <input className="input" value={instruction} onChange={(e) => setInstruction(e.target.value)} placeholder={t('Enter a custom instruction.')} />
           </label>
         )}
         <button type="button" className="btn primary" disabled={busy || (mode === 'custom' && !instruction) || (mode === 'transform' && !concept)} onClick={() => void run()}>
@@ -242,13 +280,31 @@ export function ToolboxModal({ onClose, text, from, to }: { onClose: () => void;
         </button>
         {result && (
           <>
-            <textarea className="textarea" style={{ minHeight: 160 }} value={result} onChange={(e) => setResult(e.target.value)} />
+            <textarea className="textarea" style={{ minHeight: 160 }} value={result} onChange={(e) => setResult(e.target.value)} aria-label={t('Result')} />
             <div className="row" style={{ justifyContent: 'flex-end', gap: 10 }}>
-              <button type="button" className="btn" onClick={() => apply(true)}>
-                {t('Insert Below')}
+              {mode !== 'infill' && (
+                <button
+                  type="button"
+                  className="btn"
+                  title={t('Run the tool again on this result')}
+                  onClick={() => {
+                    setInput(result);
+                    void run(result);
+                  }}
+                >
+                  {t('Adjust')}
+                </button>
+              )}
+              <button type="button" className="btn" onClick={onClose}>
+                {t('Cancel')}
               </button>
+              {mode !== 'infill' && (
+                <button type="button" className="btn" onClick={() => apply(true)}>
+                  {t('Insert Below')}
+                </button>
+              )}
               <button type="button" className="btn primary" onClick={() => apply(false)}>
-                {t('Replace')}
+                {mode === 'infill' ? t('Insert') : t('Replace')}
               </button>
             </div>
           </>
@@ -282,54 +338,177 @@ export function TokenizeModal({ onClose, text: initial, standalone }: { onClose:
   );
 }
 
+const ORIGIN_LEGEND: { origin: string; label: string }[] = [
+  { origin: 'prompt', label: 'Prompt' },
+  { origin: 'ai', label: 'AI' },
+  { origin: 'edit', label: 'Edited' },
+  { origin: 'user', label: 'User' },
+];
+
+function speechParts(text: string): { text: string; speech: boolean }[] {
+  const out: { text: string; speech: boolean }[] = [];
+  let last = 0;
+  for (const m of text.matchAll(QUOTE_RE)) {
+    const i = m.index ?? 0;
+    if (i > last) out.push({ text: text.slice(last, i), speech: false });
+    out.push({ text: m[0], speech: true });
+    last = i + m[0].length;
+  }
+  if (last < text.length) out.push({ text: text.slice(last), speech: false });
+  return out;
+}
+
+type ShotBackground = 'theme' | 'dark' | 'light' | 'paper';
+const SHOT_BACKGROUNDS: Record<ShotBackground, { bg: string; fg?: string; border: string }> = {
+  theme: { bg: 'var(--bg2)', border: 'var(--bg3)' },
+  dark: { bg: '#15161b', fg: '#e8e6e3', border: '#2a2b33' },
+  light: { bg: '#ffffff', fg: '#1d1d1f', border: '#dddddd' },
+  paper: { bg: '#f4ecd8', fg: '#3b2f22', border: '#d8c9a6' },
+};
+
 export function ScreenshotModal({ onClose, from, to }: { onClose: () => void; from?: number; to?: number }) {
   const story = useStory((s) => s.current)!;
+  const model = useStory((s) => s.modelInfo)();
+  const penName = useSettings((s) => s.penName);
   const ref = useRef<HTMLDivElement>(null);
-  const [showTitle, setShowTitle] = useState(true);
-  const [colors, setColors] = useState(true);
+  const [opt, setOpt] = useState({ title: true, date: false, penName: !!penName, logo: true, colors: true, legend: false, model: false, speech: false });
+  const [background, setBackground] = useState<ShotBackground>('theme');
+  const [comment, setComment] = useState('');
   const [width, setWidth] = useState(640);
   const [fontSize, setFontSize] = useState(16);
+  const [busy, setBusy] = useState(false);
   const spans = from !== undefined && to !== undefined && to > from ? slice(story.doc, from, to) : slice(story.doc, Math.max(0, docText(story.doc).length - 1500), docText(story.doc).length);
-  const save = async () => {
+  const theme = SHOT_BACKGROUNDS[background];
+  const colors = opt.colors && background === 'theme';
+  const toggle = (k: keyof typeof opt) => (v: boolean) => setOpt((o) => ({ ...o, [k]: v }));
+  const save = async (kind: 'png' | 'jpg' | 'clipboard') => {
     if (!ref.current) return;
-    const url = await toPng(ref.current, { pixelRatio: 2 });
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${safeFileName(story.title)}.png`;
-    a.click();
+    setBusy(true);
+    try {
+      const name = safeFileName(story.title);
+      if (kind === 'clipboard') {
+        const blob = await toBlob(ref.current, { pixelRatio: 2 });
+        if (!blob) throw new Error('Could not render the screenshot.');
+        await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+        useUI.getState().toast(t('Copied to clipboard'), 'success');
+        return;
+      }
+      const url = kind === 'png' ? await toPng(ref.current, { pixelRatio: 2 }) : await toJpeg(ref.current, { pixelRatio: 2, quality: 0.92, backgroundColor: background === 'theme' ? getComputedStyle(ref.current).backgroundColor : theme.bg });
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${name}.${kind}`;
+      a.click();
+    } catch (e) {
+      useUI.getState().toast((e as Error).message, 'error');
+    } finally {
+      setBusy(false);
+    }
   };
+  const OPTIONS: [keyof typeof opt, string][] = [
+    ['title', 'Show Title'],
+    ['date', 'Show Date'],
+    ['penName', 'Show Pen Name'],
+    ['logo', 'Show Logo'],
+    ['colors', 'Color Highlighting'],
+    ['legend', 'Show Legend'],
+    ['model', 'Show AI Model'],
+    ['speech', 'Highlight Speech'],
+  ];
   return (
-    <Modal onClose={onClose} width={Math.max(760, width + 120)} label={t('Screenshot')}>
+    <Modal onClose={onClose} width={Math.max(820, width + 120)} label={t('Screenshot')}>
       <ModalHeader title={t('Screenshot Designer')} onClose={onClose}>
-        <button type="button" className="btn primary" onClick={() => void save()}>
-          {t('Download')}
-        </button>
+        <div className="row" style={{ gap: 6 }}>
+          <button type="button" className="btn" disabled={busy} onClick={() => void save('clipboard')}>
+            {t('Copy to Clipboard')}
+          </button>
+          <button type="button" className="btn" disabled={busy} onClick={() => void save('jpg')}>
+            {t('Download JPG')}
+          </button>
+          <button type="button" className="btn primary" disabled={busy} onClick={() => void save('png')}>
+            {t('Download PNG')}
+          </button>
+        </div>
       </ModalHeader>
-      <div className="row" style={{ gap: 18, flexWrap: 'wrap', marginBottom: 14 }}>
-        <label className="row" style={{ fontSize: 14 }}>
-          <Toggle on={showTitle} onChange={setShowTitle} /> {t('Title')}
-        </label>
-        <label className="row" style={{ fontSize: 14 }}>
-          <Toggle on={colors} onChange={setColors} /> {t('Text colors')}
-        </label>
-        <div style={{ width: 200 }}>
+      <div className="shot-options">
+        {OPTIONS.map(([k, label]) => (
+          <label key={k} className="row shot-option">
+            <Toggle on={opt[k]} onChange={toggle(k)} label={t(label)} disabled={k === 'colors' && background !== 'theme'} /> {t(label)}
+          </label>
+        ))}
+      </div>
+      {opt.penName && !penName && (
+        <div className="desc" style={{ marginBottom: 8 }}>
+          {t('Set your Pen Name in Settings → Defaults.')}
+        </div>
+      )}
+      <div className="row" style={{ gap: 18, flexWrap: 'wrap', marginBottom: 14, alignItems: 'flex-end' }}>
+        <div style={{ width: 170 }}>
+          <div className="sub-heading">{t('Background')}</div>
+          <Select
+            ariaLabel={t('Background')}
+            value={background}
+            onChange={setBackground}
+            options={[
+              { value: 'theme', label: t('Theme') },
+              { value: 'dark', label: t('Dark') },
+              { value: 'light', label: t('Light') },
+              { value: 'paper', label: t('Paper') },
+            ]}
+          />
+        </div>
+        <div style={{ width: 180 }}>
           <SliderSetting small title={t('Width')} value={width} min={360} max={1000} step={10} onChange={setWidth} />
         </div>
-        <div style={{ width: 200 }}>
+        <div style={{ width: 180 }}>
           <SliderSetting small title={t('Text Size')} value={fontSize} min={12} max={24} step={1} onChange={setFontSize} />
         </div>
+        <label className="grow" style={{ minWidth: 200 }}>
+          <div className="sub-heading">{t('Comment')}</div>
+          <input className="input" value={comment} placeholder={t('Add a comment to the screenshot')} onChange={(e) => setComment(e.target.value)} />
+        </label>
       </div>
       <div className="modal-body" style={{ display: 'flex', justifyContent: 'center' }}>
-        <div ref={ref} style={{ width, background: 'var(--bg2)', padding: 28, border: '1px solid var(--bg3)' }}>
-          {showTitle && <h2 style={{ color: 'var(--text-headings)', marginBottom: 14 }}>{story.title}</h2>}
+        <div ref={ref} className="shot-canvas" style={{ width, background: theme.bg, color: theme.fg, padding: 28, border: `1px solid ${theme.border}` }}>
+          {(opt.title || opt.date || (opt.penName && penName)) && (
+            <div style={{ marginBottom: 14 }}>
+              {opt.title && <h2 style={{ color: theme.fg ?? 'var(--text-headings)', margin: 0 }}>{story.title}</h2>}
+              <div style={{ fontSize: 13, opacity: 0.65, marginTop: 4 }}>
+                {[opt.penName && penName ? t('by {name}', { name: penName }) : '', opt.date ? new Date(story.updatedAt).toLocaleDateString() : ''].filter(Boolean).join(' · ')}
+              </div>
+            </div>
+          )}
           <div style={{ fontSize, lineHeight: 1.8, whiteSpace: 'pre-wrap' }}>
-            {spans.map((s, i) => (
-              <span key={i} className={colors ? `o-${s.origin}` : undefined}>
-                {s.text}
-              </span>
-            ))}
+            {spans.map((s, i) =>
+              opt.speech ? (
+                speechParts(s.text).map((p, j) => (
+                  <span key={`${i}-${j}`} className={colors ? `o-${s.origin}` : undefined} style={p.speech ? { filter: 'brightness(1.25) saturate(1.1)' } : { opacity: 0.72 }}>
+                    {p.text}
+                  </span>
+                ))
+              ) : (
+                <span key={i} className={colors ? `o-${s.origin}` : undefined}>
+                  {s.text}
+                </span>
+              ),
+            )}
           </div>
-          <div style={{ marginTop: 18, fontSize: 12, opacity: 0.5, textAlign: 'right' }}>NovelWriter</div>
+          {comment && <div style={{ marginTop: 16, paddingTop: 10, borderTop: `1px solid ${theme.border}`, fontStyle: 'italic', fontSize: 14 }}>{comment}</div>}
+          <div className="row between" style={{ marginTop: 18, fontSize: 12, opacity: 0.6, gap: 12, flexWrap: 'wrap' }}>
+            <div className="row" style={{ gap: 10 }}>
+              {opt.legend && colors &&
+                ORIGIN_LEGEND.map((l) => (
+                  <span key={l.origin} className={`o-${l.origin}`}>
+                    ■ {t(l.label)}
+                  </span>
+                ))}
+              {opt.model && model && <span>{model.name}</span>}
+            </div>
+            {opt.logo && (
+              <span className="row" style={{ gap: 4 }}>
+                <Logo size={14} /> NovelWriter
+              </span>
+            )}
+          </div>
         </div>
       </div>
     </Modal>

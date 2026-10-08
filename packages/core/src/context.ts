@@ -75,6 +75,11 @@ export interface BuildContextOptions {
 }
 
 /** Resolve a budget value: fractions in (0, 1] are relative to the max context. */
+/** Lines starting with `##` are notes to self: they never reach the AI. */
+export function stripComments(text: string): string {
+  return text.includes('##') ? text.replace(/^[ \t]*##.*(?:\r?\n|$)/gm, '') : text;
+}
+
 export function resolveTokens(v: number, max: number): number {
   if (v > 0 && v <= 1) return Math.floor(v * max);
   return Math.max(0, Math.floor(v));
@@ -367,7 +372,9 @@ function attgLine(s: Story): string {
   if (s.title && s.title !== 'New Story') parts.push(`Title: ${s.title}`);
   if (s.tags.length) parts.push(`Tags: ${s.tags.join(', ')}`);
   if (s.genre) parts.push(`Genre: ${s.genre}`);
-  return parts.length && (s.author || s.tags.length || s.genre) ? `[ ${parts.join('; ')} ]` : '';
+  const line = parts.length && (s.author || s.tags.length || s.genre) ? `[ ${parts.join('; ')} ]` : '';
+  const style = s.styleTag > 0 ? `[ S: ${Math.min(5, Math.round(s.styleTag))} ]` : '';
+  return [line, style].filter(Boolean).join('\n');
 }
 
 function collectBias(story: Story, activations: Activation[], cats: LoreCategory[]): PhraseBiasGroup[] {
@@ -390,7 +397,7 @@ function collectBias(story: Story, activations: Activation[], cats: LoreCategory
 /** Build the full context for the next generation of `story`. */
 export function buildContext(story: Story, opts: BuildContextOptions): BuiltContext {
   const maxTokens = Math.max(64, opts.maxContextTokens - opts.outputTokens);
-  const storyText = opts.storyText ?? docText(story.doc);
+  const storyText = stripComments(opts.storyText ?? docText(story.doc));
   const activations = activateLorebook({
     lorebook: story.lorebook,
     storyText,
@@ -419,15 +426,15 @@ export function buildContext(story: Story, opts: BuildContextOptions): BuiltCont
     });
   }
   candidates.push({ id: 'story', label: 'Story', kind: 'story', text: storyText, config: cs.story, index: index++ });
-  candidates.push({ id: 'memory', label: 'Memory', kind: 'memory', text: story.memory, config: cs.memory, index: index++ });
-  candidates.push({ id: 'authorsNote', label: "Author's Note", kind: 'authorsNote', text: story.authorsNote, config: cs.authorsNote, index: index++ });
+  candidates.push({ id: 'memory', label: 'Memory', kind: 'memory', text: stripComments(story.memory), config: cs.memory, index: index++ });
+  candidates.push({ id: 'authorsNote', label: "Author's Note", kind: 'authorsNote', text: stripComments(story.authorsNote), config: cs.authorsNote, index: index++ });
 
   const subcontextMembers = new Map<string, Candidate[]>();
   for (const a of activations) {
     if (!a.active || !a.entry.text) continue;
     const e = a.entry;
     const cat = e.category ? catById.get(e.category) : undefined;
-    const text = cat?.entryHeader ? `${cat.entryHeader}\n${e.text}` : e.text;
+    const text = stripComments(cat?.entryHeader ? `${cat.entryHeader}\n${e.text}` : e.text);
     const cand: Candidate = {
       id: e.id,
       label: e.displayName,
@@ -461,7 +468,7 @@ export function buildContext(story: Story, opts: BuildContextOptions): BuiltCont
       id: `ephemeral:${e.id}`,
       label: 'Ephemeral',
       kind: 'ephemeral',
-      text: e.text,
+      text: stripComments(e.text),
       config: contextConfig({ budgetPriority: -10000, insertionPosition: e.position, prefix: '', suffix: '\n', trimDirection: 'doNotTrim' }),
       index: index++,
     });

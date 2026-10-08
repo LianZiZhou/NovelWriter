@@ -1,5 +1,6 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { EditorContent, useEditor } from '@tiptap/react';
+import { MagicWand } from '@phosphor-icons/react';
 import StarterKit from '@tiptap/starter-kit';
 import { TextSelection } from '@tiptap/pm/state';
 import { keyRegexes, visibleTokenProbs, type LoreEntry } from '@novelwriter/core';
@@ -18,8 +19,10 @@ import {
   replaceRangeTr,
   setDocTr,
   spansToJSON,
-  matchOffset,
-  countMatches,
+  findMatches,
+  findPattern,
+  offsetsToPositions,
+  type FindState,
   pmChange,
   REDECORATE,
   TOKEN_PROBS,
@@ -61,10 +64,13 @@ export const StoryEditor = memo(function StoryEditor() {
   const showProbs = useSettings((s) => s.tokenProbabilities && s.editorTokenProbabilities);
   const historyStep = useStory((s) => s.current?.history.current);
   const [tokenPick, setTokenPick] = useState<{ range: TokenRange; rect: DOMRect } | null>(null);
+  // Writer's Toolbox wand shown beside the paragraph under the mouse.
+  const [wand, setWand] = useState<{ top: number; from: number; to: number } | null>(null);
+  const wrapRef = useRef<HTMLDivElement>(null);
   const findOpen = useUI((s) => s.findOpen);
   const generating = useStory((s) => s.generating);
   const [menu, setMenu] = useState<MenuState | null>(null);
-  const [find, setFind] = useState({ query: '', index: 0 });
+  const [find, setFind] = useState<FindState>({ query: '', index: 0 });
   const findRef = useRef(find);
   /** Editor document as of the last update, for structural diffs. */
   const prevDoc = useRef<import('@tiptap/pm/model').Node | null>(null);
@@ -265,31 +271,83 @@ export const StoryEditor = memo(function StoryEditor() {
     };
   }, [editor, visibilityRange]);
 
-  const gotoMatch = (index: number) => {
-    if (!editor || !find.query) return;
-    const text = docPlainText(editor.state.doc);
-    const n = countMatches(text, find.query);
+  const gotoMatch = (index: number, f: FindState = find) => {
+    if (!editor || !f.query) return;
+    const matches = findMatches(docPlainText(editor.state.doc), f);
+    const n = matches.length;
     if (!n) return;
     const i = ((index % n) + n) % n;
-    setFind({ ...find, index: i });
-    const off = matchOffset(text, find.query, i);
-    const from = offsetToPos(editor.state.doc, off);
-    const to = offsetToPos(editor.state.doc, off + find.query.length);
+    setFind({ ...f, index: i });
+    const m = matches[i];
+    const from = offsetToPos(editor.state.doc, m.index);
+    const to = offsetToPos(editor.state.doc, m.index + m.length);
     editor.view.dispatch(editor.state.tr.setSelection(TextSelection.create(editor.state.doc, from, to)).scrollIntoView().setMeta(EXTERNAL, true));
+  };
+  // Replacements are ordinary edits (pink "edit" text, one undo step).
+  const replaceText = (m: { text: string }, text: string) => {
+    if (!find.regex) return text;
+    const re = findPattern({ ...find });
+    return re ? m.text.replace(new RegExp(re.source, re.flags.replace('g', '')), text) : text;
+  };
+  const replaceMatches = (text: string, all: boolean) => {
+    if (!editor || generating) return;
+    const matches = findMatches(docPlainText(editor.state.doc), find);
+    if (!matches.length) return;
+    const chosen = all ? matches : [matches[Math.min(find.index, matches.length - 1)]];
+    const pos = offsetsToPositions(editor.state.doc, chosen.flatMap((m) => [m.index, m.index + m.length]));
+    const tr = editor.state.tr;
+    for (let i = chosen.length - 1; i >= 0; i--) {
+      const value = replaceText(chosen[i], text);
+      if (value) tr.insertText(value, pos[2 * i], pos[2 * i + 1]);
+      else tr.delete(pos[2 * i], pos[2 * i + 1]);
+    }
+    editor.view.dispatch(tr);
+    if (!all) setTimeout(() => gotoMatch(find.index));
   };
 
   return (
-    <div className={`nw-editor ${highlight ? 'highlight-speech' : ''} ${inverted ? 'inverted' : ''} ${visibilityRange ? 'pv' : ''}`}>
+    <div
+      ref={wrapRef}
+      className={`nw-editor ${highlight ? 'highlight-speech' : ''} ${inverted ? 'inverted' : ''} ${visibilityRange ? 'pv' : ''}`}
+      onMouseMove={(e) => {
+        if (!editor || generating) return;
+        const p = (e.target as HTMLElement).closest('.ProseMirror > p') as HTMLElement | null;
+        if (!p || !p.textContent?.trim()) return;
+        const wrap = wrapRef.current!.getBoundingClientRect();
+        const top = p.getBoundingClientRect().top - wrap.top;
+        if (wand && Math.abs(wand.top - top) < 1) return;
+        const start = editor.view.posAtDOM(p, 0);
+        const node = editor.state.doc.resolve(start).parent;
+        setWand({ top, from: posToOffset(editor.state.doc, start), to: posToOffset(editor.state.doc, start + node.content.size) });
+      }}
+      onMouseLeave={() => setWand(null)}
+    >
+      {wand && !generating && (
+        <button
+          type="button"
+          className="para-wand"
+          style={{ top: wand.top }}
+          aria-label={t("Writer's Toolbox")}
+          title={t("Writer's Toolbox")}
+          onClick={() => {
+            const text = docPlainText(editor!.state.doc).slice(wand.from, wand.to);
+            useUI.getState().open('toolbox', { text, from: wand.from, to: wand.to });
+          }}
+        >
+          <MagicWand size={16} weight="fill" />
+        </button>
+      )}
       {findOpen && editor && (
         <FindBar
-          query={find.query}
-          index={find.index}
-          total={countMatches(docPlainText(editor.state.doc), find.query)}
-          onQuery={(q) => setFind({ query: q, index: 0 })}
+          find={find}
+          total={findMatches(docPlainText(editor.state.doc), find).length}
+          onFind={setFind}
           onNext={() => gotoMatch(find.index + 1)}
           onPrev={() => gotoMatch(find.index - 1)}
+          onReplace={(text) => replaceMatches(text, false)}
+          onReplaceAll={(text) => replaceMatches(text, true)}
           onClose={() => {
-            setFind({ query: '', index: 0 });
+            setFind({ query: '', index: 0, regex: find.regex, caseSensitive: find.caseSensitive });
             useUI.getState().set({ findOpen: false });
           }}
         />

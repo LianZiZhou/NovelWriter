@@ -242,6 +242,27 @@ export interface Story {
   placeholders: Placeholder[];
   titleHistory: string[];
   scripts: UserScript[];
+  /** Side Chat conversations about this story. */
+  chats: SideChat[];
+  /** Style tag strength 1-5, sent as a `[ S: n ]` line after ATTG; 0 = off. */
+  styleTag: number;
+  /** The new-story Genre & Tags prompt was answered or dismissed. */
+  attgPrompted: boolean;
+}
+
+/** A Side Chat conversation: talk with the model about the story without touching it. */
+export interface SideChat {
+  id: string;
+  title: string;
+  createdAt: number;
+  messages: SideChatMessage[];
+}
+
+export interface SideChatMessage {
+  role: 'user' | 'assistant';
+  content: string;
+  /** Text quoted into the chat (recent story, a selection, a lore entry), shown as a block above the message. */
+  excerpt?: { label: string; text: string };
 }
 
 /** A user script run in a sandbox, hooking into generation. */

@@ -2,11 +2,12 @@ import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 're
 import { createPortal } from 'react-dom';
 import { CaretRight } from '@phosphor-icons/react';
 import type { Editor } from '@tiptap/react';
-import { SPECIAL_CHARACTERS, newLoreEntry } from '@novelwriter/core';
+import { LORE_GEN_TYPES, SPECIAL_CHARACTERS, newLoreEntry } from '@novelwriter/core';
 import { useStory } from '../../store/story.ts';
 import { useUI } from '../../store/ui.ts';
 import { t } from '../../i18n.ts';
 import { speak, stopSpeaking } from '../tts/tts.ts';
+import { chatAsExcerpt } from '../right/SideChatTab.tsx';
 import { posToOffset, docPlainText } from './pm.ts';
 
 export interface MenuState {
@@ -67,20 +68,28 @@ export function EditorContextMenu({ state, editor, onClose }: { state: MenuState
   const ui = useUI.getState();
   const store = useStory.getState();
 
-  const addTo = (target: 'memory' | 'authorsNote' | 'lore' | 'loreKey') => {
+  const addTo = (target: 'memory' | 'authorsNote' | 'lore' | 'loreKey', generate?: string) => {
     store.update((s) => {
       if (target === 'memory') s.memory = s.memory ? `${s.memory}\n${selText}` : selText;
       else if (target === 'authorsNote') s.authorsNote = s.authorsNote ? `${s.authorsNote}\n${selText}` : selText;
       else {
+        const name = selText.trim().slice(0, 40);
         const e =
           target === 'lore'
-            ? newLoreEntry({ displayName: selText.slice(0, 40), text: selText }, s.contextSettings.loreDefaults)
-            : newLoreEntry({ displayName: selText.slice(0, 40), keys: [selText.trim()] }, s.contextSettings.loreDefaults);
+            ? newLoreEntry({ displayName: name, text: selText }, s.contextSettings.loreDefaults)
+            : newLoreEntry({ displayName: name, keys: [selText.trim()] }, s.contextSettings.loreDefaults);
         s.lorebook = { ...s.lorebook, entries: [...s.lorebook.entries, e] };
-        setTimeout(() => ui.open('lorebook', { entryId: e.id }));
+        setTimeout(() => ui.open('lorebook', { entryId: e.id, generate }));
       }
     });
   };
+  const addKeyTo = (entryId: string) => {
+    store.update((s) => {
+      s.lorebook = { ...s.lorebook, entries: s.lorebook.entries.map((e) => (e.id === entryId && !e.keys.includes(selText.trim()) ? { ...e, keys: [...e.keys, selText.trim()] } : e)) };
+    });
+    ui.toast(t('Key added.'), 'success');
+  };
+  const entries = store.current?.lorebook.entries ?? [];
 
   return createPortal(
     <div ref={ref} className="context-menu fade-in" style={{ left: pos.x, top: pos.y }} role="menu">
@@ -121,13 +130,36 @@ export function EditorContextMenu({ state, editor, onClose }: { state: MenuState
           <>
             <Item label={t('Memory')} onClick={run(() => addTo('memory'))} />
             <Item label={t("Author's Note")} onClick={run(() => addTo('authorsNote'))} />
-            <Item label={t('New Lorebook Entry')} onClick={run(() => addTo('lore'))} />
-            <Item label={t('Lorebook Key')} onClick={run(() => addTo('loreKey'))} />
+            <Item label={t('New Lore Entry as Text')} onClick={run(() => addTo('lore'))} />
+            <Item label={t('New Lore Entry as Key')} onClick={run(() => addTo('loreKey'))} />
+            <Item
+              label={t('Key of Existing Entry')}
+              disabled={!entries.length}
+              sub={
+                <div className="submenu-scroll">
+                  {entries.map((e) => (
+                    <Item key={e.id} label={e.displayName || t('Unnamed Entry')} onClick={run(() => addKeyTo(e.id))} />
+                  ))}
+                </div>
+              }
+            />
+            <Item label={t('Chat as Excerpt')} onClick={run(() => chatAsExcerpt(selText))} />
+          </>
+        }
+      />
+      <Item
+        label={t('Generate Lore...')}
+        disabled={!state.hasSelection}
+        sub={
+          <>
+            {LORE_GEN_TYPES.map((type) => (
+              <Item key={type} label={t('Generate {type} Lore', { type: t(type) })} onClick={run(() => addTo('loreKey', type))} />
+            ))}
           </>
         }
       />
       <Item label={t('Generate Inline')} shortcut={`${mod}+⇧+⏎`} onClick={run(() => void store.generateInline())} />
-      <Item label={t("Writer's Toolbox")} disabled={!state.hasSelection} onClick={run(() => ui.open('toolbox', { text: selText, from: posToOffset(editor.state.doc, from), to: posToOffset(editor.state.doc, to) }))} />
+      <Item label={t("Writer's Toolbox")} onClick={run(() => ui.open('toolbox', { text: selText, from: posToOffset(editor.state.doc, from), to: posToOffset(editor.state.doc, to) }))} />
       <div className="sep" />
       <Item label={t('Tokenize')} disabled={!state.hasSelection} onClick={run(() => ui.open('tokenize', { text: selText }))} />
       <Item label={t('Screenshot')} disabled={!state.hasSelection} onClick={run(() => ui.open('screenshot', { from: posToOffset(editor.state.doc, from), to: posToOffset(editor.state.doc, to) }))} />

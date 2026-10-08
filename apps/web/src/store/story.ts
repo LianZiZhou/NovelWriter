@@ -27,6 +27,7 @@ import {
   jumpTo,
   mergeLorebook,
   migrateStory,
+  findEphemeralLines,
   newStory,
   paragraphs,
   postProcess,
@@ -126,7 +127,8 @@ interface StoryState {
   pickAlternative: (nodeId: string, from: number, to: number, text: string) => Promise<void>;
   generateInline: () => Promise<void>;
   stop: () => void;
-  generateTitle: () => Promise<void>;
+  /** `ask`: confirm before replacing a title the user already has. */
+  generateTitle: (ask?: boolean) => Promise<void>;
   resolveModel: () => ModelRef | null;
   modelInfo: () => ModelInfo | undefined;
   previewContext: () => BuiltContext | null;
@@ -574,6 +576,21 @@ export const useStory = create<StoryState>((set, get) => ({
       get().editor?.setDoc(doc);
       s = get().current!;
     }
+
+    // Lines typed in ephemeral syntax ({+1~5,-2:…}) move out of the story into Ephemeral Context.
+    const eph = findEphemeralLines(docText(s.doc), s.step);
+    if (eph.length) {
+      const changes: Change[] = [...eph].reverse().map((e) => ({ pos: e.from, removed: slice(s!.doc, e.from, e.to), inserted: [] }));
+      const doc = canonical(changes.reduce((d, c) => applyChange(d, c), s.doc));
+      get().update((st) => {
+        st.history = commit(st.history, 'edit', changes).history;
+        st.doc = doc;
+        st.ephemeral = [...st.ephemeral, ...eph.map((e) => e.entry)];
+      });
+      get().editor?.setDoc(doc);
+      ui.toast(eph.length === 1 ? t('Added an Ephemeral Context entry.') : t('Added {n} Ephemeral Context entries.', { n: eph.length }), 'success');
+      s = get().current!;
+    }
     await runGeneration(set, get, { from: docText(s.doc).length });
   },
 
@@ -626,10 +643,14 @@ export const useStory = create<StoryState>((set, get) => ({
     abort?.abort();
   },
 
-  async generateTitle() {
+  async generateTitle(ask) {
     const s = get().current;
     const model = get().resolveModel();
     if (!s || !model) return;
+    if (ask && s.title.trim() && s.title !== 'New Story') {
+      const ok = await useUI.getState().confirm({ title: t('Generate a new title?'), message: t('The current title will be replaced. Previous titles stay in the Title Generation History in Story Settings.'), confirmLabel: t('Generate') });
+      if (!ok) return;
+    }
     set({ task: 'title' });
     try {
       const req = buildTitleRequest(s);
@@ -697,7 +718,7 @@ async function runGeneration(
   const req = buildStoryRequest(s, {
     maxContextTokens: maxCtx,
     model: model.id,
-    inline: opts.inline ? { before, after } : undefined,
+    inline: opts.inline ? { before, after, bidirectional: settings.bidirectionalInline } : undefined,
     nativeBias: caps.tokenizer !== 'none',
     preamble: settings.preamble,
   });

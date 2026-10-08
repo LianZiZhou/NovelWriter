@@ -209,12 +209,42 @@ export function setDocTr(state: EditorState, spans: Span[]): Transaction {
   return state.tr.replaceWith(0, state.doc.content.size, content).setMeta(EXTERNAL, true).setMeta(REDECORATE, true).setMeta('addToHistory', false);
 }
 
+export interface FindState {
+  query: string;
+  index: number;
+  regex?: boolean;
+  caseSensitive?: boolean;
+}
+
+/** Compile a find query; null when empty or an invalid regex. */
+export function findPattern(f: FindState): RegExp | null {
+  if (!f.query) return null;
+  try {
+    return new RegExp(f.regex ? f.query : f.query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), f.caseSensitive ? 'g' : 'gi');
+  } catch {
+    return null;
+  }
+}
+
+/** Matches of a find query in plain text (within paragraphs, like the editor highlights them). */
+export function findMatches(text: string, f: FindState): { index: number; length: number; text: string }[] {
+  const re = findPattern(f);
+  if (!re) return [];
+  const out: { index: number; length: number; text: string }[] = [];
+  for (const m of text.matchAll(re)) {
+    if (!m[0]) continue;
+    if (m[0].includes('\n')) continue;
+    out.push({ index: m.index ?? 0, length: m[0].length, text: m[0] });
+  }
+  return out;
+}
+
 export interface EditorOptionsRef {
   hasAI: () => boolean;
   adventure: () => boolean;
   highlightSpeech: () => boolean;
   placeholder: () => string;
-  find: () => { query: string; index: number };
+  find: () => FindState;
   /** Global regexes for enabled lorebook keys, when the editor should mark them. */
   loreKeys?: () => RegExp[];
 }
@@ -237,6 +267,10 @@ function decorateParagraph(para: PMNode, pos: number, ctx: DecoContext, decos: D
   const text = para.textContent;
   if (!text) return;
   const start = pos + 1;
+  // Instruction ({ ... }) and comment (## ...) paragraphs.
+  const lead = text.trimStart();
+  if (lead.startsWith('{')) decos.push(Decoration.node(pos, pos + para.nodeSize, { class: 'instruction-line' }));
+  else if (lead.startsWith('##')) decos.push(Decoration.node(pos, pos + para.nodeSize, { class: 'comment-line' }));
   if (ctx.adventure && text.startsWith('>')) {
     decos.push(Decoration.node(pos, pos + para.nodeSize, { class: /^>\s*You (say|ask|shout|whisper)\b/i.test(text) ? 'action-line say' : 'action-line' }));
     const markerLen = text.startsWith('> ') ? 2 : 1;
@@ -269,25 +303,21 @@ function buildDecorations(doc: PMNode, opts: EditorOptionsRef): DecorationSet {
   }
   const ctx = decoContext(opts);
   const find = opts.find();
-  const q = find.query.toLowerCase();
   let hit = 0;
   doc.forEach((para, pos) => {
     decorateParagraph(para, pos, ctx, decos);
-    if (q) {
-      const lower = para.textContent.toLowerCase();
+    if (find.query) {
       const start = pos + 1;
-      let i = lower.indexOf(q);
-      while (i >= 0) {
-        decos.push(Decoration.inline(start + i, start + i + q.length, { class: `find-hit ${hit === find.index ? 'current' : ''}` }));
+      for (const m of findMatches(para.textContent, find)) {
+        decos.push(Decoration.inline(start + m.index, start + m.index + m.length, { class: `find-hit ${hit === find.index ? 'current' : ''}` }));
         hit++;
-        i = lower.indexOf(q, i + q.length);
       }
     }
   });
   return DecorationSet.create(doc, decos);
 }
 
-const QUOTE_RE = /"[^"\n]*"?|“[^”\n]*”?|「[^」\n]*」?|『[^』\n]*』?/g;
+export const QUOTE_RE = /"[^"\n]*"?|“[^”\n]*”?|「[^」\n]*」?|『[^』\n]*』?/g;
 
 /**
  * Assigns origins to user-typed text and renders decorations (placeholder,
@@ -298,6 +328,14 @@ export function NovelPlugins(opts: EditorOptionsRef) {
     name: 'novelPlugins',
     addKeyboardShortcuts() {
       return {
+        // "{" at the start of a paragraph starts an instruction: the closing brace is added for you.
+        '{': () => {
+          const { state } = this.editor;
+          const { $from, empty } = state.selection;
+          if (!empty || $from.parentOffset !== 0 || $from.parent.content.size > 0) return false;
+          this.editor.chain().insertContent('{  }').setTextSelection($from.pos + 2).run();
+          return true;
+        },
         'Mod-d': () => this.editor.commands.toggleStrike(),
         'Shift-Enter': () => this.editor.commands.splitBlock(),
       };
@@ -372,29 +410,6 @@ export function NovelPlugins(opts: EditorOptionsRef) {
       ];
     },
   });
-}
-
-/** Count find matches in plain text. */
-export function countMatches(text: string, q: string): number {
-  if (!q) return 0;
-  const lower = text.toLowerCase();
-  const ql = q.toLowerCase();
-  let n = 0;
-  let i = lower.indexOf(ql);
-  while (i >= 0) {
-    n++;
-    i = lower.indexOf(ql, i + ql.length);
-  }
-  return n;
-}
-
-/** Plain-text offset of the n-th match. */
-export function matchOffset(text: string, q: string, n: number): number {
-  const lower = text.toLowerCase();
-  const ql = q.toLowerCase();
-  let i = lower.indexOf(ql);
-  for (let k = 0; k < n && i >= 0; k++) i = lower.indexOf(ql, i + ql.length);
-  return i;
 }
 
 /** Map ascending plain-text offsets to ProseMirror positions in one pass over the paragraphs. */

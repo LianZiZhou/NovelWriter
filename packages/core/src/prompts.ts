@@ -1,7 +1,8 @@
-import { buildContext, type BuiltContext } from './context.ts';
+import { buildContext, stripComments, type BuiltContext } from './context.ts';
 import { DEFAULT_SYSTEM_PROMPT_ADVENTURE, DEFAULT_SYSTEM_PROMPT_STORY } from './defaults.ts';
 import { docText } from './doc.ts';
-import type { ChatMessage, GenerationParams, PhraseBiasGroup, Story } from './types.ts';
+import { countTokens } from './tokenizer.ts';
+import type { ChatMessage, GenerationParams, PhraseBiasGroup, SideChat, Story } from './types.ts';
 
 /** Rough characters-per-token ratio for converting NovelAI's character output length. */
 export const CHARS_PER_TOKEN = 4;
@@ -44,12 +45,22 @@ export function stripBraces(p: string): string {
  */
 export function buildStoryRequest(
   story: Story,
-  opts: { maxContextTokens: number; model?: string; storyText?: string; inline?: { before: string; after: string }; nativeBias?: boolean; preamble?: boolean },
+  opts: {
+    maxContextTokens: number;
+    model?: string;
+    storyText?: string;
+    /** Inline generation at the cursor; `after` is only sent when bidirectional. */
+    inline?: { before: string; after: string; bidirectional?: boolean };
+    nativeBias?: boolean;
+    preamble?: boolean;
+  },
 ): StoryRequest {
   const params = story.params;
   const out = outputTokens(params);
+  // Text after the gap is part of the request too, so it comes out of the context budget.
+  const afterText = opts.inline?.bidirectional ? stripComments(opts.inline.after.slice(0, 2000)) : '';
   const ctx = buildContext(story, {
-    maxContextTokens: opts.maxContextTokens,
+    maxContextTokens: opts.maxContextTokens - countTokens(afterText),
     outputTokens: out,
     model: opts.model,
     storyText: opts.inline ? opts.inline.before : opts.storyText,
@@ -60,10 +71,13 @@ export function buildStoryRequest(
   const lengthHint = `Write roughly ${params.maxLength} characters or less.`;
   let system = [base, extra, lengthHint].filter(Boolean).join('\n\n');
   let user: string;
-  if (opts.inline) {
+  if (opts.inline?.bidirectional && afterText.trim()) {
     system +=
       '\n\nYou are filling a gap inside the story. Write only the text that belongs at <GAP/>, so that it flows naturally into the text after it.';
-    user = `${ctx.text}<GAP/>${opts.inline.after.slice(0, 2000)}`;
+    user = `${ctx.text}<GAP/>${afterText}`;
+  } else if (opts.inline) {
+    system += '\n\nContinue from exactly where the text stops; your text will be inserted there.';
+    user = ctx.text || '(The story has not started yet. Begin it.)';
   } else {
     user = ctx.text || '(The story has not started yet. Begin it.)';
     // "Preamble": on a short story, mark the start of the text so the model treats it as prose to continue.
@@ -125,28 +139,54 @@ export function postProcess(
 
 // ---------------------------------------------------------------- auxiliary generations
 
-export type ToolboxMode = 'rewrite' | 'transform' | 'expand' | 'condense' | 'custom';
+export type ToolboxMode = 'retry' | 'transform' | 'expand' | 'condense' | 'custom' | 'infill' | 'rewriteStyle';
+
+/** Strength wording from NovelAI's toolbox, weakest first. */
+export const TOOLBOX_STRENGTHS: Record<'transform' | 'expand' | 'condense' | 'infill', string[]> = {
+  transform: ['a little', 'kinda', 'very', 'extremely'],
+  expand: ['not much', 'a little', 'quite a bit', 'a lot'],
+  condense: ['not much', 'a little', 'quite a bit', 'a lot'],
+  infill: ['a word', 'a sentence', 'a paragraph', 'a few paragraphs'],
+};
 
 export function buildToolboxRequest(
   story: Story,
   selection: string,
   mode: ToolboxMode,
-  opts: { concept?: string; strength?: number; instruction?: string } = {},
+  opts: { concept?: string; strength?: number; instruction?: string; before?: string; after?: string } = {},
 ): { system: string; messages: ChatMessage[] } {
-  const before = docText(story.doc);
-  const sampleStyle = before.slice(-3000);
-  const task: Record<ToolboxMode, string> = {
-    rewrite: 'Rewrite the passage so it matches the style, voice and tone of the story so far. Keep the same events and meaning.',
-    transform: `Rewrite the passage transformed around the concept "${opts.concept ?? ''}" at strength ${opts.strength ?? 5}/10 (1 = subtle, 10 = extreme).`,
-    expand: 'Rewrite the passage with more detail: sensory description, inner thoughts, and texture. Keep the same events.',
-    condense: 'Condense the passage: remove overly flowery prose and redundancy while keeping its core meaning.',
+  const full = docText(story.doc);
+  const before = stripComments(opts.before ?? full).slice(-3000);
+  const after = stripComments(opts.after ?? '').slice(0, 1500);
+  const level = (k: keyof typeof TOOLBOX_STRENGTHS) => TOOLBOX_STRENGTHS[k][Math.max(0, Math.min(3, opts.strength ?? 1))];
+  if (mode === 'infill') {
+    return {
+      system:
+        'You are a skilled novelist filling a gap inside a story. Write only the text that belongs at <GAP/> so that it flows naturally from the text before it into the text after it. ' +
+        `Write ${level('infill')}. Output only the new text, with no commentary, quotes, or markdown.`,
+      messages: [{ role: 'user', content: `${before}<GAP/>${after}` }],
+    };
+  }
+  if (mode === 'retry') {
+    return {
+      system:
+        'You are a skilled novelist. Rewrite the marked passage from scratch as a fresh alternative: same place in the story and roughly the same length, but different wording and, where natural, different details. ' +
+        'Output only the new passage, with no commentary, quotes, or markdown.',
+      messages: [{ role: 'user', content: `${before}\n<PASSAGE>\n${selection}\n</PASSAGE>\n${after}` }],
+    };
+  }
+  const task: Record<Exclude<ToolboxMode, 'infill' | 'retry'>, string> = {
+    rewriteStyle: 'Rewrite the passage to match the style, voice and tone of the story so far. Keep the same events and meaning.',
+    transform: `Make the text ${level('transform')} ${opts.concept ?? ''}.`.replace(/\s+\./, '.'),
+    expand: `Expand the passage ${level('expand')}: add sensory detail, inner thoughts and texture while keeping the same events.`,
+    condense: `Condense the passage ${level('condense')}: cut flowery prose and redundancy while keeping its core meaning.`,
     custom: opts.instruction ?? 'Improve the passage.',
   };
   return {
     system:
       'You are an expert fiction editor. You will receive story context and a passage to revise. ' +
       'Return only the revised passage text, with no commentary, quotes, or markdown.',
-    messages: [{ role: 'user', content: `Story context (for style):\n"""\n${sampleStyle}\n"""\n\nTask: ${task[mode]}\n\nPassage:\n"""\n${selection}\n"""` }],
+    messages: [{ role: 'user', content: `Story context (for style):\n"""\n${before}\n"""\n\nTask: ${task[mode]}\n\nPassage:\n"""\n${selection}\n"""` }],
   };
 }
 
@@ -191,6 +231,29 @@ export function buildLoreRequest(
       'You write concise lorebook entries for a story-writing tool. An entry is a compact encyclopedic description (2-6 sentences) ' +
       'that starts with the subject\'s name. Reply with only the entry text.',
     messages: [{ role: 'user', content: `${ctx}Write a ${type} entry for: ${input}${cont}` }],
+  };
+}
+
+/**
+ * Side Chat: a conversation about the story. The model sees the story's memory and author's note, plus any
+ * excerpts the user quoted into the chat; it never writes into the story itself.
+ */
+export function buildSideChatRequest(story: Story, chat: SideChat): { system: string; messages: ChatMessage[] } {
+  const about: string[] = [];
+  if (story.title) about.push(`Title: ${story.title}`);
+  if (story.memory.trim()) about.push(`Memory (the author's notes for the story):\n${story.memory.trim()}`);
+  if (story.authorsNote.trim()) about.push(`Author's Note:\n${story.authorsNote.trim()}`);
+  const messages: ChatMessage[] = chat.messages.map((m) => ({
+    role: m.role,
+    content: m.excerpt ? `[${m.excerpt.label}]\n"""\n${m.excerpt.text}\n"""${m.content ? `\n\n${m.content}` : ''}` : m.content,
+  }));
+  return {
+    system:
+      'You are a helpful, candid writing partner chatting with an author about the story they are writing. ' +
+      'Answer questions, brainstorm, critique and suggest; quote or rewrite passages only when asked. ' +
+      'Excerpts from the story appear in triple quotes. Keep replies focused and conversational.' +
+      (about.length ? `\n\nAbout the story:\n${about.join('\n\n')}` : ''),
+    messages,
   };
 }
 

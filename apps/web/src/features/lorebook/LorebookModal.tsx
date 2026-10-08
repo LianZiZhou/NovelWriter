@@ -47,7 +47,7 @@ import { PhraseBiasEditor } from '../right/PhraseBiasEditor.tsx';
 
 type Selection = { kind: 'entry'; id: string } | { kind: 'category'; id: string } | null;
 
-export function LorebookModal({ onClose, entryId }: { onClose: () => void; entryId?: string }) {
+export function LorebookModal({ onClose, entryId, generate }: { onClose: () => void; entryId?: string; generate?: string }) {
   const story = useStory((s) => s.current)!;
   const store = useStory.getState();
   const ui = useUI.getState();
@@ -304,7 +304,7 @@ export function LorebookModal({ onClose, entryId }: { onClose: () => void; entry
       </div>
       <div className="lore-main">
         {selEntry ? (
-          <EntryEditor key={selEntry.id} entry={selEntry} categories={lb.categories} update={(p) => updateEntry(selEntry.id, p)} onClose={onClose} active={activeIds.has(selEntry.id)} />
+          <EntryEditor key={selEntry.id} entry={selEntry} categories={lb.categories} update={(p) => updateEntry(selEntry.id, p)} onClose={onClose} active={activeIds.has(selEntry.id)} generate={selEntry.id === entryId ? generate : undefined} />
         ) : selCat ? (
           <CategoryEditor key={selCat.id} cat={selCat} update={(p) => updateCat(selCat.id, p)} onClose={onClose} />
         ) : (
@@ -327,9 +327,9 @@ function toggleSet(s: Set<string>, id: string): Set<string> {
   return n;
 }
 
-function EntryEditor({ entry, categories, update, onClose, active }: { entry: LoreEntry; categories: LoreCategory[]; update: (p: Partial<LoreEntry>) => void; onClose: () => void; active: boolean }) {
+function EntryEditor({ entry, categories, update, onClose, active, generate }: { entry: LoreEntry; categories: LoreCategory[]; update: (p: Partial<LoreEntry>) => void; onClose: () => void; active: boolean; generate?: string }) {
   const [tab, setTab] = useState<'entry' | 'placement' | 'bias' | 'conditions'>('entry');
-  const [genOpen, setGenOpen] = useState(false);
+  const [genOpen, setGenOpen] = useState(!!generate);
   const story = useStory((s) => s.current)!;
   const recent = docText(story.doc).slice(-entry.searchRange);
   return (
@@ -373,7 +373,7 @@ function EntryEditor({ entry, categories, update, onClose, active }: { entry: Lo
                 </span>
               </div>
               <div className="desc" style={{ margin: '4px 0 10px', opacity: 1 }}>{t('The following text will be referenced when the Keys are activated.')}</div>
-              {genOpen && <LoreGenerator entry={entry} onResult={(text) => update({ text })} />}
+              {genOpen && <LoreGenerator entry={entry} onResult={(text) => update({ text })} autoType={generate} />}
               <div className="field-box">
                 <textarea
                   value={entry.text}

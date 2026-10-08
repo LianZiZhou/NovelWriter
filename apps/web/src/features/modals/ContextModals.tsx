@@ -218,8 +218,29 @@ export function EphemeralModal({ onClose }: { onClose: () => void }) {
     <Modal onClose={onClose} width={720} label={t('Ephemeral Context')}>
       <ModalHeader title={t('Ephemeral Context')} onClose={onClose} />
       <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-        <div className="desc">
-          {t('Format: {+delay[r]~duration,position:text}. Delay and duration count story steps (AI generations). Current step:')} <b>{story.step}</b>
+        <div className="eph-help">
+          <div>
+            {t('Ephemeral context is inserted into the context for a number of story steps (AI generations), then disappears.')}
+          </div>
+          <code>{'{[+]step[r]~duration,position:text}'}</code>
+          <ul>
+            <li>
+              <code>+3</code> {t('starts 3 steps from now; without + the number is the story step to start at.')}
+            </li>
+            <li>
+              <code>r</code> {t('repeats the entry every cycle.')}
+            </li>
+            <li>
+              <code>~5</code> {t('stays for 5 steps.')}
+            </li>
+            <li>
+              <code>,-2</code> {t('inserts it 2 lines from the bottom of the context (positive: from the top).')}
+            </li>
+          </ul>
+          <div>{t('You can also type an entry on its own line in the story; it moves here when you send.')}</div>
+          <div className="eph-step">
+            {t('Current Story Step')}: <b>{story.step}</b>
+          </div>
         </div>
         <div className="row">
           <input className="input grow" style={{ fontFamily: 'var(--font-code)' }} value={draft} onChange={(e) => setDraft(e.target.value)} aria-label={t('Ephemeral Context')} />
@@ -232,10 +253,17 @@ export function EphemeralModal({ onClose }: { onClose: () => void }) {
               setDraft('{+0~5,-1:}');
             }}
           >
-            <Plus size={14} weight="bold" /> {t('Add')}
+            <Plus size={14} weight="bold" /> {t('Add Entry')}
           </button>
         </div>
         {!parsed && draft && <div className="warning-text" style={{ fontSize: 13 }}>{t('Invalid format.')}</div>}
+        {parsed && (
+          <div className="desc" style={{ fontSize: 13 }}>
+            {t('Active from step {from} to step {to}.', { from: parsed.startingStep + parsed.delay, to: parsed.startingStep + parsed.delay + parsed.duration - 1 })}
+            {parsed.repeat ? ` ${t('Repeats.')}` : ''}
+          </div>
+        )}
+        {story.ephemeral.length === 0 && <div className="desc">{t('No ephemeral entries yet.')}</div>}
         {story.ephemeral.map((e) => (
           <div key={e.id} className="provider-row">
             <code className="grow" style={{ fontSize: 13 }}>{formatEphemeral(e)}</code>

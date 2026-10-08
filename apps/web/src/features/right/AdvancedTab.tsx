@@ -4,7 +4,7 @@ import { exportBiasGroups, type BuiltContext, type ContextSourceKind } from '@no
 import { download, safeFileName, useStory } from '../../store/story.ts';
 import { useUI } from '../../store/ui.ts';
 import { t } from '../../i18n.ts';
-import { Collapsible, EnterInput, ToggleRow } from '../../components/ui.tsx';
+import { Collapsible, EnterInput, Select, ToggleRow } from '../../components/ui.tsx';
 import { PhraseBiasEditor } from './PhraseBiasEditor.tsx';
 
 export const KIND_COLORS: Record<ContextSourceKind, string> = {
@@ -100,6 +100,13 @@ export function AdvancedTab() {
           <input className="input" aria-label="ATTG author" value={story.author} onChange={(e) => store.update((s) => void (s.author = e.target.value))} />
           <label className="sub-heading" style={{ display: 'block', marginTop: 10 }}>{t('Genre')}</label>
           <input className="input" aria-label="ATTG genre" value={story.genre} onChange={(e) => store.update((s) => void (s.genre = e.target.value))} />
+          <label className="sub-heading" style={{ display: 'block', marginTop: 10 }}>{t('Style Tag')}</label>
+          <Select
+            ariaLabel={t('Style Tag')}
+            value={String(story.styleTag) as '0'}
+            onChange={(v) => store.update((s) => void (s.styleTag = Number(v)))}
+            options={['0', '1', '2', '3', '4', '5'].map((n) => ({ value: n as '0', label: n === '0' ? t('Off') : `[ S: ${n} ]` }))}
+          />
         </Collapsible>
       </div>
 

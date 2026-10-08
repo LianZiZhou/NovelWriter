@@ -45,6 +45,12 @@ function AITab() {
       <Group title="AI Responses">
         <ToggleRow title={t('Stream AI Responses')} desc={t('AI responses will be streamed, appearing token by token.')} on={s.streamResponses} onChange={(v) => s.set({ streamResponses: v })} />
         <ToggleRow title={t('Continue Response to End of Sentence')} desc={t('Responses will attempt to continue until the end of a sentence is found.')} on={s.continueToSentenceEnd} onChange={(v) => s.set({ continueToSentenceEnd: v })} />
+        <ToggleRow
+          title={t('Bidirectional Inline Generation')}
+          desc={s.bidirectionalInline ? t('Inline generation will also consider the text after the cursor, so the new text bridges into it.') : t('Inline generation will only consider the text before the cursor.')}
+          on={s.bidirectionalInline}
+          onChange={(v) => s.set({ bidirectionalInline: v })}
+        />
         <SliderSetting title={t('Streamed Response Delay')} value={s.streamDelay} min={0} max={20} step={1} def={0} onChange={(v) => s.set({ streamDelay: v })} />
       </Group>
       <Group title="Hypebot">
@@ -465,6 +471,9 @@ function DefaultsTab() {
   const info = s.defaultModel && models.find((m) => m.provider === s.defaultModel!.provider && m.id === s.defaultModel!.id);
   return (
     <>
+      <div className="heading">{t('Pen Name')}</div>
+      <div className="desc-plain" style={{ margin: '8px 0 12px' }}>{t('Shown on screenshots of your stories.')}</div>
+      <input className="input" aria-label={t('Pen Name')} value={s.penName} placeholder={t('Anonymous')} onChange={(e) => s.set({ penName: e.target.value })} style={{ marginBottom: 24 }} />
       <div className="heading">{t('Default AI Model')}</div>
       <div className="desc-plain" style={{ margin: '8px 0 12px' }}>{t('New stories will use this model by default.')}</div>
       <div className="model-card">

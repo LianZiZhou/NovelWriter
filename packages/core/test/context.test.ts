@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { buildContext, trimText, unitBoundaries } from '../src/context.ts';
 import { newLoreEntry, newStory } from '../src/defaults.ts';
 import { countTokens } from '../src/tokenizer.ts';
-import { parseEphemeral, ephemeralActive } from '../src/ephemeral.ts';
+import { parseEphemeral, ephemeralActive, findEphemeralLines, formatEphemeral } from '../src/ephemeral.ts';
 
 describe('trimming', () => {
   it('splits units', () => {
@@ -52,6 +52,24 @@ describe('buildContext', () => {
     expect(c.report.find((r) => r.id === 'story')!.reason).toBe('trimmed');
   });
 
+  it('parses absolute and relative ephemeral steps and story lines', () => {
+    const rel = parseEphemeral('{+2~3,-1:A}', 5)!;
+    expect(ephemeralActive(rel, 6)).toBe(false);
+    expect(ephemeralActive(rel, 7)).toBe(true);
+    expect(ephemeralActive(rel, 10)).toBe(false);
+    const abs = parseEphemeral('{8~2,+0:B}', 5)!;
+    expect(ephemeralActive(abs, 7)).toBe(false);
+    expect(ephemeralActive(abs, 8)).toBe(true);
+    expect(ephemeralActive(abs, 10)).toBe(false);
+    expect(formatEphemeral(rel)).toBe('{7~3,-1:A}');
+    const text = 'One.\n{+1~4,-2:Rain falls}\nTwo.\n{3~1,+0:End}';
+    const found = findEphemeralLines(text, 0);
+    expect(found.map((f) => f.entry.text)).toEqual(['Rain falls', 'End']);
+    let rest = text;
+    for (const f of [...found].reverse()) rest = rest.slice(0, f.from) + rest.slice(f.to);
+    expect(rest).toBe('One.\nTwo.');
+  });
+
   it('includes active ephemeral entries', () => {
     const s = newStory({ doc: [{ text: 'a\nb\nc', origin: 'prompt' }], step: 4 });
     const e = parseEphemeral('{+3~10,-2:EPH}', 0)!;
@@ -65,5 +83,18 @@ describe('buildContext', () => {
   it('adds ATTG when tags are set', () => {
     const s = newStory({ title: 'Rain', tags: ['noir'], doc: [{ text: 'x', origin: 'prompt' }] });
     expect(buildContext(s, { maxContextTokens: 1000, outputTokens: 10 }).text.startsWith('[ Title: Rain; Tags: noir ]')).toBe(true);
+  });
+});
+
+describe('comment lines', () => {
+  it('drops ## lines from story, memory and lore text', async () => {
+    const { buildContext, newStory, flatten, stripComments } = await import('../src/index.ts');
+    expect(stripComments('a\n## note\nb\n  ## x\n')).toBe('a\nb\n');
+    const doc = [{ text: 'Line one.\n## hidden note\nLine two.', origin: 'prompt' as const }];
+    const s = newStory({ doc, history: flatten(doc), memory: 'M.\n## secret' });
+    const ctx = buildContext(s, { maxContextTokens: 2000, outputTokens: 100 });
+    expect(ctx.text).not.toContain('hidden note');
+    expect(ctx.text).not.toContain('secret');
+    expect(ctx.text).toContain('Line two.');
   });
 });

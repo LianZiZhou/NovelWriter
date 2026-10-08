@@ -166,14 +166,16 @@ export const DEFAULT_SYSTEM_PROMPT_STORY =
   'Continue it seamlessly from exactly where it stops, matching its voice, tense, point of view, style and formatting. ' +
   'Output only the continuation text itself: no titles, no commentary, no quotation of the existing text, no markdown. ' +
   'If the story stops mid-sentence or mid-word, continue that sentence. ' +
-  'Lines in [square brackets] are author instructions and background information; follow them but never repeat them.';
+  'Lines in [square brackets] are author instructions and background information; follow them but never repeat them. ' +
+  'A line in {curly braces} is an instruction from the author for what to write next: carry it out in the prose, and never reproduce the braces or the instruction.';
 
 export const DEFAULT_SYSTEM_PROMPT_ADVENTURE =
   'You are the narrator of an interactive text adventure. You will be given the adventure so far. ' +
   'Lines beginning with ">" are the player\'s actions. Narrate the outcome of the latest action in second person, ' +
   'vividly and concisely, then stop and wait for the next action. Never write actions for the player. ' +
   'Output only the narration text, no commentary or markdown. ' +
-  'Lines in [square brackets] are background information; use them but never repeat them.';
+  'Lines in [square brackets] are background information; use them but never repeat them. ' +
+  'A line in {curly braces} is an instruction from the author: follow it, never reproduce it.';
 
 export function newStory(p: Partial<Story> = {}): Story {
   const mode: StoryMode = p.mode ?? 'storyteller';
@@ -212,6 +214,9 @@ export function newStory(p: Partial<Story> = {}): Story {
     placeholders: [],
     titleHistory: [],
     scripts: [],
+    chats: [],
+    styleTag: 0,
+    attgPrompted: false,
     ...p,
   };
 }
@@ -225,6 +230,8 @@ export function migrateStory(raw: Partial<Story> & { id?: string }): Story {
   s.lorebook = { ...emptyLorebook(), ...(raw.lorebook ?? {}) };
   s.lorebook.entries = s.lorebook.entries.map((e) => newLoreEntry(e));
   s.lorebook.categories = s.lorebook.categories.map((c) => newLoreCategory(c));
+  // Older stories never saw the Genre & Tags prompt; don't show it on them.
+  if (raw.attgPrompted === undefined) s.attgPrompted = true;
   s.version = STORY_VERSION;
   return s;
 }

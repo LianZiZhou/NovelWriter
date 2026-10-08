@@ -38,6 +38,8 @@ export interface Settings {
   editorTokenProbabilities: boolean;
   /** Alternatives requested per token. */
   logprobsCount: number;
+  /** Inline generation also sees the text after the cursor. */
+  bidirectionalInline: boolean;
   ttsSpeakHypebot: boolean;
   ttsTestText: string;
   ttsSavedVoices: SavedVoice[];
@@ -56,6 +58,8 @@ export interface Settings {
   highlightSpeech: boolean;
   highlightSpeechInverted: boolean;
   showTips: boolean;
+  /** Name shown on screenshots. */
+  penName: string;
   inputBox: boolean;
   editorSpellcheck: boolean;
   defaultModel: ModelRef | null;
@@ -68,7 +72,7 @@ export interface Settings {
   ttsSpeakOutputs: boolean;
   leftOpen: boolean;
   rightOpen: boolean;
-  rightTab: 'story' | 'advanced' | 'generation';
+  rightTab: 'story' | 'advanced' | 'generation' | 'chat';
   librarySort: 'recent' | 'alpha' | 'created';
   librarySortAsc: boolean;
   favoritesOnly: boolean;
@@ -151,6 +155,7 @@ export const DEFAULT_SETTINGS: Settings = {
   tokenProbabilities: false,
   editorTokenProbabilities: false,
   logprobsCount: 10,
+  bidirectionalInline: true,
   ttsSpeakHypebot: false,
   ttsTestText: 'This is a test for text to speech. A little harsh, a little slow, but always on point.',
   ttsSavedVoices: [],
@@ -169,6 +174,7 @@ export const DEFAULT_SETTINGS: Settings = {
   highlightSpeech: false,
   highlightSpeechInverted: false,
   showTips: true,
+  penName: '',
   inputBox: false,
   editorSpellcheck: false,
   defaultModel: null,

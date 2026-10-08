@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { LORE_GEN_TYPES, buildLoreRequest, type LoreEntry } from '@novelwriter/core';
 import { generateText } from '../../api.ts';
 import { useStory } from '../../store/story.ts';
@@ -10,8 +10,8 @@ import { Checkbox, Select } from '../../components/ui.tsx';
 /** Session-only generation history, as in the original (cleared on reload). */
 const history: string[] = [];
 
-export function LoreGenerator({ entry, onResult }: { entry: LoreEntry; onResult: (text: string) => void }) {
-  const [type, setType] = useState<string>('General');
+export function LoreGenerator({ entry, onResult, autoType }: { entry: LoreEntry; onResult: (text: string) => void; autoType?: string }) {
+  const [type, setType] = useState<string>(autoType ?? 'General');
   const [input, setInput] = useState(entry.displayName);
   const [ctx, setCtx] = useState({ memory: false, an: false, story: false });
   const [busy, setBusy] = useState(false);
@@ -40,6 +40,15 @@ export function LoreGenerator({ entry, onResult }: { entry: LoreEntry; onResult:
       setBusy(false);
     }
   };
+  // "Generate Lore…" from the editor's context menu starts right away.
+  const started = useRef(false);
+  useEffect(() => {
+    if (autoType && !started.current) {
+      started.current = true;
+      void run(false);
+    }
+  }, [autoType]);
+
   return (
     <div style={{ background: 'var(--bg1)', padding: 14, marginBottom: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
       <div className="row" style={{ gap: 10 }}>

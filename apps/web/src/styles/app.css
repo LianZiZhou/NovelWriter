@@ -1410,13 +1410,13 @@
 }
 
 .find-bar {
-  position: absolute;
-  top: 16px;
-  right: 80px;
-  z-index: 10;
+  position: fixed;
+  top: 72px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 50;
   display: flex;
-  gap: 6px;
-  align-items: center;
+  flex-direction: column;
   background: var(--bg1);
   border: 1px solid var(--bg3);
   padding: 6px;
@@ -2457,6 +2457,33 @@
 .story-settings .input {
   height: 40px;
 }
+.ss-title-history {
+  margin-top: 8px;
+  font-size: 0.85rem;
+}
+.ss-title-history summary {
+  cursor: pointer;
+  color: var(--text-placeholder);
+}
+.ss-title-history ul {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  max-height: 140px;
+  overflow-y: auto;
+}
+.ss-title-history button {
+  width: 100%;
+  text-align: left;
+  padding: 4px 8px;
+  border-radius: 3px;
+}
+.ss-title-history button:hover {
+  background: var(--bg2);
+}
+.ss-title-history button.active {
+  color: var(--text-headings);
+}
 .ss-dice {
   width: 42px;
   height: 40px;
@@ -2940,6 +2967,11 @@
 }
 .selection-toolbar button.active {
   color: var(--text-headings);
+}
+.selection-toolbar-sep {
+  width: 1px;
+  margin: 6px 2px;
+  background: var(--bg3);
 }
 .nw-editor .lore-key {
   text-decoration: underline dotted;
@@ -3451,4 +3483,277 @@
 }
 .key-chip.editing {
   outline: 1px solid var(--text-headings);
+}
+
+/* Instruction ({ … }) and comment (## …) paragraphs. */
+.nw-editor .ProseMirror p.instruction-line {
+  color: var(--text-headings);
+  font-style: italic;
+  opacity: 0.85;
+  border-left: 2px solid color-mix(in srgb, var(--text-headings) 50%, transparent);
+  padding-left: 8px;
+  text-indent: 0;
+}
+.nw-editor .ProseMirror p.instruction-line span {
+  color: inherit;
+}
+.nw-editor .ProseMirror p.comment-line {
+  opacity: 0.45;
+  text-indent: 0;
+}
+
+.nw-editor {
+  position: relative;
+}
+.para-wand {
+  position: absolute;
+  right: -34px;
+  width: 26px;
+  height: 26px;
+  margin-top: 4px;
+  border-radius: 3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-main);
+  opacity: 0.35;
+  transition: opacity var(--transition), background var(--transition);
+  z-index: 2;
+}
+.para-wand:hover {
+  opacity: 1;
+  background: var(--bg3);
+}
+
+.find-opt {
+  min-width: 28px;
+  height: 28px;
+  border-radius: 3px;
+  font-family: var(--font-code);
+  font-size: 13px;
+  opacity: 0.6;
+}
+.find-opt.on {
+  background: var(--bg3);
+  color: var(--text-headings);
+  opacity: 1;
+}
+.find-toggle {
+  width: 22px;
+  height: 28px;
+}
+.context-menu .submenu-scroll {
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+/* Side Chat (right sidebar tab). */
+.right-body:has(.side-chat) {
+  display: flex;
+  flex-direction: column;
+}
+.side-chat {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+}
+.side-chat-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--bg2);
+}
+.side-chat-head > :first-child {
+  flex: 1;
+  min-width: 0;
+}
+.side-chat-title {
+  font-weight: 600;
+  color: var(--text-headings);
+}
+.side-chat-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.side-chat-empty {
+  margin: auto 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  text-align: center;
+  color: var(--text-placeholder);
+  font-size: 0.85rem;
+}
+.chat-msg {
+  max-width: 92%;
+  padding: 8px 10px;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.chat-msg.user {
+  align-self: flex-end;
+  background: var(--bg2);
+}
+.chat-msg.assistant {
+  align-self: flex-start;
+  background: var(--bg1);
+  border: 1px solid var(--bg2);
+}
+.chat-excerpt {
+  margin: 0 0 6px;
+  padding: 4px 8px;
+  border-left: 2px solid var(--text-headings);
+  color: var(--text-placeholder);
+  font-size: 0.8rem;
+  max-height: 120px;
+  overflow: hidden;
+}
+.chat-excerpt-label {
+  display: block;
+  font-weight: 600;
+  color: var(--text-main);
+}
+.side-chat-input {
+  border-top: 1px solid var(--bg2);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.side-chat-input textarea {
+  resize: none;
+  width: 100%;
+  background: var(--bg0);
+  border: 1px solid var(--bg2);
+  border-radius: 3px;
+  padding: 6px 8px;
+  color: var(--text-main);
+  font: inherit;
+  font-size: 0.9rem;
+}
+.chat-draft-excerpt {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.8rem;
+  color: var(--text-placeholder);
+  min-width: 0;
+}
+.chat-draft-excerpt .grow {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.side-chat-actions .btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.excerpt-menu {
+  position: relative;
+}
+.excerpt-pop {
+  position: absolute;
+  bottom: calc(100% + 4px);
+  left: 0;
+  z-index: 50;
+  width: 230px;
+  max-height: 260px;
+  overflow-y: auto;
+  background: var(--bg1);
+  border: 1px solid var(--bg2);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  font-size: 14px;
+}
+.excerpt-pop .item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  text-align: left;
+}
+.excerpt-pop .item:hover {
+  background: var(--bg2);
+}
+
+/* New-story Genre & Tags prompt. */
+.attg-prompt {
+  margin: 0 0 16px;
+  padding: 12px 14px;
+  border: 1px solid var(--bg3);
+  border-radius: 3px;
+  background: var(--bg1);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 0.9rem;
+}
+.attg-prompt .desc {
+  color: var(--text-placeholder);
+  font-size: 0.8rem;
+}
+.attg-prompt .sub-heading {
+  margin-top: 6px;
+}
+.attg-style {
+  display: flex;
+  gap: 4px;
+}
+.attg-style button {
+  min-width: 36px;
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid var(--bg3);
+  border-radius: 3px;
+}
+.attg-style button.active {
+  background: var(--bg3);
+  color: var(--text-headings);
+}
+.tip-link {
+  margin-left: 6px;
+}
+
+.shot-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  gap: 8px 16px;
+  margin-bottom: 12px;
+}
+.shot-option {
+  font-size: 14px;
+  gap: 8px;
+}
+
+.eph-help {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-placeholder);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.eph-help ul {
+  margin: 2px 0;
+  padding-left: 18px;
+}
+.eph-help code {
+  font-family: var(--font-code);
+  color: var(--text-main);
+}
+.eph-step {
+  color: var(--text-main);
 }

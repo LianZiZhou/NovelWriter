@@ -8,35 +8,106 @@ import { t } from '../../i18n.ts';
 import { StoryEditor } from './StoryEditor.tsx';
 import { Hypebot } from '../hypebot/Hypebot.tsx';
 
-const TIPS: [string, string][] = [
+/** [title, text, optional settings tab the tip links to]. */
+const TIPS: [string, string, string?][] = [
+  ['Lorebook', 'The Lorebook holds details about characters, places and things. An entry is only added to the context when one of its keys appears in the recent story.'],
   ['Context Management', 'Because the AI only has so much Context it can see, remember not to give it too many details at once. Lean on the Lorebook for details that only matter sometimes.'],
   ['Up to Date', 'Models know recent events, popular fiction and even celebrities. Specifics may need further prompting, so add them to Memory or the Lorebook.'],
   ['Lorebook Import', 'You can easily import Lorebooks by using the Import File button or dragging a .lorebook, .json or .png file onto the window.'],
+  ['Story Library', 'Your stories are listed in the Story Library in the left sidebar. Search them by title, description or tag, and sort or filter them from the funnel button.'],
   ['Shelves', 'Stories can be stored within Shelves in the Story Library in the left sidebar. Use the Pencil icon on a story to move it to a shelf.'],
+  ['Gesture Controls', 'On touch devices, swipe from the edges of the screen to open and close the sidebars. This can be turned off in the Interface settings.', 'interface'],
   ['Generate Inline', 'If you want to generate text to fill in a specific part of the story you can right click and select "Generate Inline", or press Ctrl+Shift+Enter.'],
+  ['Instructions', 'Start a line with { to write an instruction for the AI, like {Describe the storm}. Lines starting with ## are comments the AI never sees.'],
   ['Retry', 'Not happy with a generation? Press Retry (Alt+R) for a new one. Earlier generations stay available in the branch menu next to Redo.'],
   ["Author's Note", "The Author's Note is inserted near the end of the context, so a few short sentences there strongly steer the style and direction of the story."],
+  ['Side Chat', 'Open the chat tab in the right sidebar to talk with the AI about your story without changing it. Right-click a selection and choose Add to… → Chat as Excerpt to quote it.'],
+  ['Token Probabilities', 'On endpoints that support it, turn on Editor Token Probabilities to see how likely each generated token was and pick an alternative.'],
   ['Command Palette', 'Press Ctrl+K to open the command palette and reach any action quickly.'],
 ];
 
 function TipBar() {
   const showTips = useSettings((s) => s.showTips);
+  const dismissed = useSettings((s) => s.dismissedTips);
+  const tips = TIPS.filter(([title]) => !dismissed.includes(title));
   const [idx, setIdx] = useState(() => Math.floor(Math.random() * TIPS.length));
-  const [hidden, setHidden] = useState(false);
   useEffect(() => {
-    const id = setInterval(() => setIdx((i) => (i + 1) % TIPS.length), 45000);
+    const id = setInterval(() => setIdx((i) => i + 1), 45000);
     return () => clearInterval(id);
   }, []);
-  if (!showTips || hidden) return null;
-  const [title, body] = TIPS[idx];
+  if (!showTips || !tips.length) return null;
+  const [title, body, tab] = tips[idx % tips.length];
   return (
     <div className="tip-bar">
       <span className="tip-text" title={t(body)}>
         <b>{t(title)}:</b> {t(body)}
+        {tab && (
+          <button type="button" className="link-btn tip-link" onClick={() => useUI.getState().open('settings', { tab })}>
+            {t('Open Settings')}
+          </button>
+        )}
       </span>
-      <button type="button" className="icon-btn" onClick={() => setHidden(true)} aria-label={t('Close')}>
+      <button
+        type="button"
+        className="icon-btn"
+        onClick={() => useSettings.getState().set({ dismissedTips: [...dismissed, title] })}
+        aria-label={t('Dismiss Tip')}
+        title={t('Dismiss Tip')}
+      >
         <X size={14} weight="bold" style={{ opacity: 0.6 }} />
       </button>
+    </div>
+  );
+}
+
+const GENRE_HINTS = ['Fantasy', 'Science Fiction', 'Mystery', 'Romance', 'Horror', 'Thriller', 'Historical', 'Slice of Life', 'Adventure', 'Literary'];
+
+/** Shown above an empty new story: Genre, Tags and Style feed the ATTG line at the top of the context. */
+function AttgPrompt() {
+  const story = useStory((s) => s.current)!;
+  const store = useStory.getState();
+  const [genre, setGenre] = useState(story.genre);
+  const [tags, setTags] = useState(story.tags.join(', '));
+  const [style, setStyle] = useState(story.styleTag);
+  const save = () =>
+    store.update((s) => {
+      s.genre = genre.trim();
+      s.tags = [...new Set(tags.split(',').map((x) => x.trim()).filter(Boolean))];
+      s.styleTag = style;
+      s.attgPrompted = true;
+    });
+  return (
+    <div className="attg-prompt fade-in" role="group" aria-label={t('Genre & Tags')}>
+      <div className="row between">
+        <b>{t('Genre & Tags')}</b>
+        <button type="button" className="icon-btn" aria-label={t('Skip')} title={t('Skip')} onClick={() => store.update((s) => void (s.attgPrompted = true))}>
+          <X size={14} weight="bold" />
+        </button>
+      </div>
+      <div className="desc">{t('Optional. Tell the AI what kind of story this is; it is added as a [ Genre: …; Tags: … ] line at the top of the context. You can change it later under Advanced → Author, Title, Tags, Genre.')}</div>
+      <label className="sub-heading" htmlFor="attg-genre">{t('Genre')}</label>
+      <input id="attg-genre" className="input" list="attg-genres" value={genre} placeholder={t('e.g. Fantasy, Mystery')} onChange={(e) => setGenre(e.target.value)} />
+      <datalist id="attg-genres">
+        {GENRE_HINTS.map((g) => (
+          <option key={g} value={t(g)} />
+        ))}
+      </datalist>
+      <label className="sub-heading" htmlFor="attg-tags">{t('Tags')}</label>
+      <input id="attg-tags" className="input" value={tags} placeholder={t('e.g. dragons, found family, slow burn (comma separated)')} onChange={(e) => setTags(e.target.value)} />
+      <div className="sub-heading">{t('Style')}</div>
+      <div className="attg-style" role="radiogroup" aria-label={t('Style')}>
+        {[0, 1, 2, 3, 4, 5].map((n) => (
+          <button key={n} type="button" role="radio" aria-checked={style === n} className={style === n ? 'active' : ''} onClick={() => setStyle(n)} title={n ? `[ S: ${n} ]` : t('Off')}>
+            {n ? n : t('Off')}
+          </button>
+        ))}
+      </div>
+      <div className="desc">{t('Adds a [ S: n ] style tag; higher numbers ask for more polished prose on models trained with it.')}</div>
+      <div className="row" style={{ justifyContent: 'flex-end', marginTop: 10 }}>
+        <button type="button" className="btn primary" onClick={save}>
+          {t('Save')}
+        </button>
+      </div>
     </div>
   );
 }
@@ -210,10 +281,11 @@ export function EditorPane() {
             ) : (
               <span className="grow" />
             )}
-            <button type="button" className="title-btn" onClick={() => void store.generateTitle()} aria-label={t('Generate a random title for the story')} title={t('Generate a random title for the story')} disabled={task === 'title'}>
+            <button type="button" className="title-btn" onClick={() => void store.generateTitle(true)} aria-label={t('Generate a random title for the story')} title={t('Generate a random title for the story')} disabled={task === 'title'}>
               {task === 'title' ? <span className="spinner" /> : <DiceFive size={20} weight="fill" />}
             </button>
           </div>
+          {!story.attgPrompted && isEmpty && !adventure && <AttgPrompt />}
           <StoryEditor />
         </div>
       </div>

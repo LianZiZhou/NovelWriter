@@ -50,15 +50,23 @@ Credentials are stored in `data/auth.json` on the server and never sent to the b
 
 - **Editor**: text colored by origin (prompt, AI, edited, user), Send (Ctrl+Enter), Retry
   (Alt+R), Undo/Redo over a branching history, retry-option picker, a visual history tree,
-  inline generation at the cursor (Ctrl+Shift+Enter), streaming, find, bold/italic/underline/
-  strikethrough, speech highlighting, a right-click menu (special characters, add to
-  Memory/Author's Note/Lorebook, Writer's Toolbox, tokenize, screenshot, TTS).
+  inline generation at the cursor (Ctrl+Shift+Enter, optionally bidirectional), streaming,
+  find & replace (match case, regex), bold/italic/underline/strikethrough, speech highlighting,
+  `{ instruction }` lines and `##` comment lines, a selection toolbar (formatting, inline
+  generation, TTS, Writer's Toolbox), and a right-click menu (special characters, add to
+  Memory/Author's Note/a new or existing lore entry/Side Chat, Generate Lore… by type,
+  Writer's Toolbox, tokenize, screenshot, TTS).
+- **Side Chat**: per-story chats with the model about the story (right sidebar), with excerpts
+  from the recent story, a selection or a lore entry; nothing is written into the story.
+- **New stories** ask for Genre & Tags and a `[ S: n ]` style tag for the ATTG line; title
+  generation keeps a Title Generation History.
 - **Story panel**: storyteller / text-adventure mode, model and preset pickers, Memory,
   Author's Note, Lorebook quick search, story stats, trim/flatten/reset, export to
   `.story`, `.scenario`, plain text, clipboard or image.
 - **Context**: NovelAI-style context assembly (insertion order, reserved tokens, token budgets,
   insertion position, trim direction and maximum trim type), ATTG line, ephemeral context
-  (`{+3~10,-2:text}`), a context viewer with stages and inclusion reasons, editable context
+  (`{+3~10,-2:text}` relative or `{12~10,-2:text}` absolute steps, also typed straight into the
+  story), a context viewer with stages and inclusion reasons, editable context
   settings, system prompt and prefill.
 - **Lorebook**: entries with plain, `/regex/` and `A & B` keys, search range, Always On,
   hidden entries, cascading activation, key-relative insertion, categories with subcontexts,
@@ -68,11 +76,14 @@ Credentials are stored in `data/auth.json` on the server and never sent to the b
 - **Generation settings**: presets (built-in and custom, import/export), randomness, output
   length, context size, sampler order and toggles, repetition penalties.
 - **Phrase bias, banned phrases, stop sequences, Avoid Overused Words.**
-- **Writer's Toolbox**: rewrite, transform, expand, condense and custom instructions.
+- **Writer's Toolbox**: retry, transform, expand, condense, rewrite style, infill at the cursor and
+  custom instructions, with strength/length settings and Adjust (run again on the result).
 - **Text Adventure**: Do / Say / Story input with the usual shortcuts (`l`, `i`, `n`, `x door`,
   `!`, `"`…).
 - **Scenarios** with `${placeholder[default]:description}` fields.
 - **User scripts**: sandboxed hooks to rewrite the context and the AI response.
+- **Screenshot Designer** (title, date, pen name, logo, colours, legend, model, background,
+  comment, speech highlighting; PNG, JPG or clipboard).
 - **Hypebot**, browser **text-to-speech**, **19 themes** plus a theme editor, custom CSS,
   rebindable hotkeys, a command palette (Ctrl+K), English and Simplified Chinese UI,
   drag-and-drop import, mobile layout.
