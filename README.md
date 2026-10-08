@@ -85,6 +85,19 @@ accept are kept in presets but not sent. Phrase bias and banned phrases become p
 and banned phrases are also stripped from the output. Token probabilities are not available through
 these APIs. Token counts use the o200k tokenizer as an approximation.
 
+### Generation settings
+
+- **Randomness** (temperature): below 1 keeps the text consistent; above 1 makes it more surprising.
+- **Output Length**: about how many characters one Send writes (converted to a token limit).
+- **Context Size**: the most tokens of story, Memory, Author's Note and lore sent per request.
+- **Samplers** (Top-K, Nucleus, Tail-Free, Top-A, Typical, Min-P, Mirostat, Unified): each one trims
+  unlikely tokens before picking. They are applied in the order set in *Change Samplers*; disabled
+  ones are hidden from the sidebar. Only OpenAI-compatible endpoints accept the extra samplers;
+  other providers get temperature and Nucleus.
+- **Repetition Penalty** (Range, Slope, Dynamic Range, Whitelist) and **Phrase Repetition Penalty**:
+  discourage repeating recent tokens or phrases. Sent where the endpoint supports them.
+- **Presence / Frequency**: OpenAI-style alternate penalties. 0 turns them off.
+
 ## Development
 
 ```bash

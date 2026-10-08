@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { ArrowClockwise, ArrowUUpLeft, ArrowUUpRight, Book, CaretRight, ChatCircle, DiceFive, Sword, TextAlignLeft, TreeStructure, X } from '@phosphor-icons/react';
+import { ArrowClockwise, ArrowUUpLeft, ArrowUUpRight, Book, CaretRight, ChatCircle, DiceFive, PersonSimpleRun, Plus, TextAlignLeft, TreeStructure, X } from '@phosphor-icons/react';
 import { canRedo, canUndo, docText, retryOptions, type AdventureInputMode, type HistoryNode } from '@novelwriter/core';
 import { useStory } from '../../store/story.ts';
 import { useSettings } from '../../store/settings.ts';
@@ -41,75 +41,107 @@ function TipBar() {
   );
 }
 
-function BranchPopover({ options, onClose }: { options: HistoryNode[]; onClose: () => void }) {
+/** Redo list: replaces the tip bar above the controls, one row per branch you can step into. */
+function RedoStrip({ options, onClose }: { options: HistoryNode[]; onClose: () => void }) {
   const story = useStory((s) => s.current)!;
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    const h = (e: MouseEvent) => !ref.current?.contains(e.target as Node) && onClose();
+    const h = (e: MouseEvent) => !ref.current?.contains(e.target as Node) && !(e.target as HTMLElement).closest?.('.branch-count') && onClose();
+    const k = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
     window.addEventListener('mousedown', h);
-    return () => window.removeEventListener('mousedown', h);
+    window.addEventListener('keydown', k);
+    return () => {
+      window.removeEventListener('mousedown', h);
+      window.removeEventListener('keydown', k);
+    };
   }, [onClose]);
   const cur = story.history.current;
   return (
-    <div ref={ref} className="popover fade-in" style={{ bottom: 58, right: 0, width: 420, maxHeight: 360, overflowY: 'auto', padding: 6 }}>
-      <div className="row between" style={{ padding: '6px 8px' }}>
-        <span className="sub-heading">{t('Retry options')}</span>
-        <button
-          type="button"
-          className="link-btn"
-          onClick={() => {
-            onClose();
-            useUI.getState().open('historyTree');
-          }}
-        >
-          <TreeStructure size={14} /> {t('History Tree')}
-        </button>
-      </div>
-      {options.length === 0 && <div className="muted" style={{ padding: 8, fontSize: 14 }}>—</div>}
-      {options.map((n, i) => {
-        const text = n.changes.map((c) => c.inserted.map((s) => s.text).join('')).join('');
+    <div ref={ref} className="redo-strip fade-in" role="listbox" aria-label={t('Redo options')}>
+      {options.map((n) => {
+        const text = n.changes.map((c) => c.inserted.map((s) => s.text).join('')).join('').trim();
+        const line = text.split('\n').find((l) => l.trim()) ?? '';
         return (
           <button
             type="button"
+            role="option"
+            aria-selected={n.id === cur}
             key={n.id}
-            className="select-option"
-            style={{ background: n.id === cur ? 'var(--bg3)' : undefined, borderBottom: '1px solid var(--bg2)' }}
+            className={`redo-row ${n.id === cur ? 'current' : ''}`}
+            title={text}
             onClick={() => {
               useStory.getState().jump(n.id);
               onClose();
             }}
           >
-            <div style={{ fontSize: 12, opacity: 0.6 }}>#{i + 1} · {new Date(n.time).toLocaleTimeString()}</div>
-            <div style={{ display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{text.trim() || '—'}</div>
+            <Plus size={14} weight="bold" />
+            <span className="redo-text">{line || '—'}</span>
           </button>
         );
       })}
+      {options.length === 0 && <div className="redo-row muted">{t('Nothing to redo.')}</div>}
+      <button
+        type="button"
+        className="redo-tree"
+        aria-label={t('History Tree')}
+        title={t('History Tree')}
+        onClick={() => {
+          onClose();
+          useUI.getState().open('historyTree');
+        }}
+      >
+        <TreeStructure size={16} />
+      </button>
     </div>
   );
 }
 
-function AdventureBar({ mode, setMode, text, setText, onSend }: { mode: AdventureInputMode; setMode: (m: AdventureInputMode) => void; text: string; setText: (v: string) => void; onSend: () => void }) {
-  const order: AdventureInputMode[] = ['do', 'say', 'story'];
-  const icon = mode === 'do' ? <Sword size={16} /> : mode === 'say' ? <ChatCircle size={16} /> : <TextAlignLeft size={16} />;
-  const label = mode === 'do' ? t('Do') : mode === 'say' ? t('Say') : t('Story');
-  const ph = mode === 'do' ? t('What do you do?') : mode === 'say' ? t('What do you say?') : t('What happens next?');
+const ADV_MODES: { id: AdventureInputMode; label: string; placeholder: string }[] = [
+  { id: 'do', label: 'DO', placeholder: 'What do you want to do?' },
+  { id: 'say', label: 'SAY', placeholder: 'What do you want to say?' },
+  { id: 'story', label: 'STORY', placeholder: 'What happens next?' },
+];
+
+/** Two-row adventure input: mode icon + text field on top, DO/SAY/STORY tabs and controls below. */
+function AdventureBar({ mode, setMode, text, setText, onSend, controls }: { mode: AdventureInputMode; setMode: (m: AdventureInputMode) => void; text: string; setText: (v: string) => void; onSend: () => void; controls: React.ReactNode }) {
+  const icon = mode === 'do' ? <PersonSimpleRun size={18} weight="bold" /> : mode === 'say' ? <ChatCircle size={18} weight="fill" /> : <TextAlignLeft size={18} weight="bold" />;
+  const ph = t(ADV_MODES.find((m) => m.id === mode)!.placeholder);
   return (
     <div className="adventure-bar">
-      <button type="button" className="mode-btn" onClick={() => setMode(order[(order.indexOf(mode) + 1) % 3])} aria-label={`Input mode: ${label}`}>
-        {icon} {label}
-      </button>
-      <input
-        value={text}
-        placeholder={ph}
-        aria-label={ph}
-        onChange={(e) => setText(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' && !e.shiftKey) {
-            e.preventDefault();
-            onSend();
-          }
-        }}
-      />
+      <div className="adv-input-row">
+        <span className="adv-mode-icon" aria-hidden="true">{icon}</span>
+        <input
+          value={text}
+          placeholder={ph}
+          aria-label={ph}
+          onChange={(e) => setText(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault();
+              onSend();
+            } else if (e.key === 'Tab' && !e.shiftKey && !text) {
+              e.preventDefault();
+              const i = ADV_MODES.findIndex((m) => m.id === mode);
+              setMode(ADV_MODES[(i + 1) % ADV_MODES.length].id);
+            }
+          }}
+        />
+      </div>
+      <div className="adv-controls">
+        <div className="adv-modes" role="tablist">
+          {ADV_MODES.map((m) => (
+            <button type="button" role="tab" key={m.id} aria-selected={mode === m.id} className={mode === m.id ? 'active' : ''} aria-label={`Switch to ${m.label} mode`} onClick={() => setMode(m.id)}>
+              {t(m.label)}
+            </button>
+          ))}
+        </div>
+        <span className="adv-sep" />
+        <button type="button" className="ctrl-btn" aria-label={t('Lorebook')} title={t('Lorebook')} onClick={() => useUI.getState().open('lorebook')}>
+          <Book size={18} weight="fill" />
+        </button>
+        <div className="grow" />
+        {controls}
+      </div>
     </div>
   );
 }
@@ -129,6 +161,8 @@ export function EditorPane() {
   const redoCount = cur.children.length;
   const adventure = story.mode === 'adventure';
   const isEmpty = docText(story.doc).length === 0;
+  // Children of the current step are what Redo can reach; on an AI step the siblings are the retries.
+  const branchOptions = redoCount > 0 ? cur.children.map((c) => h.nodes[c]) : cur.type === 'ai' ? options : [];
 
   const doSend = () => {
     if (generating) return store.stop();
@@ -136,9 +170,27 @@ export function EditorPane() {
     setInput('');
   };
 
+  const controls = (
+    <>
+      <button type="button" className="ctrl-btn" aria-label={t('Undo')} title={`${t('Undo')} (Ctrl+Z)`} disabled={!canUndo(h) || generating} onClick={() => store.undo()}>
+        <ArrowUUpLeft size={20} weight="bold" />
+      </button>
+      <button type="button" className="ctrl-btn" aria-label={t('Redo')} title={`${t('Redo')} (Ctrl+Y)`} disabled={!canRedo(h) || generating} onClick={() => store.redo()}>
+        <ArrowUUpRight size={20} weight="bold" />
+      </button>
+      <button type="button" className={`branch-count ${options.length > 1 || redoCount > 0 ? 'has' : ''}`} aria-label={t('History')} title={t('History')} onClick={() => setBranchOpen(!branchOpen)}>
+        {redoCount > 0 && <span className="redo-marker" aria-hidden="true" />}
+        {cur.type === 'ai' ? options.length : redoCount}
+      </button>
+      <button type="button" className="ctrl-btn" aria-label={t('Retry')} title={`${t('Retry')} (Alt+R)`} disabled={generating || (cur.type !== 'ai' && isEmpty)} onClick={() => void store.retry()}>
+        <ArrowClockwise size={20} weight="bold" />
+      </button>
+    </>
+  );
+
   return (
     <>
-      <div className="editor-scroll">
+      <div className={`editor-scroll ${adventure ? 'adventure' : ''}`}>
         <div className="editor-column">
           <div className="editor-title-row">
             <input
@@ -157,10 +209,10 @@ export function EditorPane() {
       <Hypebot />
       <div className="bottom-area">
         <div className="bottom-inner">
-          <TipBar />
-          <div className="control-row">
+          {branchOpen ? <RedoStrip options={branchOptions} onClose={() => setBranchOpen(false)} /> : <TipBar />}
+          <div className={`control-row ${adventure ? 'adventure' : ''}`}>
             {adventure ? (
-              <AdventureBar mode={advMode} setMode={setAdvMode} text={input} setText={setInput} onSend={doSend} />
+              <AdventureBar mode={advMode} setMode={setAdvMode} text={input} setText={setInput} onSend={doSend} controls={controls} />
             ) : (
               <div className="control-bar">
                 <button type="button" className="ctrl-btn" aria-label={t('Lorebook')} title={t('Lorebook')} onClick={() => useUI.getState().open('lorebook')}>
@@ -182,50 +234,17 @@ export function EditorPane() {
                 ) : (
                   <div className="grow" />
                 )}
-                <button type="button" className="ctrl-btn" aria-label={t('Undo')} title={`${t('Undo')} (Ctrl+Z)`} disabled={!canUndo(h) || generating} onClick={() => store.undo()}>
-                  <ArrowUUpLeft size={20} weight="bold" />
-                </button>
-                <button type="button" className="ctrl-btn" aria-label={t('Redo')} title={`${t('Redo')} (Ctrl+Y)`} disabled={!canRedo(h) || generating} onClick={() => store.redo()}>
-                  <ArrowUUpRight size={20} weight="bold" />
-                </button>
-                <div style={{ position: 'relative' }}>
-                  <button
-                    type="button"
-                    className={`branch-count ${options.length > 1 || redoCount > 0 ? 'has' : ''}`}
-                    aria-label={t('History')}
-                    title={t('History')}
-                    onClick={() => setBranchOpen(!branchOpen)}
-                  >
-                    {cur.type === 'ai' ? options.length : redoCount}
-                  </button>
-                  {branchOpen && <BranchPopover options={cur.type === 'ai' ? options : cur.children.map((c) => h.nodes[c])} onClose={() => setBranchOpen(false)} />}
-                </div>
-                <button type="button" className="ctrl-btn" aria-label={t('Retry')} title={`${t('Retry')} (Alt+R)`} disabled={generating || (cur.type !== 'ai' && isEmpty)} onClick={() => void store.retry()}>
-                  <ArrowClockwise size={20} weight="bold" />
-                </button>
-              </div>
-            )}
-            {adventure && (
-              <div className="control-bar" style={{ flex: 'none', width: 'auto' }}>
-                <button type="button" className="ctrl-btn" aria-label={t('Undo')} disabled={!canUndo(h) || generating} onClick={() => store.undo()}>
-                  <ArrowUUpLeft size={20} weight="bold" />
-                </button>
-                <button type="button" className="ctrl-btn" aria-label={t('Redo')} disabled={!canRedo(h) || generating} onClick={() => store.redo()}>
-                  <ArrowUUpRight size={20} weight="bold" />
-                </button>
-                <button type="button" className="ctrl-btn" aria-label={t('Retry')} disabled={generating} onClick={() => void store.retry()}>
-                  <ArrowClockwise size={20} weight="bold" />
-                </button>
+                {controls}
               </div>
             )}
             <button type="button" className={`send-btn ${generating && task === 'story' ? 'stop' : ''}`} aria-label={generating ? t('Stop') : t('Send')} onClick={doSend}>
               {generating && task === 'story' ? (
                 <>
-                  <span className="spinner" /> {t('Stop')}
+                  <span className="spinner" /> {!adventure && t('Stop')}
                 </>
               ) : (
                 <>
-                  {t('Send')} <CaretRight size={18} weight="fill" />
+                  {!adventure && t('Send')} <CaretRight size={18} weight={adventure ? 'bold' : 'fill'} />
                 </>
               )}
             </button>

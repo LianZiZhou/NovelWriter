@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { ArrowRight, ArrowSquareOut, ArrowsLeftRight, Book, CaretDown, ChartBar, CornersOut, DownloadSimple, MagnifyingGlass, Sword, Article } from '@phosphor-icons/react';
+import { ArrowRight, ArrowSquareOut, ArrowsLeftRight, Book, CaretDown, CaretUp, ChartBar, Copy, ImageSquare, CornersOut, DownloadSimple, MagnifyingGlass, Sword, Article } from '@phosphor-icons/react';
 import { countTokens, exportPlaintext, exportScenario, exportStoryFile, searchLore } from '@novelwriter/core';
 import { download, safeFileName, useStory } from '../../store/story.ts';
 import { useSettings } from '../../store/settings.ts';
@@ -49,8 +49,13 @@ export function StoryTab() {
 
   return (
     <div>
-      <div className="panel-section" style={{ paddingTop: 14 }}>
-        <div className="row between">
+      <div className="panel-section mode-section" style={{ paddingTop: 14 }}>
+        <svg className="mode-arcs" viewBox="0 0 280 90" preserveAspectRatio="none" aria-hidden="true">
+          {[0, 1, 2, 3, 4].map((i) => (
+            <path key={i} d={`M ${-20 + i * 6} ${88 - i * 4} Q ${120 + i * 14} ${70 - i * 10} ${250 - i * 4} ${-6 + i * 3}`} />
+          ))}
+        </svg>
+        <div className="row between" style={{ position: 'relative' }}>
           <div className="mode-card">
             <div className="mode-icon">{adventure ? <Sword size={30} /> : <Article size={30} />}</div>
             <div>
@@ -177,30 +182,30 @@ export function StoryTab() {
           </div>
         </Collapsible>
         <div style={{ fontWeight: 600, fontSize: 14, marginTop: 14 }}>{t('Export Story')}</div>
-        <div className="split-btn" style={{ position: 'relative' }}>
+        <div className="split-btn">
           <button type="button" className="btn primary" onClick={() => void doExport('file')}>
             <DownloadSimple size={14} weight="bold" /> {t('To File')}
           </button>
-          <button type="button" className="btn primary" aria-label={t('Export')} onClick={() => setExportOpen(!exportOpen)}>
-            <CaretDown size={14} weight="fill" />
+          <button type="button" className="btn" aria-label={t('Export')} aria-expanded={exportOpen} onClick={() => setExportOpen(!exportOpen)}>
+            {exportOpen ? <CaretUp size={14} weight="fill" /> : <CaretDown size={14} weight="fill" />}
           </button>
-          {exportOpen && (
-            <div className="popover fade-in" style={{ top: 44, right: 0, left: 0 }}>
-              {(
-                [
-                  ['scenario', t('As Scenario')],
-                  ['text', t('As Plaintext')],
-                  ['clipboard', t('To Clipboard')],
-                  ['image', t('As Image')],
-                ] as const
-              ).map(([k, label]) => (
-                <button type="button" key={k} className="select-option" onClick={() => void doExport(k)}>
-                  {label}
-                </button>
-              ))}
-            </div>
-          )}
         </div>
+        {exportOpen && (
+          <div className="export-list fade-in">
+            {(
+              [
+                ['scenario', t('As Scenario'), <DownloadSimple size={14} weight="bold" />],
+                ['text', t('As Plaintext'), <DownloadSimple size={14} weight="bold" />],
+                ['clipboard', t('To Clipboard'), <Copy size={14} weight="bold" />],
+                ['image', t('As Image'), <ImageSquare size={14} weight="fill" />],
+              ] as const
+            ).map(([k, label, icon]) => (
+              <button type="button" key={k} className="btn block" onClick={() => void doExport(k)}>
+                {icon} {label}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="panel-section">

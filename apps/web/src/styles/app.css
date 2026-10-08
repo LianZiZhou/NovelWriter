@@ -317,7 +317,7 @@
 .nw-editor .ProseMirror {
   flex: 1;
   outline: none;
-  padding: 10px 10px 40px;
+  padding: 10px 10px 40px 20px;
   font-family: var(--font-default);
   font-size: var(--editor-font-size);
   line-height: var(--editor-line-height);
@@ -514,33 +514,139 @@
   color: var(--warning);
 }
 
+/* Text Adventure input (measured): bg1 box with 1px bg3 border; top row bg0 with mode icon + input,
+   bottom row DO/SAY tabs (active bg3), lorebook and the undo/redo/retry controls. Send = 75px tall square. */
+.control-row.adventure {
+  height: auto;
+}
 .adventure-bar {
-  display: flex;
-  gap: 0;
-  height: 52px;
   flex: 1;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
   background: var(--bg1);
   border: 1px solid var(--bg3);
+  border-radius: 3px;
 }
-.adventure-bar .mode-btn {
-  width: 92px;
+.adv-input-row {
+  display: flex;
+  align-items: center;
+  background: var(--bg0);
+  padding: 5px 5px 5px 10px;
+  min-height: 54px;
+}
+.adv-mode-icon {
+  width: 29px;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  border-right: 1px solid var(--bg3);
-  font-weight: 600;
-  color: var(--text-headings);
+  flex: none;
 }
-.adventure-bar input {
+.adv-input-row input {
   flex: 1;
+  min-width: 0;
   background: transparent;
   border: 0;
   outline: none;
-  padding: 0 14px;
+  padding: 10px 0 10px 10px;
   font-size: 16px;
-  min-width: 0;
+  line-height: 24px;
+}
+.adv-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px;
+  min-height: 53px;
+}
+.adv-modes {
+  display: flex;
+  gap: 8px;
+}
+.adv-modes button {
+  height: 37px;
+  padding: 0 12.8px;
+  border-radius: 3px;
+  font-size: 16px;
+  line-height: 16px;
+  font-weight: 600;
+  transition: background var(--transition);
+}
+.adv-modes button.active,
+.adv-modes button:hover {
+  background: var(--bg3);
+}
+.adv-sep {
+  width: 1px;
+  height: 14px;
+  background: var(--bg3);
+}
+.adventure-bar .ctrl-btn {
+  width: 44px;
+  height: 37px;
+  border-radius: 3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.adventure-bar .ctrl-btn:disabled {
+  color: var(--text-disabled);
+  opacity: 0.6;
+}
+.adventure-bar .ctrl-btn:hover:not(:disabled) {
+  background: var(--bg3);
+}
+.adventure-bar .branch-count {
+  position: relative;
+  min-width: 23px;
+  height: 37px;
+  font-size: 14px;
+  color: var(--text-disabled);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.adventure-bar .branch-count.has {
+  color: var(--text-main);
+}
+.adventure-bar .branch-count .redo-marker {
+  position: absolute;
+  top: 3px;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 4px solid transparent;
+  border-bottom: 5px solid currentColor;
+  border-top: 0;
+}
+.control-row.adventure .send-btn {
+  width: 75px;
+  height: auto;
+  align-self: stretch;
+}
+
+/* Adventure story text sits at the bottom of the page, actions in a faint box with the mode glyph. */
+.editor-scroll.adventure .nw-editor .ProseMirror {
+  flex: none;
+  margin-top: auto;
+}
+.editor-scroll.adventure .nw-editor {
+  justify-content: flex-end;
+}
+.nw-editor .ProseMirror p.action-line {
+  width: fit-content;
+  max-width: 100%;
+  margin: 4px 0 calc(var(--paragraph-spacing) + 4px) -12px;
+  padding: 6px 18px 6px 40px;
+  background: color-mix(in srgb, var(--bg3) 45%, transparent);
+  border-radius: 3px;
+}
+.nw-editor .ProseMirror p.action-line::before {
+  -webkit-mask: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256"><path d="M152 80a32 32 0 1 0-32-32 32 32 0 0 0 32 32Zm76 52c-34.7 0-52.7-17.6-70-41.9a16 16 0 0 0-23.5-2.7L88.3 125.6a8 8 0 0 0 10.1 12.4l25-20.4-23.2 51.6-50 16.6a8 8 0 1 0 5 15.2l53.1-17.7a8 8 0 0 0 4.7-4.3l14.6-32.4 33 25.9-12.9 53.4a8 8 0 0 0 15.6 3.7l14-58a8 8 0 0 0-2.8-8.2L134.9 133l17-37.9C169.4 117 190.6 148 228 148a8 8 0 0 0 0-16Z"/></svg>') center / contain no-repeat;
+  left: 12px;
+  top: calc(6px + var(--editor-font-size) * var(--editor-line-height) / 2 - 9px);
+  width: 18px;
+  height: 18px;
+  opacity: 0.35;
 }
 
 /* ------------------------------------------------------------------ right sidebar */
@@ -1006,6 +1112,8 @@
   width: 100px;
   flex: none;
   overflow: hidden;
+  -webkit-mask-image: linear-gradient(90deg, #000 60%, transparent);
+  mask-image: linear-gradient(90deg, #000 60%, transparent);
 }
 .select-thumb svg,
 .select-option-thumb svg {
@@ -2334,4 +2442,280 @@
   min-height: 140px;
   padding: 12px;
   background: var(--bg1);
+}
+
+/* Redo list (measured): replaces the tip bar; bg1 rows with a + glyph, retry/tree icon on the right. */
+.redo-strip {
+  position: relative;
+  background: var(--bg1);
+  border: 1px solid var(--bg3);
+  display: flex;
+  flex-direction: column;
+  max-height: 220px;
+  overflow-y: auto;
+  padding-right: 40px;
+}
+.redo-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 0 10px;
+  font-size: 16px;
+  font-weight: 600;
+  text-align: left;
+  color: var(--text-main);
+  transition: background var(--transition);
+}
+.redo-row + .redo-row {
+  border-top: 1px solid var(--bg2);
+}
+.redo-row:hover {
+  background: var(--bg2);
+}
+.redo-row.current {
+  color: var(--text-headings);
+}
+.redo-row .redo-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.redo-tree {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 40px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.5;
+}
+.redo-tree:hover {
+  opacity: 1;
+}
+.control-bar .branch-count {
+  position: relative;
+}
+.control-bar .branch-count .redo-marker {
+  position: absolute;
+  top: 3px;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 4px solid transparent;
+  border-bottom: 5px solid currentColor;
+  border-top: 0;
+}
+
+/* Story Mode header: faint arcs behind the card, like the original's decoration. */
+.mode-section {
+  position: relative;
+}
+.mode-arcs {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 260px;
+  height: 84px;
+  pointer-events: none;
+}
+.mode-arcs path {
+  fill: none;
+  stroke: var(--text-main);
+  stroke-opacity: 0.09;
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+.mode-section .title-btn {
+  width: 40px;
+  height: 40px;
+  background: var(--bg3);
+  border-radius: 3px;
+}
+.split-btn .btn:last-child:not(.primary) {
+  width: 42px;
+  background: var(--bg3);
+}
+.export-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 6px;
+}
+.export-list .btn {
+  height: 41px;
+}
+
+/* Memory / Author's Note expand (measured): 534px framed modal, 16px padding, 16px title. */
+.modal.field-modal {
+  background: var(--bg1);
+  border: 1px solid var(--bg3);
+  padding: 16px;
+}
+.field-modal .modal-header {
+  padding-bottom: 6px;
+  align-items: center;
+}
+.field-modal .modal-title {
+  font-size: 16px;
+}
+.field-modal-text {
+  height: 400px;
+  max-height: 70vh;
+  background: var(--bg0);
+  border: 0;
+  outline: none;
+  resize: vertical;
+  padding: 10px;
+  font-size: 15px;
+  line-height: 22px;
+  font-family: var(--font-field);
+}
+
+/* System Prompt modal: 600px, Eczar regular titles, bg0 prompt areas with expand + token count. */
+.modal.system-modal {
+  padding: 22px 20px 20px;
+}
+.system-modal .modal-header {
+  padding-bottom: 0;
+}
+.system-modal .modal-title,
+.system-modal .system-sub {
+  font-size: 19px;
+  font-weight: 400;
+}
+.system-modal .system-sub {
+  margin-top: 22px;
+}
+.desc-plain {
+  font-size: 14px;
+  line-height: 21px;
+  margin-bottom: 6px;
+}
+.prompt-area {
+  position: relative;
+  background: var(--bg0);
+}
+.prompt-area textarea {
+  display: block;
+  width: 100%;
+  background: transparent;
+  border: 0;
+  outline: none;
+  resize: none;
+  padding: 10px 40px 26px 10px;
+  font-size: 14px;
+  line-height: 21px;
+  font-family: var(--font-field);
+}
+.prompt-area .expand {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+}
+.prompt-area .tokens {
+  position: absolute;
+  right: 6px;
+  bottom: 4px;
+  font-size: 13px;
+  font-weight: 700;
+}
+.system-buttons {
+  gap: 8px;
+  margin-top: 8px;
+}
+.system-buttons .btn {
+  height: 44px;
+  font-size: 16px;
+}
+
+/* Generation tab details. */
+.guide-link {
+  display: block;
+  color: var(--text-main);
+  font-weight: 600;
+  text-decoration: none;
+}
+.guide-link:hover {
+  text-decoration: underline;
+}
+.change-samplers {
+  width: 100%;
+  text-align: left;
+  background: var(--bg2);
+  padding: 9px 10px;
+  font-size: 14px;
+  font-weight: 700;
+  transition: background var(--transition);
+}
+.right-body .change-samplers {
+  background: var(--bg3);
+}
+.change-samplers:hover {
+  filter: brightness(1.15);
+}
+
+/* Samplers modal (measured): narrow bg1 modal, table rows separated by 1px bg2 gaps. */
+.modal.samplers-modal {
+  background: var(--bg1);
+  padding: 24px 24px 30px;
+}
+.samplers-modal .modal-header {
+  padding-bottom: 4px;
+}
+.samplers-modal .modal-title {
+  font-size: 16px;
+}
+.samplers-help {
+  margin: 0 0 12px;
+  font-size: 14px;
+  line-height: 21px;
+}
+.samplers-table {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  background: var(--bg2);
+  border: 1px solid var(--bg2);
+  margin-top: 8px;
+}
+.sampler-row {
+  display: flex;
+  align-items: stretch;
+  background: var(--bg1);
+  cursor: grab;
+  min-height: 40px;
+}
+.sampler-row.dragging {
+  opacity: 0.5;
+}
+.sampler-name {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  font-size: 14px;
+  font-weight: 600;
+  background: var(--bg2);
+}
+.sampler-off {
+  color: var(--warning);
+  font-weight: 400;
+  opacity: 0.8;
+}
+.sampler-toggle {
+  width: 62px;
+  flex: none;
+  font-size: 14px;
+  border-left: 1px solid var(--bg2);
+}
+.sampler-toggle:hover {
+  background: var(--bg2);
+}
+.nw-editor .ProseMirror p.action-line.say::before {
+  -webkit-mask: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256"><path d="M216 48H40a16 16 0 0 0-16 16v160a15.84 15.84 0 0 0 9.25 14.5A16.05 16.05 0 0 0 40 240a15.89 15.89 0 0 0 10.25-3.78l.09-.07L83 208h133a16 16 0 0 0 16-16V64a16 16 0 0 0-16-16Z"/></svg>') center / contain no-repeat;
 }

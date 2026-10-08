@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowDown, ArrowUp, DiceFive, X } from '@phosphor-icons/react';
+import { DiceFive, X } from '@phosphor-icons/react';
 import { toPng } from 'html-to-image';
 import {
   applyChange,
@@ -359,30 +359,40 @@ export function PlaceholdersModal({ onClose }: { onClose: () => void }) {
   );
 }
 
+const SAMPLER_NAMES: Record<SamplerId, string> = {
+  temperature: 'Temperature (Randomness)',
+  top_k: 'Top-K Sampling',
+  top_p: 'Nucleus Sampling',
+  tfs: 'Tail-Free Sampling',
+  top_a: 'Top-A Sampling',
+  typical_p: 'Typical Sampling',
+  min_p: 'Min-P',
+  mirostat: 'Mirostat',
+  unified: 'Unified Sampling',
+};
+
+/** Sampler order table: drag rows to reorder, disable/enable on the right. */
 export function SamplersModal({ onClose }: { onClose: () => void }) {
   const story = useStory((s) => s.current)!;
   const store = useStory.getState();
   const order = story.params.order;
   const setOrder = (o: typeof order) => store.update((s) => void (s.params = { ...s.params, order: o }));
-  const move = (i: number, d: number) => {
-    const j = i + d;
-    if (j < 0 || j >= order.length) return;
-    const o = [...order];
-    [o[i], o[j]] = [o[j], o[i]];
-    setOrder(o);
-  };
   const [drag, setDrag] = useState<number | null>(null);
   return (
-    <Modal onClose={onClose} width={520} label={t('Change Samplers')}>
-      <ModalHeader title={t('Change Samplers')} onClose={onClose} />
-      <div className="desc" style={{ marginBottom: 12 }}>{t('Samplers apply from top to bottom. Drag or use the arrows to reorder; toggle to enable.')}</div>
-      <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+    <Modal onClose={onClose} width={334} label={t('Samplers')} className="samplers-modal">
+      <ModalHeader title={t('Samplers')} onClose={onClose} />
+      <p className="samplers-help">{t('You can reorder samplers here.')}</p>
+      <p className="samplers-help">{t('Disabled samplers will be hidden from the sidebar.')}</p>
+      <div className="modal-body samplers-table" role="list">
         {order.map((s, i) => (
           <div
             key={s.id}
-            className="provider-row"
+            role="listitem"
+            className={`sampler-row ${drag === i ? 'dragging' : ''}`}
             draggable
+            title={t(SAMPLER_INFO[s.id as SamplerId].help)}
             onDragStart={() => setDrag(i)}
+            onDragEnd={() => setDrag(null)}
             onDragOver={(e) => e.preventDefault()}
             onDrop={() => {
               if (drag === null || drag === i) return;
@@ -392,19 +402,14 @@ export function SamplersModal({ onClose }: { onClose: () => void }) {
               setOrder(o);
               setDrag(null);
             }}
-            style={{ cursor: 'grab' }}
           >
-            <div className="grow">
-              <div style={{ fontWeight: 600 }}>{t(SAMPLER_INFO[s.id as SamplerId].label)}</div>
-              <div className="desc" style={{ fontSize: 12 }}>{t(SAMPLER_INFO[s.id as SamplerId].help)}</div>
-            </div>
-            <button type="button" className="icon-btn" aria-label="Up" onClick={() => move(i, -1)}>
-              <ArrowUp size={16} />
+            <span className="sampler-name">
+              {t(SAMPLER_NAMES[s.id as SamplerId])}
+              {!s.enabled && <span className="sampler-off">({t('disabled')})</span>}
+            </span>
+            <button type="button" className="sampler-toggle" aria-label={`${s.enabled ? 'disable' : 'enable'} ${s.id}`} onClick={() => setOrder(order.map((x, j) => (j === i ? { ...x, enabled: !x.enabled } : x)))}>
+              {s.enabled ? t('disable') : t('enable')}
             </button>
-            <button type="button" className="icon-btn" aria-label="Down" onClick={() => move(i, 1)}>
-              <ArrowDown size={16} />
-            </button>
-            <Toggle on={s.enabled} onChange={(v) => setOrder(order.map((x, j) => (j === i ? { ...x, enabled: v } : x)))} label={s.id} />
           </div>
         ))}
       </div>

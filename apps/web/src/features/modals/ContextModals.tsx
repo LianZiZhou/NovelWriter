@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
-import { CaretLeft, CaretRight, Plus, Trash } from '@phosphor-icons/react';
-import { defaultContextSettings, formatEphemeral, parseEphemeral, ephemeralActive, type BuiltContext, type StoryContextSettings } from '@novelwriter/core';
+import { CaretLeft, CaretRight, CornersOut, Plus, Trash } from '@phosphor-icons/react';
+import { countTokens, DEFAULT_SYSTEM_PROMPT_ADVENTURE, DEFAULT_SYSTEM_PROMPT_STORY, defaultContextSettings, formatEphemeral, parseEphemeral, ephemeralActive, type BuiltContext, type StoryContextSettings } from '@novelwriter/core';
 import { useStory } from '../../store/story.ts';
 import { useUI } from '../../store/ui.ts';
 import { t } from '../../i18n.ts';
@@ -190,32 +190,70 @@ export function EphemeralModal({ onClose }: { onClose: () => void }) {
   );
 }
 
-/** Large editor for Memory, Author's Note, or the system prompt + prefill. */
+/** bg0 text area with an expand toggle and a token count, as in the System Prompt modal. */
+function PromptArea({ value, onChange, placeholder, label, rows }: { value: string; onChange: (v: string) => void; placeholder?: string; label: string; rows: number }) {
+  const [tall, setTall] = useState(false);
+  const tokens = useMemo(() => countTokens(value || placeholder || ''), [value, placeholder]);
+  return (
+    <div className="prompt-area">
+      <textarea aria-label={label} value={value} placeholder={placeholder} spellCheck={false} onChange={(e) => onChange(e.target.value)} style={{ height: tall ? '60vh' : rows * 21 + 20 }} />
+      <button type="button" className="icon-btn expand" aria-label={t('Expand editor')} onClick={() => setTall(!tall)}>
+        <CornersOut size={16} weight="bold" />
+      </button>
+      <span className="tokens">
+        {tokens} {t('tokens')}
+      </span>
+    </div>
+  );
+}
+
+/** Small framed editor for Memory / Author's Note, or the System Prompt + Prefill modal. */
 export function TextFieldModal({ onClose, field }: { onClose: () => void; field: 'memory' | 'authorsNote' | 'system' }) {
   const story = useStory((s) => s.current)!;
   const store = useStory.getState();
-  const title = field === 'memory' ? t('Memory') : field === 'authorsNote' ? t("Author's Note") : t('System Prompt');
+  const ui = useUI.getState();
+  if (field !== 'system') {
+    const title = field === 'memory' ? t('Memory') : t("Author's Note");
+    return (
+      <Modal onClose={onClose} width={534} label={title} className="field-modal">
+        <ModalHeader title={title} onClose={onClose} />
+        <textarea
+          autoFocus
+          className="field-modal-text"
+          aria-label={title}
+          spellCheck={false}
+          value={field === 'memory' ? story.memory : story.authorsNote}
+          onChange={(e) => store.update((s) => void (field === 'memory' ? (s.memory = e.target.value) : (s.authorsNote = e.target.value)))}
+        />
+      </Modal>
+    );
+  }
+  const def = story.mode === 'adventure' ? DEFAULT_SYSTEM_PROMPT_ADVENTURE : DEFAULT_SYSTEM_PROMPT_STORY;
   return (
-    <Modal onClose={onClose} width={900} label={title}>
-      <ModalHeader title={title} onClose={onClose} />
-      <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-        {field === 'system' ? (
-          <>
-            <div className="desc">{t('Leave empty to use the default system prompt.')}</div>
-            <textarea className="textarea" style={{ minHeight: 260 }} value={story.systemPrompt} onChange={(e) => store.update((s) => void (s.systemPrompt = e.target.value))} placeholder={t('System Prompt')} />
-            <div className="heading">{t('Prefill')}</div>
-            <div className="desc">{t('Text placed at the start of the AI response. Not all models support prefill.')}</div>
-            <textarea className="textarea" value={story.prefill} onChange={(e) => store.update((s) => void (s.prefill = e.target.value))} />
-          </>
-        ) : (
-          <textarea
-            autoFocus
-            className="textarea"
-            style={{ minHeight: '55vh', fontSize: 15 }}
-            value={field === 'memory' ? story.memory : story.authorsNote}
-            onChange={(e) => store.update((s) => void (field === 'memory' ? (s.memory = e.target.value) : (s.authorsNote = e.target.value)))}
-          />
-        )}
+    <Modal onClose={onClose} width={600} label={t('System Prompt')} className="system-modal">
+      <ModalHeader title={t('System Prompt')} onClose={onClose} />
+      <div className="modal-body">
+        <div className="desc-plain">{t('The system prompt is the initial system message given to the model. Leave blank for the default system message.')}</div>
+        <PromptArea label={t('System Prompt')} rows={12} value={story.systemPrompt} placeholder={def} onChange={(v) => store.update((s) => void (s.systemPrompt = v))} />
+        <div className="row system-buttons">
+          <button type="button" className="btn grow" disabled={!story.systemPrompt} onClick={() => store.update((s) => void (s.systemPrompt = ''))}>
+            {t('Reset to Default')}
+          </button>
+          <button
+            type="button"
+            className="btn grow"
+            onClick={async () => {
+              store.update((s) => void (s.systemPrompt = def));
+              await navigator.clipboard?.writeText(def).catch(() => {});
+              ui.toast(t('Copied!'), 'success');
+            }}
+          >
+            {t('Copy Default')}
+          </button>
+        </div>
+        <h3 className="modal-title system-sub">{t('Prefill')}</h3>
+        <div className="desc-plain">{t('The prefill is inserted at the beginning of the most recent assistant message. Leave blank to send none. Not every model accepts a prefill.')}</div>
+        <PromptArea label={t('Prefill')} rows={9} value={story.prefill} onChange={(v) => store.update((s) => void (s.prefill = v))} />
       </div>
     </Modal>
   );

@@ -211,16 +211,19 @@ export function GenerationTab() {
             />
           </div>
         </Collapsible>
-        <Collapsible title={t('Advanced Options')} defaultOpen={false}>
+        <Collapsible title={t('Advanced Options')}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 22, marginTop: 14 }}>
             <div className="desc warning-text" style={{ opacity: 1 }}>
               {t("Experimentation with these settings is encouraged, but be warned that their effects aren't always obvious.")}
+              <a className="guide-link" href="https://github.com/LianZiZhou/NovelWriter#generation-settings" target="_blank" rel="noreferrer">
+                {t('This guide explains these settings.')}
+              </a>
             </div>
             {!supported && <div className="desc">{t('Not supported by the current model; saved with the preset.')}</div>}
             <div className="desc" style={{ opacity: 0.85 }}>{t('Sampling')}</div>
             {p.order.filter((s) => s.enabled).map((s) => samplerSliders(s.id))}
             <div>
-              <button type="button" className="btn block" style={{ justifyContent: 'flex-start', background: 'var(--bg3)' }} onClick={() => ui.open('samplers')}>
+              <button type="button" className="change-samplers" onClick={() => ui.open('samplers')}>
                 {t('Change Samplers')}
               </button>
               {hidden > 0 && <div className="desc" style={{ marginTop: 8 }}>{t('{n} hidden', { n: hidden })}</div>}

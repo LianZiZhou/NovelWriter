@@ -217,7 +217,7 @@ export function NovelPlugins(opts: EditorOptionsRef) {
                 const text = para.textContent;
                 const start = pos + 1;
                 if (adventure && text.startsWith('>')) {
-                  decos.push(Decoration.node(pos, pos + para.nodeSize, { class: 'action-line' }));
+                  decos.push(Decoration.node(pos, pos + para.nodeSize, { class: /^>\s*You (say|ask|shout|whisper)\b/i.test(text) ? 'action-line say' : 'action-line' }));
                   const markerLen = text.startsWith('> ') ? 2 : 1;
                   decos.push(Decoration.inline(start, start + markerLen, { class: 'action-marker' }));
                 }

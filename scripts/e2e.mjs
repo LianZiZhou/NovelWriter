@@ -40,7 +40,7 @@ await step('create a storyteller story and type a prompt', async () => {
 await step('send streams AI text', async () => {
   await page.getByRole('button', { name: 'Send' }).click();
   await page.waitForSelector('.ProseMirror .o-ai');
-  await page.waitForFunction(() => document.querySelector('.send-btn')?.textContent?.includes('Send'));
+  await page.waitForFunction(() => document.querySelector('.send-btn')?.getAttribute('aria-label') === 'Send');
   const text = await editorText();
   assert.ok(text.length > 'Mara crossed the old bridge in the rain.'.length + 10, 'story grew');
 });
@@ -58,15 +58,15 @@ await step('user typing at end is blue, edits are pink', async () => {
 
 await step('retry produces a sibling branch', async () => {
   await page.getByRole('button', { name: 'Send' }).click();
-  await page.waitForFunction(() => document.querySelector('.send-btn')?.textContent?.includes('Send'));
+  await page.waitForFunction(() => document.querySelector('.send-btn')?.getAttribute('aria-label') === 'Send');
   const before = await editorText();
   await page.getByRole('button', { name: 'Retry' }).click();
-  await page.waitForFunction(() => document.querySelector('.send-btn')?.textContent?.includes('Send'));
+  await page.waitForFunction(() => document.querySelector('.send-btn')?.getAttribute('aria-label') === 'Send');
   await page.waitForTimeout(300);
   const count = await page.locator('.branch-count').innerText();
   assert.equal(count.trim(), '2', 'two retry options');
   await page.locator('.branch-count').click();
-  await page.locator('.popover .select-option').first().click();
+  await page.locator('.redo-strip .redo-row').first().click();
   assert.equal(await editorText(), before, 'switching to first branch restores its text');
 });
 
@@ -99,10 +99,10 @@ await step('memory and lorebook activation show in the context viewer', async ()
 await step('text adventure input', async () => {
   await page.getByRole('button', { name: 'create a new story' }).click();
   await page.getByRole('button', { name: /Text Adventure/ }).first().click();
-  await page.getByPlaceholder('What do you do?').fill('open the door');
-  await page.getByPlaceholder('What do you do?').press('Enter');
+  await page.getByPlaceholder('What do you want to do?').fill('open the door');
+  await page.getByPlaceholder('What do you want to do?').press('Enter');
   await page.waitForSelector('.ProseMirror .action-line');
-  await page.waitForFunction(() => document.querySelector('.send-btn')?.textContent?.includes('Send'));
+  await page.waitForFunction(() => document.querySelector('.send-btn')?.getAttribute('aria-label') === 'Send');
   const txt = await editorText();
   assert.ok(txt.includes('You open the door.'), 'action inserted');
   assert.ok(!txt.includes('> You'), 'the > marker is hidden');
