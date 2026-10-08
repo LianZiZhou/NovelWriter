@@ -142,3 +142,28 @@ describe('password protection', () => {
     await rm(d, { recursive: true, force: true });
   });
 });
+
+import WebSocket from 'ws';
+
+describe('OAuth login bridge', () => {
+  it('replaces an abandoned login instead of failing on the callback port', async () => {
+    const d = await mkdtemp(join(tmpdir(), 'nw-'));
+    const srv = await buildApp({ dataDir: d });
+    await srv.listen({ port: 0, host: '127.0.0.1' });
+    const port = (srv.server.address() as { port: number }).port;
+    const firstMessage = (ws: WebSocket) => new Promise<{ type: string; event?: { type: string } }>((r) => ws.once('message', (m) => r(JSON.parse(String(m)))));
+    const url = `ws://127.0.0.1:${port}/api/auth/login?provider=anthropic&type=oauth`;
+    const a = new WebSocket(url);
+    const ma = await firstMessage(a);
+    expect(ma.event?.type).toBe('auth_url');
+    // Second login while the first is still pending (e.g. a dropped tab).
+    const b = new WebSocket(url);
+    const mb = await firstMessage(b);
+    expect(mb, JSON.stringify(mb)).toMatchObject({ type: 'notify', event: { type: 'auth_url' } });
+    b.send(JSON.stringify({ type: 'cancel' }));
+    a.close();
+    b.close();
+    await srv.close();
+    await rm(d, { recursive: true, force: true });
+  });
+});

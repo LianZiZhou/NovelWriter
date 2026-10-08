@@ -485,7 +485,7 @@ export function PaletteModal({ onClose }: { onClose: () => void }) {
     { id: 'tree', label: t('History Tree'), run: () => ui.open('historyTree') },
     { id: 'stats', label: t('View Story Stats'), run: () => ui.open('stats') },
     { id: 'title', label: t('Generate a random title for the story'), run: () => void store.generateTitle() },
-    { id: 'new', label: t('New Story'), run: () => useStory.setState({ current: null }) },
+    { id: 'new', label: t('New Story'), run: () => useStory.getState().showNewStory() },
     { id: 'find', label: t('Find'), run: () => ui.set({ findOpen: true }) },
     { id: 'export', label: `${t('Export Story')} — ${t('To File')}`, run: () => store.current && void store.downloadStory(store.current.id) },
     { id: 'mode', label: `${t('Story Mode')}: ${t('Storyteller')} / ${t('Text Adventure')}`, run: () => store.update((s) => void (s.mode = s.mode === 'adventure' ? 'storyteller' : 'adventure')) },

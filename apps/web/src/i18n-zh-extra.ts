@@ -209,5 +209,7 @@ export const ZH_EXTRA: Record<string, string> = {
   'Empty': '空',
   'Not activated': '未激活',
   'Story Options': '故事选项',
-  'Bias ': '偏置',
+  'a minute ago': '1 分钟前',
+  'an hour ago': '1 小时前',
+  'a day ago': '1 天前',
 };

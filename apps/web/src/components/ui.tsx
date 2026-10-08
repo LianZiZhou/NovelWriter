@@ -359,8 +359,11 @@ export function Tabs<V extends string>({ value, tabs, onChange, className = '' }
 export function timeAgo(ts: number): string {
   const s = (Date.now() - ts) / 1000;
   if (s < 60) return t('a few seconds ago');
+  if (s < 120) return t('a minute ago');
   if (s < 3600) return t('{n} minutes ago', { n: Math.floor(s / 60) });
+  if (s < 7200) return t('an hour ago');
   if (s < 86400) return t('{n} hours ago', { n: Math.floor(s / 3600) });
+  if (s < 172800) return t('a day ago');
   if (s < 86400 * 30) return t('{n} days ago', { n: Math.floor(s / 86400) });
   return new Date(ts).toLocaleDateString();
 }

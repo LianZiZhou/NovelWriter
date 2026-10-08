@@ -96,7 +96,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
       socket.close();
       return;
     }
-    runLogin(socket, llm, provider, type);
+    void runLogin(socket, llm, provider, type);
   });
 
   app.get('/api/custom-providers', async () =>

@@ -214,7 +214,7 @@ export function LeftSidebar({ onCollapse, mobileOpen }: { onCollapse: () => void
         {list.length === 0 && <div className="muted" style={{ padding: 20, fontSize: 14 }}>{t('No stories yet.')}</div>}
       </div>
       <div className="lib-bottom">
-        <button type="button" className="lib-new" aria-label="create a new story" onClick={() => useStory.setState({ current: null })}>
+        <button type="button" className="lib-new" aria-label="create a new story" onClick={() => useStory.getState().showNewStory()}>
           <Plus size={16} weight="bold" /> {t('New Story')}
         </button>
         <div className="row2">

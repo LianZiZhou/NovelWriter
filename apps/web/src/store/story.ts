@@ -82,10 +82,12 @@ interface StoryState {
   scriptLogs: string[];
 
   init: () => Promise<void>;
+  reload: () => Promise<void>;
   refreshModels: () => Promise<void>;
   refreshLibrary: () => Promise<void>;
   openStory: (id: string) => Promise<void>;
   closeStory: () => void;
+  showNewStory: () => void;
   createStory: (p?: Partial<Story>) => Promise<Story>;
   addStory: (s: Story) => Promise<void>;
   update: (fn: (s: Story) => Story | void) => void;
@@ -118,6 +120,9 @@ interface StoryState {
 
 let saveTimer: ReturnType<typeof setTimeout> | undefined;
 let abort: AbortController | null = null;
+/** Bumped on every navigation so slow story loads can't override a newer choice. */
+let navSeq = 0;
+let initPromise: Promise<void> | null = null;
 let lastEditAt = 0;
 
 function scheduleSave(get: () => StoryState, set: (p: Partial<StoryState>) => void) {
@@ -202,14 +207,20 @@ export const useStory = create<StoryState>((set, get) => ({
   activeShelf: null,
   scriptLogs: [],
 
-  async init() {
+  init() {
+    initPromise ??= get().reload();
+    return initPromise;
+  },
+
+  async reload() {
+    const seq = ++navSeq;
     try {
       const [library, shelves, presets] = await Promise.all([api.listStories(), api.getShelves(), api.getPresets()]);
       set({ library, shelves, presets, serverDown: false });
       await get().refreshModels();
       const lastId = localStorage.getItem('nw:lastStory');
       const target = library.find((m) => m.id === lastId) ?? library[0];
-      if (target) await get().openStory(target.id);
+      if (target && seq === navSeq) await get().openStory(target.id);
     } catch {
       set({ serverDown: true });
     }
@@ -237,9 +248,11 @@ export const useStory = create<StoryState>((set, get) => ({
   async openStory(id) {
     if (get().current?.id === id) return;
     abort?.abort();
+    const seq = ++navSeq;
     set({ loadingStory: true });
     try {
       const s = migrateStory(await api.getStory(id));
+      if (seq !== navSeq) return;
       s.doc = canonical(s.doc);
       localStorage.setItem('nw:lastStory', id);
       set({ current: s, loadingStory: false, lastContext: null, hypebot: null, generating: false });
@@ -250,8 +263,15 @@ export const useStory = create<StoryState>((set, get) => ({
   },
 
   closeStory() {
+    navSeq++;
     set({ current: null });
     localStorage.removeItem('nw:lastStory');
+  },
+
+  showNewStory() {
+    navSeq++;
+    abort?.abort();
+    set({ current: null, loadingStory: false });
   },
 
   async createStory(p = {}) {
@@ -269,6 +289,7 @@ export const useStory = create<StoryState>((set, get) => ({
   },
 
   async addStory(s) {
+    navSeq++;
     s.doc = canonical(s.doc);
     set({ current: s, lastContext: null, hypebot: null, library: upsertMeta(get().library, { id: s.id, title: s.title, description: s.description, preview: docText(s.doc).slice(0, 200), tags: s.tags, favorite: s.favorite, shelf: s.shelf, mode: s.mode, createdAt: s.createdAt, updatedAt: s.updatedAt }) });
     localStorage.setItem('nw:lastStory', s.id);

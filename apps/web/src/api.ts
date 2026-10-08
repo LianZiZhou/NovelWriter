@@ -142,8 +142,14 @@ export function openLogin(provider: string, type: 'oauth' | 'api_key', onMessage
   return {
     answer: (id, value) => ws.readyState === ws.OPEN && ws.send(JSON.stringify({ type: 'answer', id, value })),
     cancel: () => {
-      if (ws.readyState === ws.OPEN) ws.send(JSON.stringify({ type: 'cancel' }));
-      ws.close();
+      const bye = () => {
+        ws.send(JSON.stringify({ type: 'cancel' }));
+        ws.close();
+      };
+      // Closing a still-connecting socket can leave the server-side login (and its
+      // callback port) running behind a proxy, so cancel explicitly once open.
+      if (ws.readyState === ws.CONNECTING) ws.addEventListener('open', bye, { once: true });
+      else if (ws.readyState === ws.OPEN) bye();
     },
   };
 }

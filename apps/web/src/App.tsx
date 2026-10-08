@@ -151,7 +151,7 @@ function useGlobalHotkeys() {
         s.set({ rightOpen: !s.rightOpen });
       } else if (is('newStory')) {
         e.preventDefault();
-        useStory.setState({ current: null });
+        useStory.getState().showNewStory();
       }
     };
     window.addEventListener('keydown', h);
@@ -246,7 +246,7 @@ export function App() {
         {serverDown && (
           <div className="tip-bar" style={{ margin: '12px auto 0', borderColor: 'var(--warning)', maxWidth: 760, width: 'calc(100% - 40px)' }}>
             <span className="tip-text warning-text">{t('Server unreachable')} — {t('start it with "npm run dev" or "npm start".')}</span>
-            <button type="button" className="btn small" onClick={() => void useStory.getState().init()}>
+            <button type="button" className="btn small" onClick={() => void useStory.getState().reload()}>
               {t('Retry')}
             </button>
           </div>

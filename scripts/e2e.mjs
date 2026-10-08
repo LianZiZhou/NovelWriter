@@ -170,6 +170,7 @@ await step('theme and language switch', async () => {
   await page.getByRole('option', { name: 'English' }).click();
   await page.waitForSelector('text=Send');
   await page.keyboard.press('Escape');
+  await page.waitForTimeout(800); // settings save is debounced
 });
 
 await step('export story to file', async () => {

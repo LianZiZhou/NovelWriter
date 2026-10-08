@@ -24,21 +24,29 @@ function LoginFlow({ state, onDone }: { state: LoginState; onDone: (ok: boolean)
   const conn = useRef<ReturnType<typeof openLogin> | null>(null);
 
   useEffect(() => {
-    const c = openLogin(state.provider.id, state.type, (m) => {
-      if (m.type === 'notify') {
-        setEvents((e) => [...e, m.event]);
-        if (m.event.type === 'auth_url') window.open(m.event.url, '_blank', 'noopener');
-      } else if (m.type === 'prompt') {
-        setPrompt({ id: m.id, prompt: m.prompt });
-        setValue('');
-      } else if (m.type === 'prompt_cancel') setPrompt((p) => (p?.id === m.id ? null : p));
-      else if (m.type === 'done') {
-        setDone(true);
-        setPrompt(null);
-      } else if (m.type === 'error') setError(m.message);
-    });
-    conn.current = c;
-    return () => c.cancel();
+    // Open on the next tick: StrictMode's mount/unmount/mount would otherwise start
+    // two server-side logins that compete for the same OAuth callback port.
+    let c: ReturnType<typeof openLogin> | null = null;
+    const timer = setTimeout(() => {
+      c = openLogin(state.provider.id, state.type, (m) => {
+        if (m.type === 'notify') {
+          setEvents((e) => [...e, m.event]);
+          if (m.event.type === 'auth_url') window.open(m.event.url, '_blank', 'noopener');
+        } else if (m.type === 'prompt') {
+          setPrompt({ id: m.id, prompt: m.prompt });
+          setValue('');
+        } else if (m.type === 'prompt_cancel') setPrompt((p) => (p?.id === m.id ? null : p));
+        else if (m.type === 'done') {
+          setDone(true);
+          setPrompt(null);
+        } else if (m.type === 'error') setError(m.message);
+      });
+      conn.current = c;
+    }, 0);
+    return () => {
+      clearTimeout(timer);
+      c?.cancel();
+    };
   }, [state]);
 
   const submit = (v: string) => {
