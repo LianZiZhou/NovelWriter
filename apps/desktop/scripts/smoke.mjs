@@ -29,6 +29,8 @@ const step = async (name, fn) => {
 const app = await electron.launch({ executablePath, args, env: { ...process.env, ELECTRON_ENABLE_LOGGING: '1' }, timeout: 60_000 });
 try {
   const page = await app.firstWindow();
+  // The window exists before it navigates to the in-process server; wait for that page.
+  await page.waitForURL(/^http:\/\/127\.0\.0\.1:\d+\//, { timeout: 60_000 });
   await page.waitForLoadState('domcontentloaded');
   const origin = new URL(page.url()).origin;
 

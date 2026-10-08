@@ -35,9 +35,28 @@ jobs:
       - run: npm run typecheck
       - run: npm test
 
+  # Tag builds: create the release once, then each platform uploads its installers to it
+  # directly (no artifact storage, so the account's artifact quota can't block a release).
+  release:
+    name: Create GitHub Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
+        with:
+          generate_release_notes: true
+          prerelease: ${{ contains(github.ref_name, '-') }}
+
   build:
     name: Build (${{ matrix.os }})
-    needs: test
+    needs: [test, release]
+    # Runs when the release job was skipped (branch/PR builds) but not when it failed.
+    if: ${{ !cancelled() && needs.test.result == 'success' && needs.release.result != 'failure' }}
+    permissions:
+      contents: write
     strategy:
       fail-fast: false
       matrix:
@@ -96,34 +115,32 @@ jobs:
         if: runner.os == 'Linux'
         run: xvfb-run -a npm run smoke -w @novelwriter/desktop -- "$PWD/apps/desktop/release/linux-unpacked/novelwriter"
 
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - name: List installers
+        shell: bash
+        run: ls -la apps/desktop/release/*.{exe,dmg,zip,AppImage,deb} 2>/dev/null | grep . || { echo "no installers built"; exit 1; }
+
+      - name: Attach installers to the release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
-          name: novelwriter-${{ runner.os }}
-          if-no-files-found: error
-          path: |
+          files: |
             apps/desktop/release/*.exe
             apps/desktop/release/*.dmg
             apps/desktop/release/*.zip
             apps/desktop/release/*.AppImage
             apps/desktop/release/*.deb
 
-  release:
-    name: Publish GitHub Release
-    if: startsWith(github.ref, 'refs/tags/v')
-    needs: build
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      # Branch and PR builds keep the installers for a few days for testing. A full artifact
+      # quota must not fail the build, which has already been checked above.
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        continue-on-error: true
         with:
-          pattern: novelwriter-*
-          path: installers
-          merge-multiple: true
-      - run: ls -la installers
-      - uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
-        with:
-          files: installers/*
-          fail_on_unmatched_files: true
-          generate_release_notes: true
-          prerelease: ${{ contains(github.ref_name, '-') }}
+          name: novelwriter-${{ runner.os }}
+          retention-days: 3
+          path: |
+            apps/desktop/release/*.exe
+            apps/desktop/release/*.dmg
+            apps/desktop/release/*.zip
+            apps/desktop/release/*.AppImage
+            apps/desktop/release/*.deb
