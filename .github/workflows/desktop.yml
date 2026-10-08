@@ -13,9 +13,18 @@ on:
   pull_request:
     paths: *paths
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Attach the installers to this existing release (e.g. v0.0.1); leave empty for a test build
+        required: false
+        default: ''
 
 permissions:
   contents: read
+
+env:
+  # The release the installers go to: the pushed v* tag, or the tag given to a manual run.
+  RELEASE_TAG: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || inputs.release_tag || '' }}
 
 concurrency:
   group: desktop-${{ github.ref }}
@@ -108,7 +117,7 @@ jobs:
         shell: bash
         env:
           # Tag builds carry the tag's version (v1.2.3 -> 1.2.3).
-          NOVELWRITER_VERSION: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '' }}
+          NOVELWRITER_VERSION: ${{ env.RELEASE_TAG }}
         run: npm run desktop:dist
 
       - name: Smoke test the packaged app
@@ -117,12 +126,19 @@ jobs:
 
       - name: List installers
         shell: bash
-        run: ls -la apps/desktop/release/*.{exe,dmg,zip,AppImage,deb} 2>/dev/null | grep . || { echo "no installers built"; exit 1; }
+        # Actions runs bash with -eo pipefail: count matches instead of piping ls, which fails
+        # whenever one of the patterns has no match on this platform.
+        run: |
+          shopt -s nullglob
+          files=(apps/desktop/release/*.{exe,dmg,zip,AppImage,deb})
+          (( ${#files[@]} )) || { echo "no installers built"; exit 1; }
+          ls -la "${files[@]}"
 
       - name: Attach installers to the release
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: env.RELEASE_TAG != ''
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
+          tag_name: ${{ env.RELEASE_TAG }}
           files: |
             apps/desktop/release/*.exe
             apps/desktop/release/*.dmg
@@ -133,7 +149,7 @@ jobs:
       # Branch and PR builds keep the installers for a few days for testing. A full artifact
       # quota must not fail the build, which has already been checked above.
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        if: env.RELEASE_TAG == ''
         continue-on-error: true
         with:
           name: novelwriter-${{ runner.os }}
