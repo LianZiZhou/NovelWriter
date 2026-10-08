@@ -64,6 +64,7 @@ describe('postProcess', () => {
     expect(postProcess('He left. ', 'She stayed.')).toBe('She stayed.');
     expect(postProcess('x', 'abc STOP def', { stop: ['STOP'] })).toBe('abc ');
     expect(postProcess('', 'One. Two', { trimToSentence: true })).toBe('One.');
+    expect(postProcess('> You open the door.\n', ' The hinges creak.')).toBe('The hinges creak.');
   });
   it('removes echoed context', () => {
     expect(postProcess('The rain fell on the town.', 'fell on the town. Then night came.')).toBe(' Then night came.');

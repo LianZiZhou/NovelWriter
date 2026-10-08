@@ -23,10 +23,16 @@ function words(text: string): string[] {
 
 function join(tokens: string[]): string {
   let out = '';
+  let inQuote = false;
   for (const t of tokens) {
+    const isQuote = t === '"' || t === '“' || t === '”';
     if (t === '\n') out += '\n';
-    else if (/^[.,!?;:”…]$/.test(t)) out += t;
-    else if (out === '' || out.endsWith('\n') || out.endsWith('“') || out.endsWith('"') && (out.match(/"/g)?.length ?? 0) % 2 === 1) out += t;
+    else if (isQuote) {
+      // Opening quotes attach to the next word, closing quotes to the previous one.
+      out += inQuote ? t : out === '' || out.endsWith('\n') ? t : ` ${t}`;
+      inQuote = !inQuote;
+    } else if (/^[.,!?;:…]$/.test(t)) out += t;
+    else if (out === '' || out.endsWith('\n') || (inQuote && /["“]$/.test(out))) out += t;
     else out += ' ' + t;
   }
   return out;

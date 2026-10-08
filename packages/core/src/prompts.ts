@@ -97,6 +97,8 @@ export function postProcess(
     const m = /^([\s\S]*[.!?…。！？]["'”’)\]]*)(?=\s|$)/.exec(g);
     if (m && m[1].trim().length > 0) g = m[1];
   }
+  // At the start of a story or paragraph, leading spaces are never wanted.
+  if (!existing || existing.endsWith('\n')) g = g.replace(/^[ \t]+/, '');
   const last = existing.slice(-1);
   const first = g.slice(0, 1);
   if (existing && last && !/\s/.test(last) && first && /[\p{L}\p{N}"“'(]/u.test(first) && /[.!?…,;:"”’)\]\p{L}\p{N}]/u.test(last)) {

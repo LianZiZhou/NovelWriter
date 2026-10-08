@@ -1,0 +1,403 @@
+/* Design tokens are set on :root by applyTheme(). Defaults match "NovelAI Dark". */
+:root {
+  --bg0: #0e0f21;
+  --bg1: #13152c;
+  --bg2: #191b31;
+  --bg3: #22253f;
+  --text-headings: #f5f3c2;
+  --text-main: #ffffff;
+  --text-disabled: #ffffffa0;
+  --text-placeholder: #ffffff77;
+  --warning: #ff7878;
+  --text-highlight: rgba(255, 120, 120, 0.4);
+  --text-prompt: #f5f3c2;
+  --text-user: #9cdcff;
+  --text-edit: #f4c7ff;
+  --text-ai: #ffffff;
+  --low-intensity: #0466ce;
+  --mid-intensity: #009707;
+  --high-intensity: #b83700;
+  --font-default: 'Source Sans 3', 'Source Sans Pro', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-field: var(--font-default);
+  --font-headings: 'Eczar', serif;
+  --font-code: 'Source Code Pro', Menlo, Monaco, Consolas, monospace;
+  --editor-font-size: 18px;
+  --editor-line-height: 1.8;
+  --paragraph-spacing: 9px;
+  --editor-width: 780px;
+  --ui-scale: 1;
+  --transition: 0.08s ease-in-out;
+  --left-width: 349px;
+  --right-width: 399px;
+  --success: #7eff90;
+  color-scheme: dark;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--bg2);
+  color: var(--text-main);
+  font-family: var(--font-default);
+  font-size: calc(16px * var(--ui-scale));
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  font-weight: 600;
+}
+button:disabled {
+  cursor: default;
+  color: var(--text-disabled);
+}
+
+input,
+textarea,
+select {
+  font: inherit;
+  color: inherit;
+}
+
+::placeholder {
+  color: var(--text-placeholder);
+  opacity: 1;
+}
+
+::selection {
+  background: var(--text-highlight);
+}
+
+h1,
+h2,
+h3,
+h4 {
+  font-family: var(--font-headings);
+  font-weight: 600;
+  margin: 0;
+}
+
+a {
+  color: var(--text-headings);
+}
+
+/* Scrollbars: thin and dark like the original. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--bg3) transparent;
+}
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--bg3);
+}
+
+/* ------------------------------------------------------------------ primitives */
+
+.heading {
+  font-family: var(--font-headings);
+  font-weight: 600;
+  font-size: 16px;
+  line-height: 24px;
+}
+
+.sub-heading {
+  color: var(--text-headings);
+  font-size: 14.4px;
+  font-weight: 600;
+  line-height: 21.6px;
+}
+
+.desc {
+  font-size: 14px;
+  line-height: 21px;
+  opacity: 0.8;
+}
+
+.muted {
+  color: var(--text-disabled);
+}
+
+.warning-text {
+  color: var(--warning);
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: var(--bg3);
+  border-radius: 4px;
+  padding: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 21px;
+  transition: background var(--transition), opacity var(--transition);
+  white-space: nowrap;
+}
+.btn:hover:not(:disabled) {
+  filter: brightness(1.15);
+}
+.btn.primary {
+  background: var(--text-headings);
+  color: var(--bg1);
+}
+.btn.danger {
+  background: var(--warning);
+  color: var(--bg1);
+}
+.btn.outline {
+  background: var(--bg1);
+  border: 1px solid var(--text-headings);
+  color: var(--text-headings);
+}
+.btn.dark {
+  background: var(--bg1);
+}
+.btn.block {
+  width: 100%;
+}
+.btn.small {
+  padding: 4px 8px;
+  font-size: 13px;
+}
+
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 3px;
+  color: var(--text-main);
+  opacity: 0.9;
+  transition: opacity var(--transition), background var(--transition);
+}
+.icon-btn:hover:not(:disabled) {
+  opacity: 1;
+}
+.icon-btn:disabled {
+  opacity: 0.35;
+}
+.icon-btn.boxed {
+  background: var(--bg1);
+  padding: 9.6px 12.8px;
+}
+
+.link-btn {
+  font-size: 14px;
+  font-weight: 400;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  opacity: 0.9;
+}
+.link-btn:hover {
+  opacity: 1;
+}
+
+.input,
+.textarea,
+.select {
+  width: 100%;
+  background: var(--bg0);
+  border: 1px solid transparent;
+  border-radius: 0;
+  outline: none;
+  padding: 10px;
+  font-size: 14px;
+  font-family: var(--font-field);
+  line-height: 21px;
+  transition: border-color var(--transition);
+}
+.input:focus,
+.textarea:focus {
+  border-color: var(--bg3);
+}
+.textarea {
+  resize: vertical;
+  min-height: 80px;
+  display: block;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--bg1);
+  border-radius: 3px;
+  padding: 3px 10px;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 16px;
+}
+
+.divider {
+  height: 1px;
+  background: var(--bg3);
+  border: 0;
+  margin: 0;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.row.between {
+  justify-content: space-between;
+}
+.grow {
+  flex: 1;
+  min-width: 0;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}
+
+/* Toggle: cream track with a dark check square (on) / dark track with x (off). */
+.toggle {
+  position: relative;
+  width: 47px;
+  height: 20px;
+  flex: none;
+  border-radius: 3px;
+  background: var(--bg3);
+  transition: background var(--transition);
+  cursor: pointer;
+}
+.toggle .knob {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 26px;
+  height: 14px;
+  border-radius: 2px;
+  background: var(--bg1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  color: var(--text-main);
+  transition: left var(--transition);
+}
+.toggle.on {
+  background: var(--text-headings);
+}
+.toggle.on .knob {
+  left: 18px;
+  color: var(--text-headings);
+}
+
+/* Slider: flat dark track with a square handle. */
+.slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 22px;
+  background: transparent;
+  margin: 0;
+  cursor: pointer;
+}
+.slider::-webkit-slider-runnable-track {
+  height: 22px;
+  background: var(--bg0);
+  border: 1px solid var(--bg1);
+}
+.slider::-moz-range-track {
+  height: 20px;
+  background: var(--bg0);
+  border: 1px solid var(--bg1);
+}
+.slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px;
+  height: 20px;
+  background: var(--bg3);
+  border: 0;
+  border-radius: 0;
+}
+.slider::-moz-range-thumb {
+  width: 14px;
+  height: 20px;
+  background: var(--bg3);
+  border: 0;
+  border-radius: 0;
+}
+
+.checkbox {
+  width: 24px;
+  height: 24px;
+  border-radius: 3px;
+  background: var(--bg3);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--bg1);
+  flex: none;
+}
+.checkbox.on {
+  background: var(--text-headings);
+}
+
+/* Origin colors in editor and previews. */
+.o-prompt {
+  color: var(--text-prompt);
+}
+.o-ai {
+  color: var(--text-ai);
+}
+.o-edit {
+  color: var(--text-edit);
+}
+.o-user {
+  color: var(--text-user);
+}
+
+.spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  display: inline-block;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.fade-in {
+  animation: fadein 0.15s ease-out;
+}
+@keyframes fadein {
+  from {
+    opacity: 0;
+  }
+}

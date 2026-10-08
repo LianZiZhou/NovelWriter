@@ -1,0 +1,130 @@
+// End-to-end smoke test against a running dev stack (server + vite), using the offline demo model.
+// Usage: node scripts/e2e.mjs [baseUrl]
+import { chromium } from 'playwright-core';
+import assert from 'node:assert/strict';
+import { mkdirSync } from 'node:fs';
+
+const base = process.argv[2] ?? 'http://127.0.0.1:5173';
+const out = new URL('../reference/e2e/', import.meta.url).pathname;
+mkdirSync(out, { recursive: true });
+const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH ?? '/opt/pw-browsers/chromium', args: ['--no-sandbox'] });
+const ctx = await browser.newContext({ viewport: { width: 1600, height: 900 }, acceptDownloads: true });
+const page = await ctx.newPage();
+const errors = [];
+page.on('pageerror', (e) => errors.push(e.message));
+const step = async (name, fn) => {
+  process.stdout.write(`• ${name} … `);
+  await fn();
+  console.log('ok');
+};
+const editorText = () => page.locator('.ProseMirror').innerText();
+
+await page.goto(base, { waitUntil: 'networkidle' });
+
+await step('use the offline demo model by default', async () => {
+  await page.evaluate(async () => {
+    const s = await (await fetch('/api/settings')).json();
+    await fetch('/api/settings', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...s, defaultModel: { provider: 'demo', id: 'markov' }, language: 'en' }) });
+  });
+  await page.reload({ waitUntil: 'networkidle' });
+});
+
+await step('create a storyteller story and type a prompt', async () => {
+  await page.getByRole('button', { name: 'create a new story' }).click();
+  await page.getByRole('button', { name: /Storyteller/ }).first().click();
+  await page.locator('.ProseMirror').click();
+  await page.keyboard.type('Mara crossed the old bridge in the rain.');
+  assert.equal(await page.locator('.ProseMirror .o-prompt').count() > 0, true, 'prompt text should be cream (o-prompt)');
+});
+
+await step('send streams AI text', async () => {
+  await page.getByRole('button', { name: 'Send' }).click();
+  await page.waitForSelector('.ProseMirror .o-ai');
+  await page.waitForFunction(() => document.querySelector('.send-btn')?.textContent?.includes('Send'));
+  const text = await editorText();
+  assert.ok(text.length > 'Mara crossed the old bridge in the rain.'.length + 10, 'story grew');
+});
+
+await step('user typing at end is blue, edits are pink', async () => {
+  await page.locator('.ProseMirror').press('Control+End');
+  await page.keyboard.type(' She waited.');
+  await page.waitForSelector('.ProseMirror .o-user');
+  // edit inside the prompt text
+  await page.locator('.ProseMirror p').first().click({ position: { x: 5, y: 10 } });
+  await page.keyboard.press('Home');
+  await page.keyboard.type('X');
+  await page.waitForSelector('.ProseMirror .o-edit');
+});
+
+await step('retry produces a sibling branch', async () => {
+  await page.getByRole('button', { name: 'Send' }).click();
+  await page.waitForFunction(() => document.querySelector('.send-btn')?.textContent?.includes('Send'));
+  const before = await editorText();
+  await page.getByRole('button', { name: 'Retry' }).click();
+  await page.waitForFunction(() => document.querySelector('.send-btn')?.textContent?.includes('Send'));
+  await page.waitForTimeout(300);
+  const count = await page.locator('.branch-count').innerText();
+  assert.equal(count.trim(), '2', 'two retry options');
+  await page.locator('.branch-count').click();
+  await page.locator('.popover .select-option').first().click();
+  assert.equal(await editorText(), before, 'switching to first branch restores its text');
+});
+
+await step('undo and redo', async () => {
+  const before = await editorText();
+  await page.getByRole('button', { name: 'Undo' }).click();
+  assert.notEqual(await editorText(), before);
+  await page.getByRole('button', { name: 'Redo' }).click();
+  assert.equal(await editorText(), before);
+});
+
+await step('memory and lorebook activation show in the context viewer', async () => {
+  await page.getByLabel('memory', { exact: true }).fill('MEMORY-MARKER');
+  await page.getByRole('button', { name: 'Lorebook', exact: true }).first().click();
+  await page.getByRole('button', { name: /^Entry$/ }).click();
+  await page.getByLabel('Entry Text').fill('LORE-MARKER: Mara is a courier.');
+  await page.getByLabel('save key').fill('mara');
+  await page.getByLabel('save key').press('Enter');
+  await page.keyboard.press('Escape');
+  await page.getByRole('tab', { name: 'Advanced' }).click();
+  await page.getByRole('button', { name: 'Current Context' }).click();
+  const ctxText = await page.locator('.ctx-text').innerText();
+  assert.ok(ctxText.startsWith('MEMORY-MARKER'), 'memory at top');
+  assert.ok(ctxText.includes('LORE-MARKER'), 'lore entry activated by key');
+  await page.screenshot({ path: `${out}context-viewer.png` });
+  await page.keyboard.press('Escape');
+  await page.getByRole('tab', { name: 'Story' }).click();
+});
+
+await step('text adventure input', async () => {
+  await page.getByRole('button', { name: 'create a new story' }).click();
+  await page.getByRole('button', { name: /Text Adventure/ }).first().click();
+  await page.getByPlaceholder('What do you do?').fill('open the door');
+  await page.getByPlaceholder('What do you do?').press('Enter');
+  await page.waitForSelector('.ProseMirror .action-line');
+  await page.waitForFunction(() => document.querySelector('.send-btn')?.textContent?.includes('Send'));
+  const txt = await editorText();
+  assert.ok(txt.includes('You open the door.'), 'action inserted');
+  assert.ok(!txt.includes('> You'), 'the > marker is hidden');
+  await page.screenshot({ path: `${out}adventure.png` });
+});
+
+await step('stories persist across reload', async () => {
+  await page.waitForTimeout(1000);
+  await page.reload({ waitUntil: 'networkidle' });
+  await page.waitForSelector('.story-card');
+  assert.ok((await page.locator('.story-card').count()) >= 2);
+});
+
+await step('export story to file', async () => {
+  const [dl] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'To File' }).click()]);
+  assert.ok(dl.suggestedFilename().endsWith('.story'));
+});
+
+await page.screenshot({ path: `${out}final.png` });
+await browser.close();
+if (errors.length) {
+  console.error('page errors:\n' + errors.join('\n'));
+  process.exit(1);
+}
+console.log('all e2e steps passed');
