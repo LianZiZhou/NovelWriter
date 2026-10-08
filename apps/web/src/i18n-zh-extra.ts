@@ -929,4 +929,5 @@ export const ZH_EXTRA: Record<string, string> = {
   "Create, change and delete lorebook entries": "创建、修改和删除知识条目",
   "Highlight and style text in the editor": "在编辑器中高亮和设置文本样式",
   "Change generation settings": "修改生成设置",
+  "For NovelAI (.story)": "导出为 NovelAI 格式 (.story)",
 };

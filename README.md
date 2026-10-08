@@ -46,6 +46,66 @@ Credentials are stored in `data/auth.json` on the server and never sent to the b
 | `NOVELWRITER_DATA` | `./data` | Stories, presets, settings, credentials |
 | `NOVELWRITER_PASSWORD` | – | Require HTTP Basic auth (any username). **Set this before exposing the server beyond localhost.** |
 
+## Desktop app
+
+NovelWriter also ships as a desktop app for Windows, macOS and Linux. It runs the same server inside
+the app (on `127.0.0.1`, with a random port and a per-launch password, so other programs and web pages
+cannot use your stored credentials) and shows the UI in its own window. Login links, device-code pages
+and other external links open in your normal browser.
+
+### Download
+
+Get the installer for your system from the
+[Releases page](https://github.com/LianZiZhou/NovelWriter/releases):
+
+| System | File |
+|---|---|
+| Windows (x64) | `NovelWriter-Setup-<version>-x64.exe` (installer, lets you pick the folder) or `NovelWriter-Portable-<version>-x64.exe` (no install) |
+| macOS (Apple Silicon / Intel) | `NovelWriter-<version>-arm64.dmg` / `NovelWriter-<version>-x64.dmg` (`.zip` versions too) |
+| Linux (x64) | `NovelWriter-<version>-x86_64.AppImage` (`chmod +x`, then run) or `novelwriter_<version>_amd64.deb` (`sudo apt install ./novelwriter_*.deb`) |
+
+The builds are not signed with a paid certificate, so the first launch needs one extra step:
+
+- **macOS** (Gatekeeper says the app "cannot be opened" or "is damaged"): move it to Applications,
+  then right-click it and choose **Open**, or allow it under **System Settings → Privacy & Security →
+  Open Anyway**. If macOS still refuses, run `xattr -dr com.apple.quarantine /Applications/NovelWriter.app`.
+- **Windows** (SmartScreen "Windows protected your PC"): click **More info → Run anyway**.
+
+### Where your data is stored
+
+Stories, presets, settings and credentials (`auth.json`) live in a `data` folder inside the app's
+user-data directory (**Help → Open Data Folder** opens it):
+
+| System | Folder |
+|---|---|
+| Windows | `%APPDATA%\NovelWriter\data` |
+| macOS | `~/Library/Application Support/NovelWriter/data` |
+| Linux | `~/.config/NovelWriter/data` (or `$XDG_CONFIG_HOME/NovelWriter/data`) |
+
+Set `NOVELWRITER_DATA` to use another folder, for example the `data` folder of a server install.
+Uninstalling keeps this folder.
+
+### Building it yourself
+
+```bash
+npm install
+npm run desktop:dev    # build the web UI, bundle the main process and start Electron
+npm run desktop:dist   # installers for the current OS in apps/desktop/release/
+```
+
+`desktop:dist` builds what the current OS supports: NSIS installer + portable exe on Windows, dmg + zip
+(x64 and arm64) on macOS, AppImage + deb on Linux. The Electron main process and the whole server
+(`apps/server`, `packages/core` and their dependencies) are bundled into one file with esbuild
+(`apps/desktop/scripts/bundle.mjs`); the web UI is copied into the app's resources. On Linux,
+`xvfb-run -a npm run smoke -w @novelwriter/desktop` runs a smoke test against the bundle (pass the path
+of a packaged executable to test that instead).
+
+Tagging a commit `v*` runs `.github/workflows/desktop.yml`, which builds on Windows, macOS and Linux and
+attaches the installers to a GitHub Release. Code signing is optional: add the `MAC_CSC_LINK` /
+`MAC_CSC_KEY_PASSWORD` (plus `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID` for notarization)
+or `WIN_CSC_LINK` / `WIN_CSC_KEY_PASSWORD` secrets to sign; without them the macOS app is ad-hoc signed and
+the Windows installer is unsigned.
+
 ## Features
 
 - **Editor**: text colored by origin (prompt, AI, edited, user), Send (Ctrl+Enter), Retry
@@ -62,7 +122,7 @@ Credentials are stored in `data/auth.json` on the server and never sent to the b
   generation keeps a Title Generation History.
 - **Story panel**: storyteller / text-adventure mode, model and preset pickers, Memory,
   Author's Note, Lorebook quick search, story stats, trim/flatten/reset, export to
-  `.story`, `.scenario`, plain text, clipboard or image.
+  `.story`, NovelAI `.story` ("For NovelAI"), `.scenario`, plain text, clipboard or image.
 - **Context**: NovelAI-style context assembly (insertion order, reserved tokens, token budgets,
   insertion position, trim direction and maximum trim type), ATTG line, ephemeral context
   (`{+3~10,-2:text}` relative or `{12~10,-2:text}` absolute steps, also typed straight into the
@@ -93,7 +153,9 @@ Credentials are stored in `data/auth.json` on the server and never sent to the b
   search the whole library or one shelf, favorites, sort by recent/alphabetical/creation date, and
   Download All Stories as a `.zip`.
 - **Import** (drop files on the window or use Import File): NovelAI `.story` (fragment-based and the
-  newer document format; text from the latter comes in as prompt text), `.scenario` (incl. phrase bias,
+  current document format with its full undo/redo tree, branches, text origins, bold/italic/underline/
+  strikethrough, action/dialogue/instruction paragraphs, settings, Memory/AN, lorebook advanced conditions,
+  phrase bias, banned sequences, system prompt/prefill, Side Chats and script storage), `.scenario` (incl. phrase bias,
   banned tokens, ephemeral context, sampler settings), `.lorebook`, `.preset`/`.gensettings`, `.bias`,
   `.badwords`, `.module` (as a style note; trained modules can't run), KoboldAI saves, AI Dungeon
   adventures/scenarios, SillyTavern/Agnai lorebooks, plain text and PNG-embedded lorebooks.
@@ -206,4 +268,4 @@ The keystroke figures run from the input event to the next frame, so about 11 ms
 frame.
 
 Layout: `packages/core` (context builder, lorebook, history, formats; no DOM),
-`apps/server` (Fastify + pi-ai), `apps/web` (React UI).
+`apps/server` (Fastify + pi-ai), `apps/web` (React UI), `apps/desktop` (Electron app).

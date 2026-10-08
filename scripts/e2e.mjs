@@ -252,12 +252,14 @@ await step('instruction lines and ephemeral entries typed in the story', async (
   await page.keyboard.type('{');
   await page.keyboard.type('Describe the storm');
   await page.waitForSelector('.ProseMirror p.instruction-line');
-  assert.ok((await editorText()).includes('{ Describe the storm }'), 'brace auto-closed');
+  { const txt = await editorText(); assert.ok(txt.includes('{ Describe the storm }'), `brace auto-closed: ${JSON.stringify(txt.slice(-80))}`); }
   await page.keyboard.press('End');
   await page.keyboard.press('Enter');
   await page.keyboard.type('{');
   await page.keyboard.type('+0~3,-1:EPHNOTE');
   await page.getByRole('button', { name: 'Send' }).click();
+  // The line leaves the story when generation starts; waiting on the Send label alone can pass before that.
+  await page.waitForFunction(() => !document.querySelector('.ProseMirror')?.textContent?.includes('EPHNOTE'), null, { timeout: 10000 });
   await page.waitForFunction(() => document.querySelector('.send-btn')?.getAttribute('aria-label') === 'Send');
   assert.equal((await editorText()).includes('EPHNOTE'), false, 'ephemeral line moved out of the story');
   // Saves are batched; poll until the entry reaches the server.

@@ -2,7 +2,8 @@ import { docText, plainDoc } from './doc.ts';
 import { biasGroup, contextConfig, emptyLorebook, migrateStory, newLoreCategory, newLoreEntry, newStory } from './defaults.ts';
 import { flatten } from './history.ts';
 import { uid } from './util.ts';
-import { applyNovelAIExtras, bannedSequences, importAIDungeon, importKoboldSave, isAIDungeon, isKoboldSave, isNovelAIModule, moduleNote, novelAIDocumentText } from './foreign.ts';
+import { conditionFromNovelAI, conditionToNovelAI, exportNovelAIDocument, novelAIContentDoc, sideChatsFromNovelAI, sideChatsToNovelAI } from './novelai.ts';
+import { applyNovelAIExtras, bannedSequences, importAIDungeon, importKoboldSave, isAIDungeon, isKoboldSave, isNovelAIModule, moduleNote } from './foreign.ts';
 import type { ContextConfig, GenerationParams, LoreCategory, LoreEntry, Lorebook, PhraseBiasGroup, Placeholder, SamplerId, Story } from './types.ts';
 
 // ---------------------------------------------------------------- story files
@@ -166,7 +167,10 @@ function phraseText(p: unknown): string | null {
   if (typeof p === 'string') return p;
   if (p && typeof p === 'object') {
     const o = p as Record<string, unknown>;
-    if (typeof o.sequence === 'string') return o.sequence;
+    // NovelAI phrase types: 0 raw string (our {braces}), 2 interpreted string, others are token lists.
+    if (o.type === 0 && typeof o.sequence === 'string' && o.sequence) return `{${o.sequence}}`;
+    if (typeof o.sequence === 'string' && o.sequence) return o.sequence;
+    if (Array.isArray(o.sequences) && Array.isArray(o.sequences[0])) return `[${(o.sequences[0] as number[]).join(', ')}]`;
     if (typeof o.text === 'string') return o.text;
     if (typeof o.phrase === 'string') return o.phrase;
   }
@@ -228,7 +232,11 @@ export function importLorebook(raw: Record<string, unknown>): Lorebook {
       category: e.category ? String(e.category) : null,
       contextConfig: importContextConfig(e.contextConfig, defaults),
       loreBiasGroups: Array.isArray(e.loreBiasGroups) ? e.loreBiasGroups.map(importBiasGroup) : [biasGroup()],
-      conditions: Array.isArray(e.conditions) ? (e.conditions as LoreEntry['conditions']) : [],
+      conditions: Array.isArray(e.advancedConditions)
+        ? (e.advancedConditions as Record<string, unknown>[]).map(conditionFromNovelAI)
+        : Array.isArray(e.conditions)
+          ? (e.conditions as LoreEntry['conditions'])
+          : [],
       lastUpdatedAt: Number(e.lastUpdatedAt ?? Date.now()),
     }),
   );
@@ -297,21 +305,40 @@ export function importForeignLorebook(data: unknown): Lorebook | null {
   return null;
 }
 
-/** Export in the NovelAI lorebook JSON layout (lorebookVersion 5). */
+/** A phrase of ours in NovelAI's layout: {raw} → RawString, [ids] → kept as raw text, else InterpretedString. */
+function novelAIPhrase(p: string): { sequences: number[][]; sequence: string; type: number } {
+  const raw = /^\{([\s\S]*)\}$/.exec(p);
+  return raw ? { sequences: [], sequence: raw[1], type: 0 } : { sequences: [], sequence: p, type: 2 };
+}
+
+export function novelAIBiasGroups(groups: PhraseBiasGroup[]): Record<string, unknown>[] {
+  return groups.map((g) => ({
+    phrases: g.phrases.map(novelAIPhrase),
+    ensureSequenceFinish: g.ensureSequenceFinish,
+    generateOnce: g.generateOnce,
+    bias: g.bias,
+    enabled: g.enabled,
+    whenInactive: g.whenInactive,
+  }));
+}
+
+/** The lorebook in NovelAI's layout (lorebookVersion 6, advanced conditions included). */
+export function novelAILorebook(lb: Lorebook): Record<string, unknown> {
+  return {
+    lorebookVersion: 6,
+    entries: lb.entries.map((e) => {
+      const { conditions, loreBiasGroups, category, ...rest } = e;
+      return { ...rest, category: category ?? '', loreBiasGroups: novelAIBiasGroups(loreBiasGroups), advancedConditions: conditions.map(conditionToNovelAI) };
+    }),
+    settings: lb.settings,
+    categories: lb.categories.map((c) => ({ ...c, categoryBiasGroups: novelAIBiasGroups(c.categoryBiasGroups), subcontextSettings: { text: '', contextConfig: c.subcontextSettings } })),
+    order: [],
+  };
+}
+
+/** Export in the NovelAI lorebook JSON layout. */
 export function exportLorebook(lb: Lorebook): string {
-  return JSON.stringify(
-    {
-      lorebookVersion: 5,
-      entries: lb.entries.map((e) => ({
-        ...e,
-        loreBiasGroups: e.loreBiasGroups.map((g) => ({ ...g, phrases: g.phrases.map((p) => ({ sequence: p, type: 'text' })) })),
-      })),
-      settings: lb.settings,
-      categories: lb.categories.map((c) => ({ ...c, subcontextSettings: { text: '', contextConfig: c.subcontextSettings } })),
-    },
-    null,
-    2,
-  );
+  return JSON.stringify(novelAILorebook(lb), null, 2);
 }
 
 /** Merge an imported lorebook into an existing one, re-keying colliding ids. */
@@ -380,14 +407,10 @@ export function importParams(raw: Record<string, unknown> | undefined): Story['p
 }
 
 /** Export in NovelAI's preset layout, plus our own fields under `novelwriter` (context size, dynamic range). */
-export function exportPreset(name: string, p: GenerationParams): string {
+/** Generation parameters in NovelAI's layout (presets and story settings). */
+export function novelAIParameters(p: GenerationParams): Record<string, unknown> {
   const inv = Object.fromEntries(Object.entries(NAI_ORDER).map(([k, v]) => [v, k]));
-  return JSON.stringify(
-    {
-      presetVersion: 3,
-      name,
-      id: uid(),
-      parameters: {
+  return {
         textGenerationSettingsVersion: 5,
         temperature: p.temperature,
         max_length: Math.round(p.maxLength / 4),
@@ -411,7 +434,16 @@ export function exportPreset(name: string, p: GenerationParams): string {
         math1_quad_entropy_scale: p.unifiedConf,
         min_p: p.minP,
         order: p.order.map((o) => ({ id: inv[o.id], enabled: o.enabled })),
-      },
+  };
+}
+
+export function exportPreset(name: string, p: GenerationParams): string {
+  return JSON.stringify(
+    {
+      presetVersion: 3,
+      name,
+      id: uid(),
+      parameters: novelAIParameters(p),
       novelwriter: { maxContext: p.maxContext, dynamicPenaltyRange: p.dynamicPenaltyRange },
     },
     null,
@@ -461,42 +493,141 @@ function importNovelAIScenario(d: Record<string, unknown>): Story {
   return s;
 }
 
-/**
- * NovelAI `.story` files: V1 keeps the text as origin-tagged fragments; V2 keeps it in a msgpack `document`
- * (text comes in as prompt text, since its origin data isn't documented).
- */
+/** NovelAI `.story` files: text and full history (document or legacy fragments) and every story setting. */
 function importNovelAIStory(d: Record<string, unknown>): Story {
   const meta = (d.metadata ?? {}) as Record<string, unknown>;
   const content = (d.content ?? {}) as Record<string, unknown>;
-  const storyRaw = (content.story ?? {}) as { fragments?: { data: string; origin: string }[] };
-  let doc: Story['doc'] = (storyRaw.fragments ?? []).map((f) => ({
-    text: f.data,
-    origin: (f.origin === 'ai' ? 'ai' : f.origin === 'edit' ? 'edit' : f.origin === 'prompt' || f.origin === 'root' ? 'prompt' : 'user') as Story['doc'][number]['origin'],
-  }));
-  if (typeof content.document === 'string') {
-    const text = novelAIDocumentText(content.document);
-    if (text !== null && (text.length >= docText(doc).length || !doc.length)) doc = plainDoc(text, 'prompt');
-  }
+  const { doc, history, step } = novelAIContentDoc(content);
   const ctx = Array.isArray(content.context) ? (content.context as { text?: string; contextConfig?: unknown }[]) : [];
-  const settings = (content.settings ?? {}) as { parameters?: Record<string, unknown> };
+  const settings = (content.settings ?? {}) as { parameters?: Record<string, unknown>; model?: string };
+  const attg = (content.attg ?? {}) as { tags?: unknown[]; genre?: unknown[] };
+  const msg = (content.messageSettings ?? {}) as { systemPrompts?: Record<string, string>; prefills?: Record<string, string> };
+  const pick = (m: Record<string, string> | undefined) => (m ? (settings.model && m[settings.model]) || Object.values(m).find(Boolean) || '' : '');
+  const date = (v: unknown) => (typeof v === 'number' ? v : typeof v === 'string' ? Date.parse(v) || Date.now() : Date.now());
   const s = newStory({
     title: String(meta.title ?? 'Imported Story'),
     description: String(meta.description ?? ''),
     tags: Array.isArray(meta.tags) ? meta.tags.map(String) : [],
     favorite: Boolean(meta.favorite),
     mode: meta.isTA ? 'adventure' : 'storyteller',
+    createdAt: date(meta.createdAt),
+    updatedAt: date(meta.lastUpdatedAt),
     doc,
-    history: flatten(doc),
+    history,
+    step,
     memory: ctx[0]?.text ?? '',
     authorsNote: ctx[1]?.text ?? '',
     lorebook: content.lorebook ? importLorebook(content.lorebook as Record<string, unknown>) : emptyLorebook(),
     params: settings.parameters ? importParams(settings.parameters) : newStory().params,
-    step: Number((content.story as { step?: number } | undefined)?.step ?? 0),
+    genre: Array.isArray(attg.genre) ? attg.genre.map(String).join(', ') : '',
+    systemPrompt: pick(msg.systemPrompts),
+    prefill: pick(msg.prefills),
+    chats: sideChatsFromNovelAI(content.sideChats),
+    attgPrompted: true,
   });
+  if (Array.isArray(attg.tags) && attg.tags.length && !s.tags.length) s.tags = attg.tags.map(String);
   if (ctx[0]?.contextConfig) s.contextSettings.memory = importContextConfig(ctx[0].contextConfig, s.contextSettings.memory);
   if (ctx[1]?.contextConfig) s.contextSettings.authorsNote = importContextConfig(ctx[1].contextConfig, s.contextSettings.authorsNote);
   applyNovelAIExtras(s, content, importBiasGroup);
   return s;
+}
+
+const NAI_CONTEXT = (c: ContextConfig) => ({
+  prefix: c.prefix,
+  suffix: c.suffix,
+  tokenBudget: c.tokenBudget,
+  reservedTokens: c.reservedTokens,
+  budgetPriority: c.budgetPriority,
+  trimDirection: c.trimDirection,
+  insertionType: c.insertionType,
+  maximumTrimType: c.maximumTrimType,
+  insertionPosition: c.insertionPosition,
+});
+
+/** The model NovelAI stories default to; ours are other providers' models, so the file keeps NovelAI's default. */
+const NAI_DEFAULT_MODEL = 'glm-4-6';
+
+/**
+ * Export as a NovelAI `.story` file (storyContentVersion 7): the document with its whole history tree, Memory,
+ * Author's Note, lorebook, ephemeral context, phrase bias, banned sequences, generation settings, system prompt
+ * and prefill, Side Chats and ATTG.
+ */
+export function exportNovelAIStory(story: Story): string {
+  const text = docText(story.doc);
+  const model = NAI_DEFAULT_MODEL;
+  const cs = story.contextSettings;
+  const loreDefault = newLoreEntry({ displayName: 'New Lorebook Entry' }, cs.loreDefaults);
+  const container = {
+    storyContainerVersion: 1,
+    metadata: {
+      storyMetadataVersion: 1,
+      id: crypto.randomUUID ? crypto.randomUUID() : uid(),
+      title: story.title,
+      description: story.description,
+      textPreview: text.slice(0, 500),
+      isTA: story.mode === 'adventure',
+      favorite: story.favorite,
+      tags: story.tags,
+      createdAt: story.createdAt,
+      lastUpdatedAt: story.updatedAt,
+      isModified: true,
+      hasDocument: true,
+    },
+    content: {
+      storyContentVersion: 7,
+      settings: {
+        parameters: { ...novelAIParameters(story.params), textGenerationSettingsVersion: 8 },
+        preset: '',
+        trimResponses: true,
+        banBrackets: story.banBrackets,
+        defaultBias: true,
+        prefix: 'vanilla',
+        dynamicPenaltyRange: story.params.dynamicPenaltyRange,
+        prefixMode: 0,
+        mode: story.mode === 'adventure' ? 1 : 0,
+        model,
+      },
+      document: exportNovelAIDocument(story),
+      context: [
+        { text: story.memory, contextConfig: NAI_CONTEXT(cs.memory) },
+        { text: story.authorsNote, contextConfig: NAI_CONTEXT(cs.authorsNote) },
+      ],
+      lorebook: novelAILorebook(story.lorebook),
+      storyContextConfig: { ...NAI_CONTEXT(cs.story), allowInsertionInside: true },
+      ephemeralContext: story.ephemeral.map((e) => ({
+        text: e.text,
+        contextConfig: { ...NAI_CONTEXT(cs.memory), budgetPriority: -10000, reservedTokens: 1, trimDirection: 'doNotTrim', maximumTrimType: 'newline', insertionPosition: e.position },
+        startingStep: e.startingStep,
+        delay: e.delay,
+        duration: e.duration,
+        repeat: e.repeat,
+        reverse: false,
+      })),
+      contextDefaults: {
+        ephemeralDefaults: [
+          {
+            text: '',
+            contextConfig: { prefix: '', suffix: '\n', tokenBudget: 1, reservedTokens: 1, budgetPriority: -10000, trimDirection: 'doNotTrim', insertionType: 'newline', maximumTrimType: 'newline', insertionPosition: -2 },
+            startingStep: 1,
+            delay: 0,
+            duration: 1,
+            repeat: false,
+            reverse: false,
+          },
+        ],
+        loreDefaults: [{ ...(novelAILorebook({ ...emptyLorebook(), entries: [loreDefault] }).entries as object[])[0], text: '' }],
+      },
+      settingsDirty: false,
+      phraseBiasGroups: novelAIBiasGroups(story.phraseBias.length ? story.phraseBias : [biasGroup()]),
+      bannedSequenceGroups: [{ sequences: story.bannedTokens.map(novelAIPhrase), enabled: true }],
+      messageSettings: { systemPrompts: story.systemPrompt ? { [model]: story.systemPrompt } : {}, prefills: story.prefill ? { [model]: story.prefill } : {} },
+      sideChats: sideChatsToNovelAI(story.chats ?? [], model),
+      userScripts: [],
+      scriptStorage: { storyStorage: {}, historyStorage: {} },
+      attg: { tags: story.tags, genre: story.genre ? story.genre.split(',').map((x) => x.trim()).filter(Boolean) : [] },
+    },
+  };
+  return JSON.stringify(container);
 }
 
 // ---------------------------------------------------------------- PNG embedding

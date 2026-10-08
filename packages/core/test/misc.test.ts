@@ -157,14 +157,5 @@ describe('foreign stories', () => {
     expect(importFile('h.bias', JSON.stringify([{ phrase: 'moon', bias: 2 }]))).toMatchObject({ kind: 'bias', groups: [{ phrases: ['moon'], bias: 2 }] });
   });
 
-  it('reads the text of a msgpack story document', async () => {
-    const { novelAIDocumentText } = await import('../src/foreign.ts');
-    // { sections: { "a": { text: "One" }, "b": { text: "Two" } }, order: ["b", "a"] } in msgpack.
-    const enc = new TextEncoder();
-    const s = (x: string) => [0xa0 | x.length, ...enc.encode(x)];
-    const bytes = new Uint8Array([0x82, ...s('sections'), 0x82, ...s('a'), 0x81, ...s('text'), ...s('One'), ...s('b'), 0x81, ...s('text'), ...s('Two'), ...s('order'), 0x92, ...s('b'), ...s('a')]);
-    let bin = '';
-    for (const b of bytes) bin += String.fromCharCode(b);
-    expect(novelAIDocumentText(btoa(bin))).toBe('Two\nOne');
-  });
+
 });

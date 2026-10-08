@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { ArrowRight, ArrowSquareOut, ArrowsLeftRight, Book, CaretDown, CaretUp, ChartBar, Copy, ImageSquare, CornersOut, DownloadSimple, MagnifyingGlass, Sword, Article } from '@phosphor-icons/react';
-import { backendCaps, countTokens, exportPlaintext, exportScenario, exportStoryFile, searchLore } from '@novelwriter/core';
+import { backendCaps, countTokens, exportNovelAIStory, exportPlaintext, exportScenario, exportStoryFile, searchLore } from '@novelwriter/core';
 import { download, safeFileName, useStory, useStoryMeta } from '../../store/story.ts';
 import { useSettings } from '../../store/settings.ts';
 import { useUI } from '../../store/ui.ts';
@@ -39,10 +39,11 @@ export function StoryTab() {
   const adventure = story.mode === 'adventure';
   const results = q ? searchLore(story.lorebook.entries, q).slice(0, 8) : [];
 
-  const doExport = async (kind: 'file' | 'scenario' | 'text' | 'clipboard' | 'image') => {
+  const doExport = async (kind: 'file' | 'novelai' | 'scenario' | 'text' | 'clipboard' | 'image') => {
     setExportOpen(false);
     const name = safeFileName(story.title);
     if (kind === 'file') download(`${name}.story`, exportStoryFile(story));
+    else if (kind === 'novelai') download(`${name} (NovelAI).story`, exportNovelAIStory(story));
     else if (kind === 'scenario') download(`${name}.scenario`, exportScenario(story));
     else if (kind === 'text') download(`${name}.txt`, exportPlaintext(story), 'text/plain');
     else if (kind === 'clipboard') {
@@ -204,6 +205,7 @@ export function StoryTab() {
           <div className="export-list fade-in">
             {(
               [
+                ['novelai', t('For NovelAI (.story)'), <DownloadSimple size={14} weight="bold" />],
                 ['scenario', t('As Scenario'), <DownloadSimple size={14} weight="bold" />],
                 ['text', t('As Plaintext'), <DownloadSimple size={14} weight="bold" />],
                 ['clipboard', t('To Clipboard'), <Copy size={14} weight="bold" />],
