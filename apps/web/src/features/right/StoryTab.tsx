@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { ArrowRight, ArrowSquareOut, ArrowsLeftRight, Book, CaretDown, ChartBar, CornersOut, DownloadSimple, MagnifyingGlass, Sword, TextAlignLeft } from '@phosphor-icons/react';
+import { ArrowRight, ArrowSquareOut, ArrowsLeftRight, Book, CaretDown, ChartBar, CornersOut, DownloadSimple, MagnifyingGlass, Sword, Article } from '@phosphor-icons/react';
 import { countTokens, exportPlaintext, exportScenario, exportStoryFile, searchLore } from '@novelwriter/core';
 import { download, safeFileName, useStory } from '../../store/story.ts';
 import { useSettings } from '../../store/settings.ts';
@@ -52,7 +52,7 @@ export function StoryTab() {
       <div className="panel-section" style={{ paddingTop: 14 }}>
         <div className="row between">
           <div className="mode-card">
-            <div className="mode-icon">{adventure ? <Sword size={30} /> : <TextAlignLeft size={30} />}</div>
+            <div className="mode-icon">{adventure ? <Sword size={30} /> : <Article size={30} />}</div>
             <div>
               <div className="label">{t('Story Mode')}</div>
               <div className="value">{adventure ? t('Text Adventure') : t('Storyteller')}</div>

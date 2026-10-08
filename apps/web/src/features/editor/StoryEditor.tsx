@@ -31,6 +31,7 @@ export function StoryEditor() {
   const inverted = useSettings((s) => s.highlightSpeechInverted);
   const spellcheck = useSettings((s) => s.editorSpellcheck);
   const findOpen = useUI((s) => s.findOpen);
+  const generating = useStory((s) => s.generating);
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [find, setFind] = useState({ query: '', index: 0 });
   const findRef = useRef(find);
@@ -156,6 +157,11 @@ export function StoryEditor() {
   useEffect(() => {
     editor?.view.dom.setAttribute('spellcheck', String(spellcheck));
   }, [editor, spellcheck]);
+
+  // Streamed text is written at fixed offsets, so editing waits until generation ends.
+  useEffect(() => {
+    editor?.setEditable(!generating, false);
+  }, [editor, generating]);
 
   const gotoMatch = (index: number) => {
     if (!editor || !find.query) return;

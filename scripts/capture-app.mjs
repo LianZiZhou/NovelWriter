@@ -17,7 +17,8 @@ const shot = async (name) => {
 };
 
 await page.goto(base, { waitUntil: 'networkidle' });
-await page.waitForTimeout(800);
+await page.waitForTimeout(1200);
+await page.getByRole('button', { name: 'create a new story' }).click();
 await shot('new-story');
 await page.getByRole('button', { name: /Storyteller/ }).first().click();
 await page.waitForTimeout(500);

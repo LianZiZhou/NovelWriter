@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Play, Sword, TextAlignLeft } from '@phosphor-icons/react';
+import { Play, Sword, Article } from '@phosphor-icons/react';
 import { scenarioToStory } from '@novelwriter/core';
 import { useStory } from '../../store/story.ts';
 import { useUI } from '../../store/ui.ts';
@@ -35,7 +35,7 @@ export function NewStoryPage() {
         <div className="mode-cards">
           <button type="button" className="mode-choice" onClick={() => void start('storyteller')}>
             <span className="mode-icon" style={{ color: 'var(--text-headings)' }}>
-              <TextAlignLeft size={34} />
+              <Article size={34} />
             </span>
             <h2>{t('Storyteller')}</h2>
             <p>{t('Write alongside the AI to flesh out your writing and ideas.')}</p>

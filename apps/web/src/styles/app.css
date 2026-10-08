@@ -105,13 +105,14 @@
 }
 
 .story-card {
-  margin: 0 7px;
-  border-bottom: 1px solid var(--bg3);
+  margin: 7px 7px 0;
+  border: 1px solid transparent;
+  border-radius: 3px;
   cursor: pointer;
   transition: background var(--transition);
 }
-.story-card:first-child {
-  margin-top: 0;
+.story-card.active {
+  border-color: var(--bg3);
 }
 .story-card .card-body {
   padding: 18px 20px 12px;
@@ -603,9 +604,11 @@
 .panel-section:last-child {
   border-bottom: 0;
 }
-.panel-section .heading + .desc,
-.panel-section .section-head + .desc {
+.panel-section .heading + .desc {
   margin-top: -8px;
+}
+.panel-section .section-head + .desc {
+  margin-top: -4px;
 }
 .panel-section .section-head {
   display: flex;
@@ -678,6 +681,12 @@
 .model-select .select-box {
   min-height: 42px;
   background: var(--bg2);
+}
+.right-body .title-btn {
+  background: var(--bg3);
+}
+.mode-card .mode-icon svg {
+  display: block;
 }
 
 .split-btn {
@@ -794,7 +803,7 @@
   width: 100%;
   min-height: 40px;
   background: var(--bg1);
-  border: 1px solid var(--bg2);
+  border: 1px solid var(--bg3);
   display: flex;
   align-items: center;
   padding: 0 0 0 10px;
@@ -808,7 +817,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  border-left: 1px solid var(--bg2);
+  border-left: 1px solid var(--bg3);
+  margin: 6px 0;
 }
 .select-menu {
   position: absolute;

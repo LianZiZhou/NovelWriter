@@ -614,6 +614,9 @@ async function runGeneration(
   const after = fullText.slice(opts.from);
   const maxCtx = Math.min(s.params.maxContext, info?.contextWindow ?? Infinity);
   const req = buildStoryRequest(s, { maxContextTokens: maxCtx, model: model.id, inline: opts.inline ? { before, after } : undefined });
+  // "Default Bias": keep dinkuses and asterisms out unless the story already uses them.
+  const banned = [...s.bannedTokens, ...(settings.defaultBias ? ['***', '⁂'].filter((x) => !fullText.includes(x)) : [])];
+  if (banned.length > s.bannedTokens.length) req.system += `\n\nNever write scene-break markers such as ${banned.slice(s.bannedTokens.length).join(' or ')}.`;
   set({ generating: true, task: 'story', lastContext: req.context });
   abort = new AbortController();
   if (s.scripts.some((x) => x.enabled)) {
@@ -644,7 +647,7 @@ async function runGeneration(
             pending.push(ev.text);
             await new Promise((r) => setTimeout(r, settings.streamDelay * 10));
           }
-          show(postProcess(before, raw, { stop: req.stop, banned: s.bannedTokens }));
+          show(postProcess(before, raw, { stop: req.stop, banned }));
         }
       } else if (ev.type === 'error') {
         error = ev.message;
@@ -655,7 +658,7 @@ async function runGeneration(
   }
   let final = postProcess(before, raw, {
     stop: req.stop,
-    banned: s.bannedTokens,
+    banned,
     trimToSentence: settings.continueToSentenceEnd && !abort.signal.aborted,
     minLength: s.params.minLength,
   });
