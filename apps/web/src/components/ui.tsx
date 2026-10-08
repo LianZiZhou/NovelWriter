@@ -45,7 +45,7 @@ export function ToggleRow({ title, desc, on, onChange, disabled }: { title: Reac
 }
 
 /**
- * Slider block, NovelAI style: "Title / description / <inline number><suffix> ... Default: x / range".
+ * Slider block in the original style: "Title / description / <inline number><suffix> ... Default: x / range".
  * The value is always an inline editable number (bold, no box). `small` renders the compact
  * "Label: value ⓘ" variant used for samplers.
  */

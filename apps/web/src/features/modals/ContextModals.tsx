@@ -3,6 +3,7 @@ import { CaretLeft, CaretRight, CornersOut, Plus, Trash } from '@phosphor-icons/
 import { countTokens, outputTokens, DEFAULT_SYSTEM_PROMPT_ADVENTURE, DEFAULT_SYSTEM_PROMPT_STORY, defaultContextSettings, formatEphemeral, parseEphemeral, ephemeralActive, type BuiltContext, type StoryContextSettings } from '@novelwriter/core';
 import { useStory } from '../../store/story.ts';
 import { useUI } from '../../store/ui.ts';
+import { useSettings } from '../../store/settings.ts';
 import { t } from '../../i18n.ts';
 import { Modal, ModalHeader, Tabs, Toggle } from '../../components/ui.tsx';
 import { ContextBar, KIND_COLORS, KIND_LABELS } from '../right/AdvancedTab.tsx';
@@ -25,6 +26,7 @@ export function ContextViewerModal({ onClose, which: initial }: { onClose: () =>
   const ctx = useMemo<BuiltContext | null>(() => (which === 'last' ? last : useStory.getState().previewContext()), [which, last]);
   const [stage, setStage] = useState<number | null>(null);
   const [showInactive, setShowInactive] = useState(false);
+  const colors = useSettings((s) => s.contextViewerColors);
   const tabs = (
     <div className="ctx-tabs" role="tablist">
       {(['last', 'current'] as const).map((w) => (
@@ -108,7 +110,7 @@ export function ContextViewerModal({ onClose, which: initial }: { onClose: () =>
                 [{t('Hidden')}]{'\n'}
               </span>
             ) : (
-              <span key={i} style={{ color: KIND_COLORS[sg.kind] }} title={sg.sourceId}>
+              <span key={i} style={colors ? { color: KIND_COLORS[sg.kind] } : undefined} title={sg.sourceId}>
                 {sg.text}
               </span>
             ),

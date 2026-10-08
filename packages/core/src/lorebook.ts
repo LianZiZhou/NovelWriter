@@ -42,6 +42,13 @@ function lastMatch(key: string, text: string): KeyMatch | null {
   return last;
 }
 
+/** Global regexes that find every occurrence of a key's parts (for highlighting keys in the editor). */
+export function keyRegexes(key: string): RegExp[] {
+  if (!key.trim()) return [];
+  const parts = !isRegexKey(key) && key.includes('&') ? key.split('&').map((p) => p.trim()).filter(Boolean) : [key];
+  return parts.map((p) => compileRegexKey(p) ?? new RegExp(escapeRe(p.trim()), 'gi')).filter((re) => re.source && re.source !== '(?:)');
+}
+
 /**
  * Match a key against text. `A & B` requires every part to match; the match
  * reported is the latest of the parts.

@@ -4,6 +4,7 @@ import { api } from '../api.ts';
 import { BUILTIN_THEMES, type Theme } from '../theme/themes.ts';
 import { applyTheme } from '../theme/applyTheme.ts';
 import { setLang, type Lang } from '../i18n.ts';
+import { HOTKEYS_VERSION } from '../hotkeys.ts';
 
 export interface Settings {
   language: Lang;
@@ -13,8 +14,28 @@ export interface Settings {
   uiScale: number;
   editorFontSize: number;
   lineSpacing: number;
+  /** em, like the original (was px before; migrated on load). */
   paragraphSpacing: number;
-  editorWidth: number;
+  paragraphIndent: number;
+  buttonScale: number;
+  /** Percent of 1200px. */
+  maxLineWidth: number;
+  gestureControls: boolean;
+  swapContextMenu: boolean;
+  contextViewerColors: boolean;
+  editorLoreKeys: boolean;
+  showStoryTitle: boolean;
+  showEditorToolbar: boolean;
+  autoFormat: boolean;
+  keyboardDisplaces: boolean;
+  showIdenticon: boolean;
+  showMinibar: boolean;
+  ttsSpeakHypebot: boolean;
+  ttsTestText: string;
+  ttsSavedVoices: SavedVoice[];
+  loreGenModel: ModelRef | null;
+  loreGenPresetId: string;
+  changelogSeen: string;
   streamResponses: boolean;
   streamDelay: number;
   continueToSentenceEnd: boolean;
@@ -49,33 +70,79 @@ export interface Settings {
   userScriptsAccepted: boolean | null;
   dismissedTips: string[];
   hotkeys: Record<string, string>;
+  hotkeysVersion: number;
+}
+
+export interface SavedVoice {
+  id: string;
+  name: string;
+  voice: string;
+  rate: number;
+  pitch: number;
 }
 
 export const DEFAULT_HOTKEYS: Record<string, string> = {
-  send: 'Mod-Enter',
+  toggleMenuBar: 'Alt-q|Mod-Shift-ArrowLeft',
+  toggleInfoBar: 'Alt-e|Mod-Shift-ArrowRight',
+  toggleBars: 'Alt-w',
+  focusEditor: 'Alt-f',
+  send: 'Mod-Enter|Alt-s',
   inline: 'Mod-Shift-Enter',
-  retry: 'Alt-r',
-  undo: 'Mod-z',
-  redo: 'Mod-y',
   stop: 'Escape',
-  lorebook: 'Mod-Shift-l',
+  focusInput: 'Alt-g',
+  redo: 'Alt-y|Mod-y|Mod-Shift-z',
+  redoList: 'Alt-Shift-y',
+  undo: 'Alt-z|Mod-z',
+  retry: 'Alt-r',
+  lorebook: 'Alt-l|Mod-Shift-l',
+  contextViewer: 'Alt-k',
+  userScripts: 'Alt-x',
+  tokenizer: 'Alt-t',
+  closeModal: 'Escape',
+  toggleInputBox: 'Alt-j',
+  toggleHighlighting: 'Alt-h',
+  toggleSpellcheck: 'Alt-c',
+  newStory: 'Alt-n|Mod-Shift-n',
+  resetTheme: 'Alt-Shift-p',
+  deleteStory: 'Alt-Shift-Delete',
+  stopTTS: 'Alt-Shift-t',
   palette: 'Mod-k',
-  toggleLeft: 'Mod-Shift-ArrowLeft',
-  toggleRight: 'Mod-Shift-ArrowRight',
-  newStory: 'Mod-Shift-n',
   settings: 'Mod-,',
+  find: 'Mod-f',
+  bold: 'Mod-b',
+  italic: 'Mod-i',
+  underline: 'Mod-u',
+  strike: 'Mod-Shift-s',
 };
 
 export const DEFAULT_SETTINGS: Settings = {
   language: navigator.language?.startsWith('zh') ? 'zh' : 'en',
-  themeName: 'NovelAI Dark',
+  themeName: 'NovelWriter Dark',
   customThemes: [],
   customCss: '',
   uiScale: 1,
   editorFontSize: 18,
   lineSpacing: 1.8,
-  paragraphSpacing: 9,
-  editorWidth: 780,
+  paragraphSpacing: 0.5,
+  paragraphIndent: 10,
+  buttonScale: 1,
+  maxLineWidth: 100,
+  gestureControls: true,
+  swapContextMenu: false,
+  contextViewerColors: true,
+  editorLoreKeys: false,
+  showStoryTitle: true,
+  showEditorToolbar: true,
+  autoFormat: true,
+  keyboardDisplaces: true,
+  showIdenticon: false,
+  showMinibar: false,
+  ttsSpeakHypebot: false,
+  ttsTestText: 'This is a test for text to speech. A little harsh, a little slow, but always on point.',
+  ttsSavedVoices: [],
+  loreGenModel: null,
+  loreGenPresetId: 'default',
+  changelogSeen: '',
   streamResponses: true,
   streamDelay: 0,
   continueToSentenceEnd: true,
@@ -110,6 +177,7 @@ export const DEFAULT_SETTINGS: Settings = {
   userScriptsAccepted: null,
   dismissedTips: [],
   hotkeys: DEFAULT_HOTKEYS,
+  hotkeysVersion: HOTKEYS_VERSION,
 };
 
 interface SettingsState extends Settings {
@@ -129,8 +197,12 @@ function applyVisual(s: Settings): void {
   r.setProperty('--ui-scale', String(s.uiScale));
   r.setProperty('--editor-font-size', `${s.editorFontSize}px`);
   r.setProperty('--editor-line-height', String(s.lineSpacing));
-  r.setProperty('--paragraph-spacing', `${s.paragraphSpacing}px`);
-  r.setProperty('--editor-width', `${s.editorWidth}px`);
+  r.setProperty('--paragraph-spacing', `${s.paragraphSpacing}em`);
+  r.setProperty('--paragraph-indent', `${s.paragraphIndent}px`);
+  r.setProperty('--button-scale', String(s.buttonScale));
+  r.setProperty('--editor-width', `${Math.round(s.maxLineWidth * 12)}px`);
+  const vp = document.querySelector('meta[name="viewport"]');
+  vp?.setAttribute('content', `width=device-width, initial-scale=1.0, viewport-fit=cover${s.keyboardDisplaces ? ', interactive-widget=resizes-content' : ', interactive-widget=overlays-content'}`);
   setLang(s.language);
 }
 
@@ -144,7 +216,13 @@ export const useSettings = create<SettingsState>((set, get) => ({
     } catch {
       /* server unreachable: keep defaults */
     }
-    const merged = { ...DEFAULT_SETTINGS, ...saved, hotkeys: { ...DEFAULT_HOTKEYS, ...(saved.hotkeys ?? {}) } };
+    // Hotkey maps saved before the current defaults are dropped rather than merged.
+    const savedHotkeys = saved.hotkeysVersion === HOTKEYS_VERSION ? (saved.hotkeys ?? {}) : {};
+    const merged = { ...DEFAULT_SETTINGS, ...saved, hotkeys: { ...DEFAULT_HOTKEYS, ...savedHotkeys }, hotkeysVersion: HOTKEYS_VERSION };
+    // Built-in themes were renamed; keep users on the same theme.
+    merged.themeName = merged.themeName.replace(/^NovelAI /, 'NovelWriter ');
+    // Older settings stored paragraph spacing in px at an 18px font.
+    if (merged.paragraphSpacing > 4) merged.paragraphSpacing = Math.round((merged.paragraphSpacing / 18) * 10) / 10;
     applyVisual(merged);
     set({ ...merged, loaded: true });
   },

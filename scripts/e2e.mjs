@@ -156,11 +156,11 @@ await step('history tree opens and jumps', async () => {
 await step('theme and language switch', async () => {
   await page.getByRole('button', { name: 'Open Settings' }).first().click();
   await page.locator('.split-modal .nav button', { hasText: 'Theme' }).click();
-  await page.getByRole('button', { name: /NovelAI Light/ }).click();
+  await page.getByRole('button', { name: /NovelWriter Light/ }).click();
   const bg = await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--bg2').trim());
   assert.equal(bg.toUpperCase(), '#EEECF4');
   await page.screenshot({ path: `${out}theme-light.png` });
-  await page.getByRole('button', { name: /NovelAI Dark$/ }).click();
+  await page.getByRole('button', { name: /NovelWriter Dark$/ }).click();
   await page.locator('.split-modal .nav button', { hasText: 'Interface' }).click();
   await page.locator('.split-modal .select-box').first().click();
   await page.getByRole('option', { name: '简体中文' }).click();

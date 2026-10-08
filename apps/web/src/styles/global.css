@@ -1,4 +1,4 @@
-/* Design tokens are set on :root by applyTheme(). Defaults match "NovelAI Dark". */
+/* Design tokens are set on :root by applyTheme(). Defaults match "NovelWriter Dark". */
 :root {
   --bg0: #0e0f21;
   --bg1: #13152c;
@@ -23,8 +23,10 @@
   --font-code: 'Source Code Pro', Menlo, Monaco, Consolas, monospace;
   --editor-font-size: 18px;
   --editor-line-height: 1.8;
-  --paragraph-spacing: 9px;
-  --editor-width: 780px;
+  --paragraph-spacing: 0.5em;
+  --paragraph-indent: 10px;
+  --button-scale: 1;
+  --editor-width: 1200px;
   --ui-scale: 1;
   --transition: 0.08s ease-in-out;
   --left-width: 349px;

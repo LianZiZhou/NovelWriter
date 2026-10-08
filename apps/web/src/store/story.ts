@@ -154,6 +154,14 @@ function upsertMeta(list: StoryMeta[], m: StoryMeta): StoryMeta[] {
 const PROVIDER_PREFERENCE = ['anthropic', 'openai-codex', 'openai', 'github-copilot', 'openrouter', 'google', 'xai', 'deepseek', 'mistral', 'moonshotai', 'zai'];
 const MODEL_PREFERENCE = /sonnet|gpt-5(?!.*(nano|mini))|gemini-.*pro|grok-4|deepseek-(chat|v)|mistral-large|kimi|glm/i;
 
+/** "Auto Format Text": tidy whitespace in generated text (double spaces, trailing spaces, extra blank lines). */
+export function autoFormat(text: string): string {
+  return text
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/(\S) {2,}(?=\S)/g, '$1 ')
+    .replace(/\n{3,}/g, '\n\n');
+}
+
 export function preferredModel(models: ModelInfo[]): ModelInfo | undefined {
   const rank = (p: string) => {
     if (p === 'demo') return 1000;
@@ -677,6 +685,7 @@ async function runGeneration(
     logScripts(set, get, hooked);
     final = hooked.value.text;
   }
+  if (settings.autoFormat) final = autoFormat(final);
   if (opts.inline && after && !/^\s/.test(after) && final && !/\s$/.test(final)) final += ' ';
   if (!final.trim()) final = '';
   show(final);

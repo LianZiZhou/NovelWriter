@@ -6,7 +6,7 @@ import { Select } from '../../components/ui.tsx';
 import { ModelThumb } from '../../components/ModelThumb.tsx';
 
 /** Model dropdown grouped by provider; lists models of configured providers. */
-export function ModelSelect({ value, onChange, className }: { value: ModelRef | null; onChange: (m: ModelRef) => void; className?: string }) {
+export function ModelSelect({ value, onChange, className, placeholder }: { value: ModelRef | null; onChange: (m: ModelRef) => void; className?: string; placeholder?: string }) {
   const models = useStory((s) => s.models);
   const key = (m: ModelRef) => `${m.provider}\u0000${m.id}`;
   const options = models.map((m) => ({
@@ -27,7 +27,7 @@ export function ModelSelect({ value, onChange, className }: { value: ModelRef | 
         options={options}
         searchable={options.length > 8}
         ariaLabel={t('AI Model')}
-        placeholder={t('Connect an AI provider…')}
+        placeholder={models.length ? placeholder ?? t('Connect an AI provider…') : t('Connect an AI provider…')}
         onChange={(v) => {
           const [provider, id] = v.split('\u0000');
           onChange({ provider, id });

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { EditorContent, useEditor } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import { TextSelection } from '@tiptap/pm/state';
+import { keyRegexes, type LoreEntry } from '@novelwriter/core';
 import { useStory } from '../../store/story.ts';
 import { useSettings } from '../../store/settings.ts';
 import { useUI } from '../../store/ui.ts';
@@ -22,6 +23,22 @@ import {
 } from './pm.ts';
 import { EditorContextMenu, type MenuState } from './ContextMenu.tsx';
 import { FindBar } from './FindBar.tsx';
+import { SelectionToolbar } from './SelectionToolbar.tsx';
+
+/** Recompiles key regexes only when the lorebook entries change. */
+const loreKeyCache = {
+  entries: null as LoreEntry[] | null,
+  res: [] as RegExp[],
+  get(): RegExp[] {
+    if (!useSettings.getState().editorLoreKeys) return [];
+    const entries = useStory.getState().current?.lorebook.entries ?? [];
+    if (entries !== this.entries) {
+      this.entries = entries;
+      this.res = entries.filter((e) => e.enabled && !e.forceActivation).flatMap((e) => e.keys.flatMap(keyRegexes));
+    }
+    return this.res;
+  },
+};
 
 export function StoryEditor() {
   const story = useStory((s) => s.current);
@@ -30,6 +47,9 @@ export function StoryEditor() {
   const highlight = useSettings((s) => s.highlightSpeech);
   const inverted = useSettings((s) => s.highlightSpeechInverted);
   const spellcheck = useSettings((s) => s.editorSpellcheck);
+  const loreKeysOn = useSettings((s) => s.editorLoreKeys);
+  const showToolbar = useSettings((s) => s.showEditorToolbar);
+  const entries = story?.lorebook.entries;
   const findOpen = useUI((s) => s.findOpen);
   const generating = useStory((s) => s.generating);
   const [menu, setMenu] = useState<MenuState | null>(null);
@@ -47,6 +67,7 @@ export function StoryEditor() {
       highlightSpeech: () => useSettings.getState().highlightSpeech,
       placeholder: () => t('Enter your prompt here...'),
       find: () => findRef.current,
+      loreKeys: () => loreKeyCache.get(),
     }),
     [],
   );
@@ -91,7 +112,9 @@ export function StoryEditor() {
       },
       handleDOMEvents: {
         contextmenu(view, event) {
-          if (event.ctrlKey || event.metaKey) return false;
+          // Ctrl+right-click opens the browser menu; "Swap Context Menu Controls" reverses that.
+          const native = event.ctrlKey || event.metaKey;
+          if (useSettings.getState().swapContextMenu ? !native : native) return false;
           event.preventDefault();
           const { from, to } = view.state.selection;
           setMenu({ x: event.clientX, y: event.clientY, hasSelection: from !== to });
@@ -152,7 +175,7 @@ export function StoryEditor() {
   useEffect(() => {
     if (!editor) return;
     editor.view.dispatch(editor.state.tr.setMeta(EXTERNAL, true));
-  }, [editor, highlight, find, story?.mode]);
+  }, [editor, highlight, find, story?.mode, loreKeysOn, entries]);
 
   useEffect(() => {
     editor?.view.dom.setAttribute('spellcheck', String(spellcheck));
@@ -193,6 +216,7 @@ export function StoryEditor() {
         />
       )}
       <EditorContent editor={editor} />
+      {showToolbar && editor && !generating && <SelectionToolbar editor={editor} />}
       {menu && editor && <EditorContextMenu state={menu} editor={editor} onClose={() => setMenu(null)} />}
     </div>
   );

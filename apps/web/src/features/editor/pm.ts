@@ -157,6 +157,8 @@ export interface EditorOptionsRef {
   highlightSpeech: () => boolean;
   placeholder: () => string;
   find: () => { query: string; index: number };
+  /** Global regexes for enabled lorebook keys, when the editor should mark them. */
+  loreKeys?: () => RegExp[];
 }
 
 const decoKey = new PluginKey('nw-decorations');
@@ -211,6 +213,7 @@ export function NovelPlugins(opts: EditorOptionsRef) {
               const adventure = opts.adventure();
               const speech = opts.highlightSpeech();
               const find = opts.find();
+              const loreKeys = opts.loreKeys?.() ?? [];
               const q = find.query.toLowerCase();
               let hit = 0;
               doc.forEach((para, pos) => {
@@ -230,6 +233,14 @@ export function NovelPlugins(opts: EditorOptionsRef) {
                     last = s + m[0].length;
                   }
                   if (last < text.length) decos.push(Decoration.inline(start + last, start + text.length, { class: 'narration' }));
+                }
+                for (const re of loreKeys) {
+                  re.lastIndex = 0;
+                  for (const m of text.matchAll(re)) {
+                    if (!m[0]) break;
+                    const i = m.index ?? 0;
+                    decos.push(Decoration.inline(start + i, start + i + m[0].length, { class: 'lore-key' }));
+                  }
                 }
                 if (q) {
                   const lower = text.toLowerCase();

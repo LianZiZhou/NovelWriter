@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { LORE_GEN_TYPES, buildLoreRequest, type LoreEntry } from '@novelwriter/core';
 import { generateText } from '../../api.ts';
 import { useStory } from '../../store/story.ts';
+import { useSettings } from '../../store/settings.ts';
 import { useUI } from '../../store/ui.ts';
 import { t } from '../../i18n.ts';
 import { Checkbox, Select } from '../../components/ui.tsx';
@@ -18,12 +19,16 @@ export function LoreGenerator({ entry, onResult }: { entry: LoreEntry; onResult:
   const run = async (continueText: boolean) => {
     const store = useStory.getState();
     const s = store.current;
-    const model = store.resolveModel();
+    // Settings → Defaults → Lorebook Generation picks the model and preset; otherwise use the story's.
+    const settings = useSettings.getState();
+    const connected = settings.loreGenModel && store.models.some((m) => m.provider === settings.loreGenModel!.provider && m.id === settings.loreGenModel!.id);
+    const model = connected ? settings.loreGenModel : store.resolveModel();
+    const preset = store.allPresets().find((p) => p.id === settings.loreGenPresetId);
     if (!s || !model) return;
     setBusy(true);
     try {
       const req = buildLoreRequest(s, type, input, { includeMemory: ctx.memory, includeAN: ctx.an, includeStory: ctx.story, existing: continueText ? entry.text : undefined });
-      let text = (await generateText({ model, ...req, maxTokens: 300, params: { temperature: 0.9 } }, undefined, (partial) => onResult(continueText ? `${entry.text}${partial}` : partial))).trim();
+      let text = (await generateText({ model, ...req, maxTokens: 300, params: preset ? preset.params : { temperature: 0.9 } }, undefined, (partial) => onResult(continueText ? `${entry.text}${partial}` : partial))).trim();
       if (continueText) text = `${entry.text}${entry.text.endsWith(' ') ? '' : ' '}${text}`;
       onResult(text);
       history.unshift(text);

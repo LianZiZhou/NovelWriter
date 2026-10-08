@@ -4,6 +4,12 @@ import { biasGroup, type PhraseBiasGroup } from '@novelwriter/core';
 import { t } from '../../i18n.ts';
 import { Checkbox, EnterInput, Select } from '../../components/ui.tsx';
 
+/** Theme intensity colour for a bias strength: low / mid / high (the theme's "Intensity" colours). */
+export function intensityColor(bias: number): string {
+  const a = Math.abs(bias);
+  return a === 0 ? 'transparent' : a <= 0.5 ? 'var(--low-intensity)' : a <= 1 ? 'var(--mid-intensity)' : 'var(--high-intensity)';
+}
+
 /** Phrase bias groups editor (story-level, lore entries, categories). */
 export function PhraseBiasEditor({ groups, onChange, showWhenInactive }: { groups: PhraseBiasGroup[]; onChange: (g: PhraseBiasGroup[]) => void; showWhenInactive?: boolean }) {
   const list = groups.length ? groups : [biasGroup()];
@@ -62,7 +68,7 @@ export function PhraseBiasEditor({ groups, onChange, showWhenInactive }: { group
           </div>
           <div className="chips">
             {g.phrases.map((p, i) => (
-              <span key={i} className="key-chip">
+              <span key={i} className="key-chip" style={{ boxShadow: `inset 3px 0 0 ${intensityColor(g.bias)}` }}>
                 {p}
                 <button type="button" aria-label={t('Remove')} onClick={() => patch({ phrases: g.phrases.filter((_, j) => j !== i) })}>
                   <X size={12} />

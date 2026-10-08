@@ -264,7 +264,7 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 0 20px;
+  padding: 0 36px;
 }
 
 .editor-column {
@@ -317,7 +317,7 @@
 .nw-editor .ProseMirror {
   flex: 1;
   outline: none;
-  padding: 10px 10px 40px 20px;
+  padding: 10px 10px 40px;
   font-family: var(--font-default);
   font-size: var(--editor-font-size);
   line-height: var(--editor-line-height);
@@ -328,6 +328,7 @@
 }
 .nw-editor .ProseMirror p {
   margin: 0;
+  text-indent: var(--paragraph-indent);
   padding-bottom: var(--paragraph-spacing);
   min-height: calc(var(--editor-font-size) * var(--editor-line-height));
 }
@@ -636,6 +637,7 @@
   width: fit-content;
   max-width: 100%;
   margin: 4px 0 calc(var(--paragraph-spacing) + 4px) -12px;
+  text-indent: 0;
   padding: 6px 18px 6px 40px;
   background: color-mix(in srgb, var(--bg3) 45%, transparent);
   border-radius: 3px;
@@ -2913,4 +2915,382 @@
   height: 44px;
   font-size: 16px;
   padding: 0 10px;
+}
+
+/* Floating selection toolbar and lorebook key underline. */
+.selection-toolbar {
+  position: fixed;
+  z-index: 150;
+  transform: translate(-50%, calc(-100% - 8px));
+  display: flex;
+  background: var(--bg1);
+  border: 1px solid var(--bg3);
+  border-radius: 3px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+}
+.selection-toolbar button {
+  width: 34px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.selection-toolbar button:hover {
+  background: var(--bg2);
+}
+.selection-toolbar button.active {
+  color: var(--text-headings);
+}
+.nw-editor .lore-key {
+  text-decoration: underline dotted;
+  text-decoration-color: color-mix(in srgb, var(--text-user) 70%, transparent);
+  text-underline-offset: 4px;
+}
+
+.minibar {
+  width: 48px;
+  flex: none;
+  background: var(--bg1);
+  border-right: 1px solid var(--bg3);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 10px 0;
+  gap: 6px;
+}
+.minibar button {
+  width: 36px;
+  height: 36px;
+  border-radius: 3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.minibar button:hover {
+  background: var(--bg3);
+}
+
+/* "Button Scale" enlarges the editor controls. */
+.control-row {
+  zoom: var(--button-scale);
+}
+.avatar-tile {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-main);
+  flex: none;
+}
+
+/* ------------------------------------------------------------------ settings pages (measured) */
+
+.split-modal .content-body .toggle-row .row > div:first-child,
+.split-modal .content-body .slider-setting:not(.small) .heading {
+  font-family: var(--font-headings);
+}
+.split-modal .content-body .toggle-row .desc {
+  opacity: 1;
+}
+.split-modal .side .nav .new-tag {
+  margin-left: 8px;
+}
+.new-tag {
+  color: var(--warning);
+  font-family: var(--font-headings);
+  font-style: italic;
+  font-size: 13px;
+  font-weight: 600;
+  transform: rotate(-12deg);
+  display: inline-block;
+}
+.field-label {
+  font-size: 14px;
+  font-weight: 600;
+  margin: 14px 0 6px;
+}
+
+/* Comment avatar select: image strip in the box and options. */
+.avatar-select .select-thumb,
+.avatar-select .select-option-thumb {
+  width: 96px;
+}
+.avatar-select.rich .select-box {
+  min-height: 42px;
+}
+.avatar-auto {
+  display: flex;
+  height: 100%;
+}
+.avatar-auto .avatar-tile {
+  width: 48px !important;
+}
+
+/* Theme editor: preview column on the left, colour rows with swatches on the right. */
+.theme-action {
+  padding: 12px 36px;
+  background: var(--bg3);
+}
+.theme-editor {
+  display: grid;
+  grid-template-columns: 357px 1fr;
+  border: 1px solid var(--bg3);
+}
+.theme-preview {
+  padding: 30px 30px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border-right: 1px solid var(--bg3);
+}
+.theme-name {
+  background: transparent;
+  border: 0;
+  outline: none;
+  font-size: 26px;
+  font-weight: 600;
+  padding: 0;
+  width: 100%;
+}
+.theme-preview p {
+  margin: 0 0 14px;
+}
+.theme-sample {
+  padding: 14px;
+  line-height: 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+.theme-font {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 26px;
+  max-width: 240px;
+  font-weight: 600;
+}
+.theme-css-toggle {
+  margin-top: auto;
+  padding-top: 30px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 16px;
+  text-align: left;
+}
+.theme-colors {
+  padding: 22px 26px 30px;
+  background: var(--bg2);
+}
+.color-row {
+  margin-bottom: 18px;
+}
+.color-label {
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+.swatches {
+  display: flex;
+  gap: 10px;
+}
+.swatch {
+  flex: 1;
+  height: 24px;
+  border: 1px solid var(--bg3);
+  border-radius: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  cursor: pointer;
+  min-width: 0;
+}
+.swatch-check {
+  background: #fff;
+  color: #000;
+  border-radius: 50%;
+  padding: 1px;
+  width: 16px;
+  height: 16px;
+}
+.swatch.custom {
+  background: #fff;
+  color: #000;
+}
+.swatch.custom input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+  width: 100%;
+  height: 100%;
+}
+.swatch.custom.small {
+  flex: none;
+  width: 36px;
+  height: 22px;
+  color: #000;
+}
+.intensity-preview {
+  border: 1px solid var(--bg3);
+  padding: 12px;
+  font-size: 15px;
+}
+.intensity-preview span {
+  padding: 0 3px;
+  color: #fff;
+}
+
+/* Defaults: model card (bordered bg1 panel with art, select and description). */
+.model-card {
+  width: min(434px, 100%);
+  display: flex;
+  gap: 20px;
+  padding: 20px;
+  background: var(--bg1);
+  border: 1px solid var(--bg3);
+}
+.model-card-art {
+  width: 100px;
+  height: 100px;
+  flex: none;
+  overflow: hidden;
+}
+.model-card-art svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+.model-card .model-select.plain .select-thumb {
+  display: none;
+}
+.model-card .model-select.plain .select-box {
+  padding-left: 10px;
+  background: var(--bg2);
+}
+.model-card-desc {
+  font-size: 14px;
+  font-weight: 600;
+  margin-top: 14px;
+  line-height: 21px;
+}
+
+/* Text To Speech tiles next to selects. */
+.tts-tile {
+  width: 38px;
+  height: 40px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg3);
+}
+.tts-tile.cream {
+  background: var(--text-headings);
+  color: var(--bg1);
+}
+.tts-tile.muted-tile {
+  background: color-mix(in srgb, var(--text-headings) 55%, var(--bg3));
+  color: var(--bg1);
+}
+.tts-tile:disabled {
+  opacity: 0.6;
+}
+.tts-random {
+  height: 44px;
+  border-radius: 0;
+  font-size: 16px;
+}
+
+/* Hotkeys: alternating rows, glyph chips separated by bars. */
+.hotkey-list {
+  display: flex;
+  flex-direction: column;
+}
+.hotkey-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 34px;
+  padding: 0 10px;
+  font-size: 16px;
+  font-weight: 600;
+}
+.hotkey-row:nth-child(even) {
+  background: var(--bg1);
+}
+.hotkey-row:hover,
+.hotkey-row.recording {
+  color: var(--text-headings);
+}
+.hotkey-edit {
+  font-weight: 600;
+  color: inherit;
+}
+.hotkey-chips {
+  display: inline-flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.hotkey-binding {
+  padding: 0 6px;
+}
+.hotkey-binding:last-child {
+  padding-right: 0;
+}
+.hotkey-binding + .hotkey-binding {
+  border-left: 1px solid currentColor;
+}
+.hotkey-binding .glyph {
+  margin-right: 4px;
+  font-weight: 400;
+}
+
+/* Change Log modal. */
+.modal.changelog-modal {
+  background: var(--bg2);
+  padding: 0;
+}
+.changelog-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: var(--bg1);
+  padding: 22px 20px 18px;
+}
+.changelog-head h3 {
+  font-family: var(--font-default);
+  font-size: 16px;
+  color: var(--text-headings);
+}
+.changelog-body {
+  padding: 20px;
+}
+.changelog-entry + .changelog-entry {
+  margin-top: 18px;
+}
+.changelog-title {
+  width: 100%;
+  font-family: var(--font-headings);
+  font-size: 18px;
+  color: var(--text-headings);
+  text-align: left;
+}
+.changelog-date {
+  font-family: var(--font-default);
+  font-size: 14px;
+  color: var(--text-main);
+}
+.changelog-entry p {
+  background: var(--bg1);
+  padding: 16px 18px;
+  line-height: 24px;
+  margin: 8px 0 0;
+}
+@media (max-width: 900px) {
+  .theme-editor {
+    grid-template-columns: 1fr;
+  }
 }

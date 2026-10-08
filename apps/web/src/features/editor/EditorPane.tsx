@@ -151,6 +151,7 @@ export function EditorPane() {
   const generating = useStory((s) => s.generating);
   const task = useStory((s) => s.task);
   const inputBox = useSettings((s) => s.inputBox);
+  const showTitle = useSettings((s) => s.showStoryTitle);
   const [branchOpen, setBranchOpen] = useState(false);
   const [input, setInput] = useState('');
   const [advMode, setAdvMode] = useState<AdventureInputMode>('do');
@@ -163,6 +164,12 @@ export function EditorPane() {
   const isEmpty = docText(story.doc).length === 0;
   // Children of the current step are what Redo can reach; on an AI step the siblings are the retries.
   const branchOptions = redoCount > 0 ? cur.children.map((c) => h.nodes[c]) : cur.type === 'ai' ? options : [];
+
+  useEffect(() => {
+    const h = () => setBranchOpen(true);
+    window.addEventListener('nw:redo-list', h);
+    return () => window.removeEventListener('nw:redo-list', h);
+  }, []);
 
   const doSend = () => {
     if (generating) return store.stop();
@@ -192,13 +199,17 @@ export function EditorPane() {
     <>
       <div className={`editor-scroll ${adventure ? 'adventure' : ''}`}>
         <div className="editor-column">
-          <div className="editor-title-row">
+          <div className={`editor-title-row ${showTitle ? '' : 'no-title'}`}>
+            {showTitle ? (
             <input
               className="editor-title"
               value={story.title}
               aria-label={t('Title')}
               onChange={(e) => store.update((s) => void (s.title = e.target.value))}
             />
+            ) : (
+              <span className="grow" />
+            )}
             <button type="button" className="title-btn" onClick={() => void store.generateTitle()} aria-label={t('Generate a random title for the story')} title={t('Generate a random title for the story')} disabled={task === 'title'}>
               {task === 'title' ? <span className="spinner" /> : <DiceFive size={20} weight="fill" />}
             </button>

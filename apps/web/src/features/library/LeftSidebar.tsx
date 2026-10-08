@@ -34,6 +34,7 @@ import { useUI } from '../../store/ui.ts';
 import { t } from '../../i18n.ts';
 import { timeAgo, Select, Toggle } from '../../components/ui.tsx';
 import { Logo } from '../../components/Logo.tsx';
+import { Identicon } from '../../components/Identicon.tsx';
 
 const REPO_URL = 'https://github.com/LianZiZhou/NovelWriter#readme';
 
@@ -130,13 +131,12 @@ function AccountMenu({ onClose }: { onClose: () => void }) {
   const store = useStory.getState();
   const models = useStory((s) => s.models);
   const lang = useSettings((s) => s.language);
+  const identicon = useSettings((s) => s.showIdenticon);
   const connected = new Set(models.filter((m) => m.provider !== 'demo').map((m) => m.provider)).size;
   return (
     <div className="account-menu">
       <div className="account-head">
-        <div className="account-avatar">
-          <Logo size={30} />
-        </div>
+        <div className="account-avatar">{identicon ? <Identicon seed="novelwriter-author" size={40} /> : <Logo size={30} />}</div>
         <div>
           <div className="account-name">{t('Author')}</div>
           <div className="account-sub">{connected ? t('{n} AI providers connected', { n: connected }) : t('Offline demo model')}</div>
