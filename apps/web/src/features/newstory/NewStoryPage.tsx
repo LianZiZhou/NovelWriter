@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Play, Sword, Article } from '@phosphor-icons/react';
+import { ArrowRight, Play, Sword, Article } from '@phosphor-icons/react';
 import { scenarioToStory } from '@novelwriter/core';
 import { useStory } from '../../store/story.ts';
 import { useUI } from '../../store/ui.ts';
@@ -37,7 +37,9 @@ export function NewStoryPage() {
             <span className="mode-icon" style={{ color: 'var(--text-headings)' }}>
               <Article size={34} />
             </span>
-            <h2>{t('Storyteller')}</h2>
+            <h2>
+              {t('Storyteller')} <ArrowRight className="mode-arrow" size={22} weight="bold" />
+            </h2>
             <p>{t('Write alongside the AI to flesh out your writing and ideas.')}</p>
             <div className="preview" aria-hidden="true">
               <div style={{ fontFamily: 'var(--font-headings)', fontWeight: 700, marginBottom: 6 }}>Celestial Curves</div>
@@ -48,7 +50,9 @@ export function NewStoryPage() {
             <span className="mode-icon">
               <Sword size={34} />
             </span>
-            <h2>{t('Text Adventure')}</h2>
+            <h2>
+              {t('Text Adventure')} <ArrowRight className="mode-arrow" size={22} weight="bold" />
+            </h2>
             <p>{t('Begin an AI-generated quest using words and actions.')}</p>
             <div className="preview" aria-hidden="true" style={{ whiteSpace: 'pre-line' }}>
               <div style={{ fontFamily: 'var(--font-headings)', fontWeight: 700, marginBottom: 6 }}>Army of what?!</div>

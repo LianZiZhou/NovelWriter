@@ -41,7 +41,12 @@ export interface Settings {
   rightOpen: boolean;
   rightTab: 'story' | 'advanced' | 'generation';
   librarySort: 'recent' | 'alpha' | 'created';
+  librarySortAsc: boolean;
   favoritesOnly: boolean;
+  compactView: boolean;
+  shelvesOnTop: boolean;
+  favoritesOnTop: boolean;
+  userScriptsAccepted: boolean | null;
   dismissedTips: string[];
   hotkeys: Record<string, string>;
 }
@@ -97,7 +102,12 @@ export const DEFAULT_SETTINGS: Settings = {
   rightOpen: true,
   rightTab: 'story',
   librarySort: 'recent',
+  librarySortAsc: false,
   favoritesOnly: false,
+  compactView: false,
+  shelvesOnTop: true,
+  favoritesOnTop: false,
+  userScriptsAccepted: null,
   dismissedTips: [],
   hotkeys: DEFAULT_HOTKEYS,
 };

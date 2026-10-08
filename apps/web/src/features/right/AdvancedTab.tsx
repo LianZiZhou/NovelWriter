@@ -92,6 +92,18 @@ export function AdvancedTab() {
       </div>
 
       <div className="panel-section">
+        <Collapsible title={<SectionTitle>{t('Author, Title, Tags, Genre')}</SectionTitle>} className="" defaultOpen={false}>
+          <div className="desc" style={{ marginBottom: 10 }}>
+            {t('Inserted as a [ Author: …; Title: …; Tags: …; Genre: … ] line at the top of the context. Title and tags come from Story Settings.')}
+          </div>
+          <label className="sub-heading">{t('Author')}</label>
+          <input className="input" aria-label="ATTG author" value={story.author} onChange={(e) => store.update((s) => void (s.author = e.target.value))} />
+          <label className="sub-heading" style={{ display: 'block', marginTop: 10 }}>{t('Genre')}</label>
+          <input className="input" aria-label="ATTG genre" value={story.genre} onChange={(e) => store.update((s) => void (s.genre = e.target.value))} />
+        </Collapsible>
+      </div>
+
+      <div className="panel-section">
         <Collapsible title={<SectionTitle>{t('User Scripts')}</SectionTitle>} className="">
           <div className="desc" style={{ marginBottom: 10 }}>{t('Extend NovelWriter with custom scripts.')}</div>
           <button type="button" className="btn block" onClick={() => ui.open('scripts')}>

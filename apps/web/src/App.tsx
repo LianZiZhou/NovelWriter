@@ -9,6 +9,7 @@ import { LeftSidebar } from './features/library/LeftSidebar.tsx';
 import { RightSidebar } from './features/right/RightSidebar.tsx';
 import { EditorPane } from './features/editor/EditorPane.tsx';
 import { NewStoryPage } from './features/newstory/NewStoryPage.tsx';
+import { Dashboard } from './features/home/Dashboard.tsx';
 import { LorebookModal } from './features/lorebook/LorebookModal.tsx';
 import { SettingsModal } from './features/settings/SettingsModal.tsx';
 import { ContextSettingsModal, ContextViewerModal, EphemeralModal, TextFieldModal } from './features/modals/ContextModals.tsx';
@@ -33,7 +34,7 @@ function ModalHost() {
   const close = useUI((s) => s.close);
   const story = useStory((s) => s.current);
   if (!modal) return null;
-  const needsStory = !['settings', 'palette', 'confirm'].includes(modal);
+  const needsStory = !['settings', 'palette', 'confirm', 'tokenize'].includes(modal);
   if (needsStory && !story) return null;
   switch (modal) {
     case 'lorebook':
@@ -55,7 +56,7 @@ function ModalHost() {
     case 'toolbox':
       return <ToolboxModal onClose={close} text={p.text} from={p.from} to={p.to} />;
     case 'tokenize':
-      return <TokenizeModal onClose={close} text={p.text} />;
+      return <TokenizeModal onClose={close} text={p.text ?? ''} standalone={p.standalone} />;
     case 'screenshot':
       return <ScreenshotModal onClose={close} from={p.from} to={p.to} />;
     case 'placeholders':
@@ -206,6 +207,7 @@ function useIsMobile() {
 
 export function App() {
   const story = useStory((s) => s.current);
+  const page = useStory((s) => s.page);
   const serverDown = useStory((s) => s.serverDown);
   const leftOpen = useSettings((s) => s.leftOpen);
   const rightOpen = useSettings((s) => s.rightOpen);
@@ -251,7 +253,7 @@ export function App() {
             </button>
           </div>
         )}
-        {story ? <EditorPane key={story.id} /> : <NewStoryPage />}
+        {story ? <EditorPane key={story.id} /> : page === 'newStory' ? <NewStoryPage /> : <Dashboard />}
       </main>
       {showRight && <RightSidebar mobileOpen={mobileRight} onCollapse={() => (mobile ? setUI({ mobileRight: false }) : setSettings({ rightOpen: false }))} />}
       {mobile && <div className={`drawer-backdrop ${mobileLeft || mobileRight ? 'show' : ''}`} onClick={() => setUI({ mobileLeft: false, mobileRight: false })} />}

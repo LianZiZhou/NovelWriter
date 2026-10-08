@@ -88,6 +88,9 @@ interface StoryState {
   openStory: (id: string) => Promise<void>;
   closeStory: () => void;
   showNewStory: () => void;
+  showDashboard: () => void;
+  /** Which home page shows when no story is open. */
+  page: 'dashboard' | 'newStory';
   createStory: (p?: Partial<Story>) => Promise<Story>;
   addStory: (s: Story) => Promise<void>;
   update: (fn: (s: Story) => Story | void) => void;
@@ -197,6 +200,7 @@ export const useStory = create<StoryState>((set, get) => ({
   presets: [],
   models: [],
   current: null,
+  page: 'dashboard',
   loadingStory: false,
   generating: false,
   task: null,
@@ -264,14 +268,20 @@ export const useStory = create<StoryState>((set, get) => ({
 
   closeStory() {
     navSeq++;
-    set({ current: null });
+    set({ current: null, page: 'dashboard' });
     localStorage.removeItem('nw:lastStory');
   },
 
   showNewStory() {
     navSeq++;
     abort?.abort();
-    set({ current: null, loadingStory: false });
+    set({ current: null, loadingStory: false, page: 'newStory' });
+  },
+
+  showDashboard() {
+    navSeq++;
+    abort?.abort();
+    set({ current: null, loadingStory: false, page: 'dashboard' });
   },
 
   async createStory(p = {}) {
@@ -315,7 +325,7 @@ export const useStory = create<StoryState>((set, get) => ({
     const library = get().library.filter((m) => m.id !== id);
     set({ library });
     if (get().current?.id === id) {
-      set({ current: null });
+      set({ current: null, page: 'dashboard' });
       if (library[0]) await get().openStory(library[0].id);
     }
   },

@@ -63,7 +63,7 @@ function AITab() {
             <Robot size={28} weight="duotone" /> <span>HypeBot</span>
           </div>
         </div>
-        <SliderSetting title={t('Comment Chance')} value={s.hypebotChance} min={0} max={100} step={1} def={5} onChange={(v) => s.set({ hypebotChance: v })} format={(v) => `${v} %`} />
+        <SliderSetting title={t('Comment Chance')} value={s.hypebotChance} min={0} max={100} step={1} def={5} onChange={(v) => s.set({ hypebotChance: v })} suffix=" %" defText={t('Default: {v}', { v: '5%' })} />
       </Group>
       <Group title="Experimental">
         <ToggleRow title={t('Default Bias')} desc={t('Avoid generating dinkuses (***) and asterisms (⁂) unless the story uses them.')} on={s.defaultBias} onChange={(v) => s.set({ defaultBias: v })} />
@@ -89,10 +89,10 @@ function InterfaceTab() {
             ]}
           />
         </div>
-        <SliderSetting title={t('Text Size')} value={s.editorFontSize} min={12} max={30} step={1} def={18} onChange={(v) => s.set({ editorFontSize: v })} format={(v) => `${v}px`} />
+        <SliderSetting title={t('Text Size')} value={s.editorFontSize} min={12} max={30} step={1} def={18} onChange={(v) => s.set({ editorFontSize: v })} suffix=" px" />
         <SliderSetting title={t('Line Spacing')} value={s.lineSpacing} min={1} max={3} step={0.05} def={1.8} onChange={(v) => s.set({ lineSpacing: v })} />
-        <SliderSetting title={t('Paragraph Spacing')} value={s.paragraphSpacing} min={0} max={40} step={1} def={9} onChange={(v) => s.set({ paragraphSpacing: v })} format={(v) => `${v}px`} />
-        <SliderSetting title={t('Editor Width')} value={s.editorWidth} min={500} max={1600} step={10} def={780} onChange={(v) => s.set({ editorWidth: v })} format={(v) => `${v}px`} />
+        <SliderSetting title={t('Paragraph Spacing')} value={s.paragraphSpacing} min={0} max={40} step={1} def={9} onChange={(v) => s.set({ paragraphSpacing: v })} suffix=" px" />
+        <SliderSetting title={t('Editor Width')} value={s.editorWidth} min={500} max={1600} step={10} def={780} onChange={(v) => s.set({ editorWidth: v })} suffix=" px" />
         <SliderSetting title={t('UI Scale')} value={s.uiScale} min={0.8} max={1.4} step={0.05} def={1} onChange={(v) => s.set({ uiScale: v })} />
       </Group>
       <Group title="Editor">

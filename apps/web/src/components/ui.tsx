@@ -44,7 +44,11 @@ export function ToggleRow({ title, desc, on, onChange, disabled }: { title: Reac
   );
 }
 
-/** Slider block: "Title / description / value ... Default: x / range". */
+/**
+ * Slider block, NovelAI style: "Title / description / <inline number><suffix> ... Default: x / range".
+ * The value is always an inline editable number (bold, no box). `small` renders the compact
+ * "Label: value ⓘ" variant used for samplers.
+ */
 export function SliderSetting({
   title,
   desc,
@@ -54,7 +58,10 @@ export function SliderSetting({
   step,
   def,
   onChange,
-  format,
+  prefix,
+  suffix,
+  note,
+  defText,
   small,
   disabled,
   help,
@@ -67,48 +74,57 @@ export function SliderSetting({
   step: number;
   def?: number;
   onChange: (v: number) => void;
-  format?: (v: number) => ReactNode;
+  prefix?: ReactNode;
+  suffix?: ReactNode;
+  /** Extra text after the value, e.g. "[0] (off)". */
+  note?: ReactNode;
+  defText?: string;
   small?: boolean;
   disabled?: boolean;
   help?: string;
 }) {
-  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState<string | null>(null);
+  const shown = draft ?? String(value);
+  const commit = () => {
+    if (draft === null) return;
+    const v = parseFloat(draft);
+    if (!Number.isNaN(v)) onChange(Math.min(max, Math.max(min, v)));
+    setDraft(null);
+  };
   return (
     <div className={`slider-setting ${small ? 'small' : ''}`} style={disabled ? { opacity: 0.55 } : undefined}>
       {!small && <div className="heading">{title}</div>}
       {!small && desc && <div className="desc">{desc}</div>}
-      <div className="row between slider-head">
-        <div className="row" style={{ gap: 6 }}>
-          {small && <span style={{ fontWeight: 600, fontSize: 14 }}>{title}:</span>}
-          {editing ? (
-            <input
-              autoFocus
-              className="input"
-              style={{ width: 90, padding: '2px 6px' }}
-              type="number"
-              defaultValue={value}
-              step={step}
-              onBlur={(e) => {
-                const v = parseFloat(e.target.value);
-                if (!Number.isNaN(v)) onChange(v);
-                setEditing(false);
-              }}
-              onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
-            />
-          ) : (
-            <button type="button" className="slider-value" style={{ fontSize: small ? 14 : 17.6, fontWeight: small ? 600 : 400 }} onClick={() => setEditing(true)}>
-              {format ? format(value) : value}
-            </button>
-          )}
+      <div className="slider-head">
+        <div className="slider-value">
+          {small && <span className="slider-label">{title}:</span>}
+          {prefix}
+          <input
+            className="slider-number"
+            type="text"
+            inputMode="decimal"
+            value={shown}
+            disabled={disabled}
+            aria-label={typeof title === 'string' ? `${title} value` : undefined}
+            style={{ width: `${Math.max(1, shown.length) + 0.4}ch` }}
+            onChange={(e) => setDraft(e.target.value)}
+            onBlur={commit}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+              if (e.key === 'Escape') setDraft(null);
+            }}
+          />
+          {suffix && <span className="slider-suffix">{suffix}</span>}
+          {note && <span className="slider-note">{note}</span>}
           {help && (
-            <span title={help} style={{ opacity: 0.6, display: 'inline-flex' }}>
+            <span title={help} className="slider-help">
               <Question size={13} />
             </span>
           )}
         </div>
         {def !== undefined && (
           <button type="button" className="slider-default" onClick={() => onChange(def)} title={t('Reset')}>
-            {t('Default: {v}', { v: format && small ? String(def) : def })}
+            {defText ?? t('Default: {v}', { v: def })}
           </button>
         )}
       </div>
@@ -132,9 +148,11 @@ export interface SelectOption<V extends string> {
   label: ReactNode;
   group?: string;
   description?: ReactNode;
+  /** Thumbnail shown at the left of rich options (model pickers). */
+  image?: ReactNode;
 }
 
-/** Custom dropdown styled like the original (dark box + chevron). */
+/** Custom dropdown styled like the original (react-select look). */
 export function Select<V extends string>({
   value,
   options,
@@ -143,6 +161,8 @@ export function Select<V extends string>({
   style,
   searchable,
   ariaLabel,
+  rich,
+  className = '',
 }: {
   value: V | null;
   options: SelectOption<V>[];
@@ -151,6 +171,9 @@ export function Select<V extends string>({
   style?: CSSProperties;
   searchable?: boolean;
   ariaLabel?: string;
+  /** Rich mode: image strip + name in the box, image + name + description in the menu. */
+  rich?: boolean;
+  className?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState('');
@@ -160,24 +183,33 @@ export function Select<V extends string>({
     const h = (e: MouseEvent) => {
       if (!ref.current?.contains(e.target as Node)) setOpen(false);
     };
+    const k = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        setOpen(false);
+      }
+    };
     window.addEventListener('mousedown', h);
-    return () => window.removeEventListener('mousedown', h);
+    window.addEventListener('keydown', k, true);
+    return () => {
+      window.removeEventListener('mousedown', h);
+      window.removeEventListener('keydown', k, true);
+    };
   }, [open]);
   const cur = options.find((o) => o.value === value);
   const filtered = q ? options.filter((o) => `${o.value} ${typeof o.label === 'string' ? o.label : ''} ${o.group ?? ''}`.toLowerCase().includes(q.toLowerCase())) : options;
   let lastGroup: string | undefined;
   return (
-    <div className="select-wrap" ref={ref} style={style}>
+    <div className={`select-wrap ${rich ? 'rich' : ''} ${open ? 'open' : ''} ${className}`} ref={ref} style={style}>
       <button type="button" className="select-box" onClick={() => setOpen(!open)} aria-haspopup="listbox" aria-expanded={open} aria-label={ariaLabel}>
-        <span className="grow" style={{ textAlign: 'left', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {cur ? cur.label : <span className="muted">{placeholder}</span>}
-        </span>
-        <span className="select-caret">{open ? <CaretUp weight="bold" size={14} /> : <CaretDown weight="bold" size={14} />}</span>
+        {rich && cur?.image && <span className="select-thumb">{cur.image}</span>}
+        <span className="select-current">{cur ? cur.label : <span className="select-placeholder">{placeholder}</span>}</span>
+        <span className="select-caret">{open ? <CaretUp weight="bold" size={16} /> : <CaretDown weight="bold" size={16} />}</span>
       </button>
       {open && (
-        <div className="select-menu fade-in" role="listbox">
+        <div className="select-menu" role="listbox">
           {searchable && (
-            <input autoFocus className="input" placeholder={t('Search')} value={q} onChange={(e) => setQ(e.target.value)} style={{ position: 'sticky', top: 0, zIndex: 1 }} />
+            <input autoFocus className="input select-search" placeholder={t('Search')} value={q} onChange={(e) => setQ(e.target.value)} />
           )}
           {filtered.map((o) => {
             const header = o.group && o.group !== lastGroup ? o.group : null;
@@ -189,15 +221,18 @@ export function Select<V extends string>({
                   type="button"
                   role="option"
                   aria-selected={o.value === value}
-                  className={`select-option ${o.value === value ? 'active' : ''}`}
+                  className={`select-option ${o.value === value ? 'active' : ''} ${rich ? 'rich' : ''}`}
                   onClick={() => {
                     onChange(o.value);
                     setOpen(false);
                     setQ('');
                   }}
                 >
-                  <div>{o.label}</div>
-                  {o.description && <div className="desc" style={{ fontSize: 12 }}>{o.description}</div>}
+                  {rich && o.image && <span className="select-option-thumb">{o.image}</span>}
+                  <span className="select-option-text">
+                    <span className="select-option-label">{o.label}</span>
+                    {o.description && <span className="select-option-desc">{o.description}</span>}
+                  </span>
                 </button>
               </div>
             );
@@ -246,17 +281,35 @@ export function Modal({
   );
 }
 
-export function ModalHeader({ title, onClose, icon, children }: { title: ReactNode; onClose: () => void; icon?: ReactNode; children?: ReactNode }) {
+export function ModalHeader({
+  title,
+  subtitle,
+  onClose,
+  icon,
+  children,
+  plain,
+}: {
+  title: ReactNode;
+  subtitle?: ReactNode;
+  onClose: () => void;
+  icon?: ReactNode;
+  children?: ReactNode;
+  /** White title instead of the heading colour (Story Statistics, Context Viewer). */
+  plain?: boolean;
+}) {
   return (
     <div className="modal-header">
-      <div className="row" style={{ gap: 10 }}>
-        {icon}
-        <h3 className="modal-title">{title}</h3>
+      <div style={{ minWidth: 0 }}>
+        <div className="row" style={{ gap: 10 }}>
+          {icon}
+          <h3 className={`modal-title ${plain ? 'plain' : ''}`}>{title}</h3>
+        </div>
+        {subtitle && <div className="modal-subtitle">{subtitle}</div>}
       </div>
-      <div className="row" style={{ gap: 12 }}>
+      <div className="row" style={{ gap: 12, alignSelf: 'flex-start' }}>
         {children}
-        <button type="button" className="icon-btn" onClick={onClose} aria-label={t('Close')}>
-          <X size={22} weight="bold" />
+        <button type="button" className="icon-btn modal-close" onClick={onClose} aria-label={t('Close')}>
+          <X size={24} weight="bold" />
         </button>
       </div>
     </div>

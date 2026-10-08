@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowDown, ArrowUp, X } from '@phosphor-icons/react';
+import { ArrowDown, ArrowUp, DiceFive, X } from '@phosphor-icons/react';
 import { toPng } from 'html-to-image';
 import {
   applyChange,
@@ -22,7 +22,7 @@ import { canonical, download, safeFileName, useStory } from '../../store/story.t
 import { useUI } from '../../store/ui.ts';
 import { useSettings } from '../../store/settings.ts';
 import { t } from '../../i18n.ts';
-import { Modal, ModalHeader, SliderSetting, Tabs, Toggle } from '../../components/ui.tsx';
+import { Modal, ModalHeader, Select, SliderSetting, Tabs, Toggle } from '../../components/ui.tsx';
 import { SAMPLER_INFO } from '../right/GenerationTab.tsx';
 import { matchHotkey } from '../../hotkeys.ts';
 
@@ -96,37 +96,35 @@ export function StatsModal({ onClose }: { onClose: () => void }) {
 export function StoryInfoModal({ onClose }: { onClose: () => void }) {
   const story = useStory((s) => s.current)!;
   const shelves = useStory((s) => s.shelves);
+  const task = useStory((s) => s.task);
   const store = useStory.getState();
   const [tag, setTag] = useState('');
   return (
-    <Modal onClose={onClose} width={620} label={t('Edit Story Information')}>
-      <ModalHeader title={t('Edit Story Information')} onClose={onClose} />
-      <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-        <label className="number-field">
-          <span className="heading">{t('Title')}</span>
-          <input className="input" value={story.title} onChange={(e) => store.update((s) => void (s.title = e.target.value))} />
-        </label>
-        <label className="number-field">
-          <span className="heading">{t('Description')}</span>
-          <textarea className="textarea" value={story.description} onChange={(e) => store.update((s) => void (s.description = e.target.value))} />
-        </label>
-        <div className="placement-grid">
-          <label className="number-field">
-            <span className="heading">{t('Author')}</span>
-            <input className="input" value={story.author} onChange={(e) => store.update((s) => void (s.author = e.target.value))} />
-          </label>
-          <label className="number-field">
-            <span className="heading">{t('Genre')}</span>
-            <input className="input" value={story.genre} onChange={(e) => store.update((s) => void (s.genre = e.target.value))} />
-          </label>
+    <Modal onClose={onClose} width={590} label={t('Story Settings')} className="story-settings-modal">
+      <ModalHeader title={t('Story Settings')} onClose={onClose} />
+      <div className="modal-body story-settings">
+        <label className="ss-label" htmlFor="ss-title">{t('Story Title')}</label>
+        <div className="row" style={{ gap: 0 }}>
+          <input id="ss-title" className="input grow" value={story.title} onChange={(e) => store.update((s) => void (s.title = e.target.value))} />
+          <button type="button" className="ss-dice" aria-label={t('Generate a random title for the story')} disabled={task === 'title'} onClick={() => void store.generateTitle()}>
+            {task === 'title' ? <span className="spinner" /> : <DiceFive size={20} weight="fill" />}
+          </button>
         </div>
-        <div className="desc">{t('Author, title, tags and genre form the ATTG line at the top of the context.')}</div>
-        <div>
-          <div className="heading" style={{ marginBottom: 6 }}>{t('Tags')}</div>
+        <label className="ss-label" htmlFor="ss-desc">{t('Description')}</label>
+        <textarea id="ss-desc" className="textarea" style={{ height: 145 }} value={story.description} onChange={(e) => store.update((s) => void (s.description = e.target.value))} />
+        <div className="ss-label">{t('Shelf')}</div>
+        <Select
+          value={story.shelf ?? '__none'}
+          onChange={(v) => store.update((s) => void (s.shelf = v === '__none' ? null : v))}
+          options={[{ value: '__none', label: <i>{t('No Shelf')}</i> }, ...shelves.map((sh) => ({ value: sh.id, label: sh.title }))]}
+        />
+        <div className="ss-label">{t('Search Tags')}</div>
+        <div className="ss-hint">{t('Type in the box below and press enter to save.')}</div>
+        <div className="ss-tags">
           <input
             className="input"
             value={tag}
-            placeholder={t('Type a tag and press enter')}
+            placeholder={t('Type here and hit enter to save')}
             onChange={(e) => setTag(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && tag.trim()) {
@@ -135,27 +133,16 @@ export function StoryInfoModal({ onClose }: { onClose: () => void }) {
               }
             }}
           />
-          <div className="chips" style={{ marginTop: 8 }}>
-            {story.tags.map((tg, i) => (
-              <span key={i} className="key-chip">
-                {tg}
-                <button type="button" aria-label={t('Remove')} onClick={() => store.update((s) => void (s.tags = s.tags.filter((_, j) => j !== i)))}>
-                  <X size={12} />
+          <div className="ss-tag-box">
+            <div className="ss-hint" style={{ textAlign: 'right' }}>{t('Click a tag to delete it.')}</div>
+            <div className="chips">
+              {story.tags.map((tg, i) => (
+                <button type="button" key={i} className="key-chip" onClick={() => store.update((s) => void (s.tags = s.tags.filter((_, j) => j !== i)))}>
+                  {tg}
                 </button>
-              </span>
-            ))}
+              ))}
+            </div>
           </div>
-        </div>
-        <div>
-          <div className="heading" style={{ marginBottom: 6 }}>{t('Shelf')}</div>
-          <select className="input" value={story.shelf ?? ''} onChange={(e) => store.update((s) => void (s.shelf = e.target.value || null))}>
-            <option value="">—</option>
-            {shelves.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.title}
-              </option>
-            ))}
-          </select>
         </div>
       </div>
     </Modal>
@@ -251,14 +238,16 @@ export function ToolboxModal({ onClose, text, from, to }: { onClose: () => void;
   );
 }
 
-export function TokenizeModal({ onClose, text }: { onClose: () => void; text: string }) {
+export function TokenizeModal({ onClose, text: initial, standalone }: { onClose: () => void; text: string; standalone?: boolean }) {
+  const [text, setText] = useState(initial);
   const tokens = useMemo(() => tokenize(text), [text]);
   const ids = useMemo(() => tokenIds(text), [text]);
   const colors = ['#3c4a7a', '#5b3c7a', '#3c7a5b', '#7a5b3c', '#7a3c4a'];
   return (
-    <Modal onClose={onClose} width={760} label={t('Tokenize')}>
-      <ModalHeader title={`${t('Tokenize')} — ${tokens.length} ${t('tokens')}`} onClose={onClose} />
+    <Modal onClose={onClose} width={760} label={t('Tokenizer')}>
+      <ModalHeader title={t('Tokenizer')} subtitle={t('{n} tokens · {c} characters', { n: tokens.length, c: text.length })} onClose={onClose} />
       <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        {standalone && <textarea autoFocus className="textarea" style={{ minHeight: 120 }} placeholder={t('Type text to tokenize…')} value={text} onChange={(e) => setText(e.target.value)} />}
         <div className="ctx-text" style={{ lineHeight: 2 }}>
           {tokens.map((tk, i) => (
             <span key={i} title={String(ids[i] ?? '')} style={{ background: colors[i % colors.length], padding: '2px 0', whiteSpace: 'pre-wrap' }}>

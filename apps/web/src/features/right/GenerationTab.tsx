@@ -195,11 +195,8 @@ export function GenerationTab() {
               step={4}
               def={1024}
               onChange={(v) => set({ maxLength: v })}
-              format={(v) => (
-                <span>
-                  ~<b>{v}</b> {t('Characters')}
-                </span>
-              )}
+              prefix="~"
+              suffix={t('Characters')}
             />
             <SliderSetting
               title={t('Context Size')}
@@ -210,11 +207,7 @@ export function GenerationTab() {
               step={512}
               def={8192}
               onChange={(v) => set({ maxContext: v })}
-              format={(v) => (
-                <span>
-                  <b>{v}</b> {t('tokens')}
-                </span>
-              )}
+              suffix={t('tokens')}
             />
           </div>
         </Collapsible>
@@ -252,8 +245,8 @@ export function GenerationTab() {
                 {t('These options will strongly impact generation and are not recommended to set to high values.')}
               </div>
             </div>
-            <SliderSetting small title={t('Presence')} value={p.repetitionPenaltyPresence} min={-2} max={2} step={0.01} def={0} onChange={(v) => set({ repetitionPenaltyPresence: v })} format={(v) => (v === 0 ? `${v} [0] (off)` : String(v))} />
-            <SliderSetting small title={t('Frequency')} value={p.repetitionPenaltyFrequency} min={-2} max={2} step={0.01} def={0} onChange={(v) => set({ repetitionPenaltyFrequency: v })} format={(v) => (v === 0 ? `${v} [0] (off)` : String(v))} />
+            <SliderSetting small title={t('Presence')} value={p.repetitionPenaltyPresence} min={-2} max={2} step={0.01} def={0} onChange={(v) => set({ repetitionPenaltyPresence: v })} note={p.repetitionPenaltyPresence === 0 ? '[0] (off)' : undefined} defText={`${t('Default: {v}', { v: 0 })} (off)`} />
+            <SliderSetting small title={t('Frequency')} value={p.repetitionPenaltyFrequency} min={-2} max={2} step={0.01} def={0} onChange={(v) => set({ repetitionPenaltyFrequency: v })} note={p.repetitionPenaltyFrequency === 0 ? '[0] (off)' : undefined} defText={`${t('Default: {v}', { v: 0 })} (off)`} />
             <SliderSetting small title={t('Min Output Length')} value={p.minLength} min={1} max={500} step={1} def={1} onChange={(v) => set({ minLength: v })} help={t('Minimum characters before stop sequences can trigger.')} />
           </div>
         </Collapsible>
