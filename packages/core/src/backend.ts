@@ -68,6 +68,96 @@ export function backendCaps(flavor: BackendFlavor): BackendCaps {
   }
 }
 
+/** What the server knows about a model beyond its flavor. */
+export interface ModelTraits {
+  provider: string;
+  /** pi-ai API id, e.g. `openai-responses`, `openai-codex-responses`, `anthropic-messages`. */
+  api: string;
+  id: string;
+  reasoning: boolean;
+  /** The model always thinks (its thinking can't be turned off), so we run it at the lowest level. */
+  thinkingForced: boolean;
+}
+
+/** Capabilities of one model: its flavor's, minus what the model itself rejects. */
+export interface ModelCaps extends BackendCaps {
+  /** Why sampling settings are off for this model, when they are. */
+  restricted?: 'reasoning' | 'learned';
+}
+
+/** OpenAI reasoning models under any host's naming: o3, openai/o4-mini, openai.gpt-5.4, gpt-5.3-codex… */
+const OPENAI_REASONING = /(^|[/.:])(o\d+(-|$)|gpt-5|[\w.-]*codex)/i;
+
+/**
+ * Per-model capabilities. Reasoning models fix their own sampling: OpenAI's o-series / GPT-5 / Codex
+ * reject temperature, top_p, penalties and logprobs, and most models that always think (Claude with
+ * extended thinking, Kimi and DeepSeek thinking, Grok reasoning…) reject or ignore temperature.
+ * `rejected` are parameter names a provider has refused for this model at runtime.
+ */
+export function modelCaps(flavor: BackendFlavor, m: ModelTraits, rejected: Iterable<string> = []): ModelCaps {
+  const caps: ModelCaps = { ...backendCaps(flavor) };
+  const fixedSampling =
+    m.api === 'openai-codex-responses' ||
+    (m.reasoning && OPENAI_REASONING.test(m.id)) ||
+    (m.thinkingForced && !m.api.startsWith('google'));
+  if (fixedSampling) {
+    caps.params = [];
+    caps.samplerOrder = false;
+    caps.logprobs = 0;
+    caps.tokenizer = 'none';
+    // Stop sequences aren't a sampler; Chat Completions still takes them, the Responses API never did.
+    if (m.api !== 'openai-completions') caps.stop = 0;
+    caps.restricted = 'reasoning';
+  }
+  const learned = new Set(rejected);
+  if (learned.size) {
+    const before = caps.params.length;
+    caps.params = caps.params.filter((p) => !PARAM_FIELDS[p].some((f) => learned.has(f)));
+    if (learned.has('logprobs') || learned.has('top_logprobs')) caps.logprobs = 0;
+    if (learned.has('logit_bias')) caps.tokenizer = 'none';
+    if (learned.has('stop')) caps.stop = 0;
+    if (caps.params.length < before) caps.restricted ??= 'learned';
+  }
+  return caps;
+}
+
+/** Request fields each setting is sent as (any backend), to map a provider's complaint back to a setting. */
+const PARAM_FIELDS: Record<ParamId, string[]> = {
+  temperature: ['temperature'],
+  top_k: ['top_k'],
+  top_p: ['top_p'],
+  top_a: ['top_a'],
+  min_p: ['min_p'],
+  typical_p: ['typical_p', 'typical'],
+  tfs: ['tfs'],
+  mirostat: ['mirostat', 'mirostat_mode', 'mirostat_tau', 'mirostat_eta'],
+  unified: ['smoothing_factor', 'smoothing_curve'],
+  rep_pen: ['repetition_penalty', 'repeat_penalty', 'rep_pen'],
+  rep_pen_range: ['penalty_range', 'repeat_last_n', 'rep_pen_range'],
+  rep_pen_slope: ['rep_pen_slope'],
+  presence: ['presence_penalty'],
+  frequency: ['frequency_penalty'],
+  phrase_rep_pen: ['dry_multiplier', 'dry_base', 'dry_allowed_length'],
+  min_length: ['min_tokens'],
+  whitelist: [],
+  dynamic_range: [],
+};
+
+const REJECTION = /unsupported|not supported|does not support|doesn't support|unknown|unrecognized|not allowed|not permitted|only the default|invalid/i;
+
+/**
+ * Request fields a provider error complains about, among the ones we sent. Used to drop them and retry,
+ * e.g. "Unsupported parameter: 'temperature' is not supported with this model."
+ */
+export function rejectedFields(message: string, sent: Iterable<string>): string[] {
+  if (!REJECTION.test(message)) return [];
+  const out: string[] = [];
+  for (const f of sent) {
+    if (new RegExp(`(^|[^\\w])${f.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([^\\w]|$)`).test(message)) out.push(f);
+  }
+  return out;
+}
+
 export function supports(flavor: BackendFlavor, p: ParamId): boolean {
   return backendCaps(flavor).params.includes(p);
 }
@@ -89,8 +179,12 @@ export interface PayloadExtras {
  * Request-body fields for a backend: temperature plus everything else it understands, under its own names.
  * Settings the backend can't take are left out (they stay saved in the preset).
  */
-export function samplerPayload(p: GenerationParams, flavor: BackendFlavor, extras: PayloadExtras = {}): { temperature?: number; body: Record<string, unknown> } {
-  const caps = backendCaps(flavor);
+export function samplerPayload(
+  p: GenerationParams,
+  flavor: BackendFlavor,
+  extras: PayloadExtras = {},
+  caps: BackendCaps = backendCaps(flavor),
+): { temperature?: number; body: Record<string, unknown> } {
   const can = (x: ParamId) => caps.params.includes(x);
   const on = new Set(p.order.filter((s) => s.enabled).map((s) => s.id));
   const b: Record<string, unknown> = {};
@@ -142,7 +236,7 @@ export function samplerPayload(p: GenerationParams, flavor: BackendFlavor, extra
     b.top_logprobs = Math.min(extras.logprobs, caps.logprobs);
   }
   if (extras.stop?.length && caps.stop) b.stop = extras.stop.slice(0, caps.stop);
-  return { temperature: on.has('temperature') ? p.temperature : undefined, body: b };
+  return { temperature: can('temperature') && on.has('temperature') ? p.temperature : undefined, body: b };
 }
 
 /** One generated token with the most likely alternatives (natural-log probabilities). */

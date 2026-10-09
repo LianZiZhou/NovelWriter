@@ -1,10 +1,11 @@
 import { useMemo, useState } from 'react';
 import { ArrowRight, ArrowSquareOut, ArrowsLeftRight, Book, CaretDown, CaretUp, ChartBar, Copy, ImageSquare, CornersOut, DownloadSimple, MagnifyingGlass, Sword, Article } from '@phosphor-icons/react';
-import { backendCaps, countTokens, exportNovelAIStory, exportPlaintext, exportScenario, exportStoryFile, searchLore } from '@novelwriter/core';
+import { countTokens, exportNovelAIStory, exportPlaintext, exportScenario, exportStoryFile, searchLore } from '@novelwriter/core';
 import { download, safeFileName, useStory, useStoryMeta } from '../../store/story.ts';
 import { useSettings } from '../../store/settings.ts';
 import { useUI } from '../../store/ui.ts';
 import { t } from '../../i18n.ts';
+import { capsOf } from '../../api.ts';
 import { Collapsible, Select, ToggleRow } from '../../components/ui.tsx';
 import { ModelSelect } from './ModelSelect.tsx';
 
@@ -35,7 +36,7 @@ export function StoryTab() {
   const tokenProbs = useSettings((x) => x.tokenProbabilities);
   const editorProbs = useSettings((x) => x.editorTokenProbabilities);
   const modelInfo = useStory((x) => x.modelInfo)();
-  const logprobsCaps = backendCaps(modelInfo?.flavor ?? 'chat-only').logprobs;
+  const logprobsCaps = capsOf(modelInfo).logprobs;
   const adventure = story.mode === 'adventure';
   const results = q ? searchLore(story.lorebook.entries, q).slice(0, 8) : [];
 

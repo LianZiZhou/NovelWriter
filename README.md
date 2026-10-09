@@ -229,6 +229,11 @@ current model takes. For custom endpoints, choose the *Server type* in Settings 
 | Other OpenAI-compatible | temperature, Nucleus, presence/frequency | no | no | no |
 | Claude, Gemini, Bedrock and other chat APIs | temperature | no | no | no |
 
+Reasoning models set their own sampling, so nothing above is sent to them: OpenAI's o-series, GPT-5 and Codex
+models (including ChatGPT/Codex login and GitHub Copilot), and any model whose thinking can't be turned off
+(Gemini aside, which still takes a temperature). If a provider still refuses a setting, NovelWriter drops the
+setting it names, retries, and stops sending it to that model.
+
 Where logit bias isn't available, phrase bias and banned phrases become instructions in the system prompt, and
 banned phrases are also removed from the output. As on NovelAI's chat models, only the first token of a biased
 phrase is biased. Stop sequences beyond what an API accepts are applied to the output.

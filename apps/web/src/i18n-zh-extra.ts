@@ -933,4 +933,7 @@ export const ZH_EXTRA: Record<string, string> = {
   "Application menu": "应用菜单",
   "Restore": "还原",
   "Maximize": "最大化",
+  "{model} sets its own sampling (reasoning model), so Randomness and the samplers are not sent. They stay saved in the preset.": "{model} 自行决定采样（推理模型），因此不会发送随机度和采样器设置。这些设置仍保存在预设中。",
+  "This model": "此模型",
+  "{model} refused some settings; they are no longer sent to it.": "{model} 拒绝了部分设置，之后不再向它发送。",
 };
