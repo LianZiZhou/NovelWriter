@@ -1,4 +1,4 @@
-import { BACKEND_FLAVORS } from '@novelwriter/core';
+import { BACKEND_FLAVORS, INSTRUCT_TEMPLATES } from '@novelwriter/core';
 import { useEffect, useRef, useState } from 'react';
 import { ArrowSquareOut, Copy, Key, Plus, SignIn, SignOut, Trash } from '@phosphor-icons/react';
 import { api, openLogin, type CustomProvider, type LoginEvent, type LoginPrompt, type ProviderInfo } from '../../api.ts';
@@ -215,6 +215,37 @@ function CustomEndpoints({ onChanged }: { onChanged: () => void }) {
               {t('Decides which generation settings are sent: local servers accept most samplers, sampler order, logit bias and token probabilities under their own names.')}
             </div>
           </div>
+          <div>
+            <div className="field-label" style={{ marginTop: 0 }}>{t('Request format')}</div>
+            <Select
+              value={draft.completion ?? 'off'}
+              ariaLabel={t('Request format')}
+              onChange={(v) => setDraft({ ...draft, completion: v })}
+              options={[
+                { value: 'off' as const, label: t('Chat (messages)') },
+                { value: 'instruct' as const, label: t('Text completion with instruct template') },
+                { value: 'raw' as const, label: t('Raw text completion (base models)') },
+              ]}
+            />
+            <div className="desc" style={{ marginTop: 4 }}>
+              {draft.completion === 'raw'
+                ? t('The story is sent as plain text for the model to continue, the way NovelAI runs its own models. Best for base (non-instruct) models.')
+                : draft.completion === 'instruct'
+                  ? t("Requests are written in the model's own chat format and sent to /completions, so the model continues the story word for word.")
+                  : t('Requests go to /chat/completions and the server applies the chat format.')}
+            </div>
+          </div>
+          {draft.completion === 'instruct' && (
+            <div>
+              <div className="field-label" style={{ marginTop: 0 }}>{t('Instruct template')}</div>
+              <Select
+                value={draft.template ?? 'auto'}
+                ariaLabel={t('Instruct template')}
+                onChange={(v) => setDraft({ ...draft, template: v })}
+                options={[{ value: 'auto' as const, label: t('Automatic (from the server or model name)') }, ...Object.values(INSTRUCT_TEMPLATES).map((x) => ({ value: x.id, label: x.name }))]}
+              />
+            </div>
+          )}
           <div className="row">
             <input
               className="input grow"

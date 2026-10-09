@@ -28,6 +28,11 @@ const ACTIVATION: Record<string, string> = {
   categoryDisabled: 'Category disabled',
   noMatch: 'No key found',
   noText: 'No text',
+  sticky: 'Sticky',
+  delayed: 'Delayed',
+  cooldown: 'On cooldown',
+  probability: 'Probability roll failed',
+  group: 'Another entry of its group was kept',
 };
 const COLUMN_HELP: Record<string, string> = {
   Stage: 'The insertion stage the entry was added in.',

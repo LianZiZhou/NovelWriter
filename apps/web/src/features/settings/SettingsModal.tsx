@@ -90,6 +90,16 @@ function AITab() {
         </div>
       </Group>
       <Group title="Experimental">
+        <ToggleRow
+          title={t('Structured Prompts')}
+          desc={
+            s.promptLayout === 'classic'
+              ? t("The context is sent to chat models as one block of text, exactly as NovelAI's own models see it.")
+              : t("Chat models get Memory and lorebook entries as background in the system prompt, the story as the message, and the Author's Note right after it. Models that allow it continue the story's last lines word for word.")
+          }
+          on={s.promptLayout !== 'classic'}
+          onChange={(v) => s.set({ promptLayout: v ? 'structured' : 'classic' })}
+        />
         <ToggleRow title={t('Preamble')} desc={s.preamble ? t('The context will have a small preamble prepended to improve generations on low context. The exact behaviour varies per model.') : t('No preamble will be added to the context.')} on={s.preamble} onChange={(v) => s.set({ preamble: v })} />
         <ToggleRow
           title={t('Show System Prompt Settings')}

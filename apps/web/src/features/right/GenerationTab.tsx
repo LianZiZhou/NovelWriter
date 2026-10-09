@@ -303,6 +303,8 @@ export function GenerationTab() {
                 options={(['off', 'very_light', 'light', 'medium', 'aggressive', 'very_aggressive'] as const).map((v) => ({ value: v, label: v === 'off' ? t('Off') : t(v.replace('_', ' ').replace(/^./, (c) => c.toUpperCase())) }))}
               />
             </div>
+            <SliderSetting small title={t('XTC Probability')} value={p.xtcProbability ?? 0} min={0} max={1} step={0.01} def={0} onChange={(v) => set({ xtcProbability: v })} unsupported={na('xtc')} note={(p.xtcProbability ?? 0) === 0 ? '[0] (off)' : undefined} defText={`${t('Default: {v}', { v: 0 })} (off)`} help={t('Exclude Top Choices: how often the most likely tokens are cut, leaving the least likely of them. Makes prose less predictable without making it incoherent.')} />
+            {(p.xtcProbability ?? 0) > 0 && <SliderSetting small title={t('XTC Threshold')} value={p.xtcThreshold ?? 0.1} min={0} max={0.5} step={0.01} def={0.1} onChange={(v) => set({ xtcThreshold: v })} unsupported={na('xtc')} help={t('Tokens at least this likely count as top choices.')} />}
             <div>
               <div className="desc" style={{ opacity: 0.85 }}>{t('Alternate Repetition Penalty')}</div>
               <div className="desc warning-text" style={{ opacity: 1, marginTop: 4 }}>

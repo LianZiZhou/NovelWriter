@@ -490,7 +490,7 @@ export class LLM {
 
   private async *demo(req: GenerateRequest, maxChars: number, signal: AbortSignal) {
     const ctx = req.messages.map((m) => m.content).join('\n');
-    const isAux = /HypeBot|lorebook entries|titles for stories|fiction editor/.test(req.system ?? '');
+    const isAux = /HypeBot|concise lorebook entries|titles for stories|fiction editor|running summary of a story/.test(req.system ?? '');
     const text = isAux ? auxDemo(req.system ?? '', ctx) : demoContinuation(ctx, Math.min(maxChars, 600));
     const faux = fauxProvider({ provider: DEMO_PROVIDER, tokensPerSecond: 80 });
     faux.setResponses([fauxAssistantMessage([fauxText(text)])]);
@@ -516,7 +516,10 @@ function auxDemo(system: string, ctx: string): string {
     const t = ['The Quiet Hour', 'Lanterns in the Mist', 'What the River Kept', 'The Last Bridge', 'A Map of Small Fires'];
     return t[Math.floor(Math.random() * t.length)];
   }
-  if (system.includes('lorebook entries')) {
+  if (system.includes('running summary of a story')) {
+    return 'Earlier, the travellers crossed the river towns, met a stranger who seemed to know too much, and set out north before the storm.';
+  }
+  if (system.includes('concise lorebook entries')) {
     const m = /entry for: ([^\n]+)/.exec(ctx);
     const subject = (m?.[1] ?? 'The subject').trim();
     return `${subject} is a figure spoken of in hushed tones along the river towns. Few have met them in person, yet everyone seems to know a story — most of them contradictory, all of them strange.`;

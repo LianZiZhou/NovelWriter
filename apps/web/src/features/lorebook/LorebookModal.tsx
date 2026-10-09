@@ -605,6 +605,26 @@ function EntryEditor({ entry, categories, update, onClose, active, generate }: {
             </div>
             <ToggleRow title={t('Key-Relative Insertion')} desc={t('Inserts the entry relative to the last matching key. Positive positions go after the key, negative before it.')} on={entry.keyRelative} onChange={(v) => update({ keyRelative: v })} />
             <ToggleRow title={t('Cascading Activation')} desc={t("Lets this entry's keys be found in Memory, Author's Note and other active entries.")} on={entry.nonStoryActivatable} onChange={(v) => update({ nonStoryActivatable: v })} />
+            <ToggleRow title={t('Prevent Further Cascading')} desc={t("This entry's text never activates other entries.")} on={!!entry.preventRecursion} onChange={(v) => update({ preventRecursion: v || undefined })} />
+            <ToggleRow title={t('Match Case')} desc={t('Keys only match with the same upper and lower case.')} on={!!entry.caseSensitive} onChange={(v) => update({ caseSensitive: v || undefined })} />
+            <ToggleRow title={t('Whole Words Only')} desc={t('Keys only match whole words, not parts of longer words. Ignored for Chinese, Japanese and Korean keys.')} on={!!entry.wholeWords} onChange={(v) => update({ wholeWords: v || undefined })} />
+            <div className="heading" style={{ marginTop: 8 }}>{t('Timing & Chance')}</div>
+            <div className="placement-grid">
+              <LoreNumber label={t('Probability (%)')} desc={t('Chance the entry activates when its keys match.')} value={entry.probability ?? 100} min={0} max={100} def={100} onChange={(v) => update({ probability: v })} />
+              <LoreNumber label={t('Sticky')} desc={t('Stays active for this many generations after it activates.')} value={entry.sticky ?? 0} min={0} max={1000} def={0} onChange={(v) => update({ sticky: v })} />
+              <LoreNumber label={t('Cooldown')} desc={t("Can't activate again for this many generations after it was active.")} value={entry.cooldown ?? 0} min={0} max={1000} def={0} onChange={(v) => update({ cooldown: v })} />
+              <LoreNumber label={t('Delay')} desc={t("Can't activate before the story has this many generations.")} value={entry.delay ?? 0} min={0} max={100000} def={0} onChange={(v) => update({ delay: v })} />
+            </div>
+            <div className="heading" style={{ marginTop: 8 }}>{t('Inclusion Group')}</div>
+            <div className="placement-grid">
+              <label className="number-field">
+                <span style={{ fontWeight: 600, fontSize: 14 }}>{t('Group')}</span>
+                <input className="input" value={entry.group ?? ''} placeholder={t('None')} onChange={(e) => update({ group: e.target.value || undefined })} />
+                <span className="desc">{t('When several entries of a group activate, only one is kept. Separate several groups with commas.')}</span>
+              </label>
+              <LoreNumber label={t('Group Weight')} desc={t('Relative chance of being the entry kept.')} value={entry.groupWeight ?? 100} min={0} max={10000} def={100} onChange={(v) => update({ groupWeight: v })} />
+            </div>
+            {entry.group?.trim() && <ToggleRow title={t('Prioritize in Group')} desc={t('Keep the entry with the highest Insertion Order instead of a weighted random pick.')} on={!!entry.groupPrioritize} onChange={(v) => update({ groupPrioritize: v || undefined })} />}
             <ContextConfigEditor value={entry.contextConfig} onChange={(c) => update({ contextConfig: c })} />
           </>
         )}
@@ -617,6 +637,27 @@ function EntryEditor({ entry, categories, update, onClose, active, generate }: {
         {tab === 'conditions' && <ConditionsEditor conditions={entry.conditions} onChange={(c) => update({ conditions: c })} />}
       </div>
     </>
+  );
+}
+
+/** A number field for an optional lore setting; the default value clears it. */
+function LoreNumber({ label, desc, value, min, max, def, onChange }: { label: string; desc: string; value: number; min: number; max: number; def: number; onChange: (v: number | undefined) => void }) {
+  return (
+    <label className="number-field">
+      <span style={{ fontWeight: 600, fontSize: 14 }}>{label}</span>
+      <input
+        className="input"
+        type="number"
+        min={min}
+        max={max}
+        value={value}
+        onChange={(e) => {
+          const v = Math.min(max, Math.max(min, Math.round(Number(e.target.value) || 0)));
+          onChange(v === def ? undefined : v);
+        }}
+      />
+      <span className="desc">{desc}</span>
+    </label>
   );
 }
 
