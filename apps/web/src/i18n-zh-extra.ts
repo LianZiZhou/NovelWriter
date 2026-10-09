@@ -934,7 +934,7 @@ export const ZH_EXTRA: Record<string, string> = {
   "{model} does not report token probabilities.": "{model} 不提供 Token 概率。",
   "Can't activate again for this many generations after it was active.": "激活结束后，在这么多次生成内不会再次激活。",
   "Can't activate before the story has this many generations.": "故事生成次数达到这个数之前不会激活。",
-  "Chat models get Memory and lorebook entries as background in the system prompt, the story as the message, and the Author's Note right after it. Models that allow it continue the story's last lines word for word.": "聊天模型会在系统提示词里收到记忆和知识书条目作为背景，故事本身作为消息，作者注释紧跟在故事之后。支持预填充的模型会从故事的最后几行逐字接着写。",
+  "Chat models get Memory and lorebook entries as background in the system prompt and see the story as their own earlier replies, with your adventure actions as your turns and the Author's Note at the end. Models that allow it continue the story's last lines word for word.": "聊天模型会在系统提示词里收到记忆和知识书条目作为背景，并把故事当作自己之前写下的回复，冒险行动作为你的发言，作者注释放在最后。支持的模型会逐字接着故事的最后几行往下写。",
   "Requests are written in the model's own chat format and sent to /completions, so the model continues the story word for word.": "请求按模型自己的对话格式拼好后发到 /completions，模型会逐字接着故事往下写。",
   "The context is sent to chat models as one block of text, exactly as NovelAI's own models see it.": "上下文作为一整段文本发给聊天模型，与 NovelAI 自家模型看到的完全一样。",
   "This entry's text never activates other entries.": "这个条目的文本不会激活其他条目。",

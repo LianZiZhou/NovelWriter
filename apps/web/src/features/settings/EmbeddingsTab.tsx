@@ -1,5 +1,5 @@
-import { useEffect, useState, type ReactNode } from 'react';
-import { ArrowsClockwise, Check, DownloadSimple, Play, Stop, Trash, X } from '@phosphor-icons/react';
+import { useEffect, useState } from 'react';
+import { Check, DownloadSimple, Play, Stop, Trash, X } from '@phosphor-icons/react';
 import {
   EMBEDDING_MODELS,
   ENDPOINT_PRESETS,
@@ -8,14 +8,14 @@ import {
   type EmbeddingConfig,
   type EmbeddingConfigPatch,
   type EmbeddingModelInfo,
-  type OnnxDevice,
   type OnnxDtype,
 } from '@novelwriter/core';
-import { api, type EmbeddingStatus, type EmbeddingTask, type HardwareInfo } from '../../api.ts';
+import { api, type EmbeddingStatus, type HardwareInfo } from '../../api.ts';
 import { useEmbeddings } from '../../store/embeddings.ts';
-import { useUI } from '../../store/ui.ts';
 import { t } from '../../i18n.ts';
-import { Checkbox, SegmentedControl, Select, ToggleRow } from '../../components/ui.tsx';
+import { SegmentedControl, Select, ToggleRow } from '../../components/ui.tsx';
+import { Group, Hardware, Label, mb, Num, Pick, run, TaskRow, Text, toast } from './fields.tsx';
+import { OnnxRuntimeSection } from './RuntimeSection.tsx';
 
 const DTYPES: OnnxDtype[] = ['fp32', 'fp16', 'int8', 'uint8', 'quantized', 'q4', 'q4f16', 'bnb4'];
 const DTYPE_LABELS: Record<OnnxDtype, string> = {
@@ -30,203 +30,16 @@ const DTYPE_LABELS: Record<OnnxDtype, string> = {
 };
 const LANG = { zh: 'Chinese', en: 'English', multi: 'Multilingual' } as const;
 
-const toast = (msg: string, kind: 'error' | 'success' | 'info' = 'error') => useUI.getState().toast(msg, kind);
-const run = async (p: Promise<unknown>) => {
-  try {
-    await p;
-  } catch (e) {
-    toast((e as Error).message);
-  }
-};
-
-function Group({ title, desc, children, wide }: { title: string; desc?: ReactNode; children: ReactNode; wide?: boolean }) {
-  return (
-    <>
-      <div className="settings-group-title">{t(title)}</div>
-      {desc && <div className="desc" style={{ marginTop: -4, marginBottom: 12 }}>{desc}</div>}
-      <div className={`settings-grid ${wide ? 'single' : ''}`} style={wide ? { gridTemplateColumns: '1fr' } : undefined}>
-        {children}
-      </div>
-    </>
-  );
-}
-
-function Label({ text, help }: { text: string; help?: string }) {
-  return (
-    <span className="field-label" style={{ margin: 0 }}>
-      {t(text)}
-      {help && <span className="desc" style={{ fontWeight: 400, display: 'block', marginTop: 2 }}>{t(help)}</span>}
-    </span>
-  );
-}
-
-function Num({ label, help, value, onChange, min, max, step = 1 }: { label: string; help?: string; value: number; onChange: (v: number) => void; min?: number; max?: number; step?: number }) {
-  const [draft, setDraft] = useState<string | null>(null);
-  const commit = () => {
-    if (draft === null) return;
-    let v = parseFloat(draft);
-    if (Number.isNaN(v)) v = value;
-    if (min !== undefined) v = Math.max(min, v);
-    if (max !== undefined) v = Math.min(max, v);
-    setDraft(null);
-    if (v !== value) onChange(v);
-  };
-  return (
-    <label className="number-field">
-      <Label text={label} help={help} />
-      <input className="input" type="number" value={draft ?? value} min={min} max={max} step={step} onChange={(e) => setDraft(e.target.value)} onBlur={commit} onKeyDown={(e) => e.key === 'Enter' && commit()} />
-    </label>
-  );
-}
-
-function Text({ label, help, value, onChange, placeholder, multiline, password }: { label: string; help?: string; value: string; onChange: (v: string) => void; placeholder?: string; multiline?: boolean; password?: boolean }) {
-  const [draft, setDraft] = useState<string | null>(null);
-  const commit = () => {
-    if (draft !== null && draft !== value) onChange(draft);
-    setDraft(null);
-  };
-  return (
-    <label className="number-field" style={multiline ? { gridColumn: '1 / -1' } : undefined}>
-      <Label text={label} help={help} />
-      {multiline ? (
-        <textarea className="textarea" style={{ minHeight: 70, fontFamily: 'var(--font-mono, monospace)', fontSize: 13 }} value={draft ?? value} placeholder={placeholder} onChange={(e) => setDraft(e.target.value)} onBlur={commit} />
-      ) : (
-        <input className="input" type={password ? 'password' : 'text'} value={draft ?? value} placeholder={placeholder} onChange={(e) => setDraft(e.target.value)} onBlur={commit} onKeyDown={(e) => e.key === 'Enter' && commit()} />
-      )}
-    </label>
-  );
-}
-
-function Pick<V extends string>({ label, help, value, options, onChange }: { label: string; help?: string; value: V; options: { value: V; label: string; description?: string }[]; onChange: (v: V) => void }) {
-  return (
-    <div className="number-field">
-      <Label text={label} help={help} />
-      <Select value={value} ariaLabel={t(label)} searchable={options.length > 10} onChange={onChange} options={options.map((o) => ({ ...o, label: t(o.label), description: o.description ? t(o.description) : undefined }))} />
-    </div>
-  );
-}
-
-function mb(n: number): string {
-  return n >= 1024 ? `${(n / 1024).toFixed(1)} GB` : `${Math.round(n)} MB`;
-}
-
-function TaskRow({ task }: { task: EmbeddingTask }) {
-  const pct = task.total ? Math.min(100, Math.round((task.received / task.total) * 100)) : 0;
-  return (
-    <div style={{ gridColumn: '1 / -1', background: 'var(--bg0)', padding: '8px 12px' }}>
-      <div className="row between">
-        <span style={{ fontWeight: 600 }}>{task.label}</span>
-        <span className="row" style={{ gap: 8 }}>
-          <span className="desc">
-            {task.status === 'running' ? `${pct}% · ${mb(task.received / 1048576)}${task.total ? ` / ${mb(task.total / 1048576)}` : ''}` : t(task.status === 'done' ? 'Done' : task.status === 'canceled' ? 'Canceled' : 'Failed')}
-          </span>
-          {task.status === 'running' && (
-            <button type="button" className="icon-btn" aria-label={t('Cancel')} title={t('Cancel')} onClick={() => void run(api.cancelTask(task.id))}>
-              <X size={14} />
-            </button>
-          )}
-        </span>
-      </div>
-      {task.status === 'running' && (
-        <div style={{ height: 4, background: 'var(--bg2)', marginTop: 6 }}>
-          <div style={{ height: 4, width: `${pct}%`, background: 'var(--text-highlight, var(--accent))' }} />
-        </div>
-      )}
-      {task.current && task.status === 'running' && <div className="desc" style={{ fontSize: 12, marginTop: 4 }}>{task.current}</div>}
-      {task.error && <div className="warning-text" style={{ marginTop: 4 }}>{task.error}</div>}
-    </div>
-  );
-}
-
-function Hardware({ hw, onRefresh }: { hw: HardwareInfo | null; onRefresh: () => void }) {
-  if (!hw) return <div className="desc">{t('Detecting hardware…')}</div>;
-  const line = (label: string, value: ReactNode) => (
-    <div className="row" style={{ gap: 8, alignItems: 'baseline' }}>
-      <span style={{ fontWeight: 600, minWidth: 90 }}>{t(label)}</span>
-      <span>{value}</span>
-    </div>
-  );
-  return (
-    <div style={{ gridColumn: '1 / -1', display: 'flex', flexDirection: 'column', gap: 4 }}>
-      {line('System', `${hw.os} ${hw.arch} · ${hw.cpu} · ${hw.cores} ${t('threads')} · ${hw.memoryGB} GB`)}
-      {line('GPUs', hw.gpus.length ? hw.gpus.map((g) => `${g.name}${g.memoryMB ? ` (${mb(g.memoryMB)})` : ''}`).join(', ') : t('None found'))}
-      {line('NPUs', hw.npus.length ? hw.npus.map((n) => n.name).join(', ') : t('None found'))}
-      {hw.os === 'linux' && line('CUDA', `${t('Driver')} ${hw.cuda.driver ? '✓' : '✗'} · CUDA 12 ${hw.cuda.runtime12 ? '✓' : '✗'} · cuDNN 9 ${hw.cuda.cudnn9 ? '✓' : '✗'} · Vulkan ${hw.vulkan ? '✓' : '✗'}`)}
-      {line('Suggested', `ONNX: ${hw.suggest.onnxDevice} · llama.cpp: ${hw.suggest.llamaVariant || '—'}`)}
-      <div>
-        <button type="button" className="btn small" onClick={onRefresh}>
-          <ArrowsClockwise size={14} /> {t('Detect Again')}
-        </button>
-      </div>
-    </div>
-  );
-}
-
-const ONNX_DEVICES: { value: OnnxDevice; label: string; description: string; os?: string[]; arch?: string[] }[] = [
-  { value: 'auto', label: 'Automatic', description: 'The best provider the runtime offers on this system.' },
-  { value: 'cpu', label: 'CPU', description: 'Works everywhere.' },
-  { value: 'dml', label: 'DirectML (Windows GPU)', description: 'NVIDIA, AMD, Intel and Qualcomm GPUs on Windows.', os: ['win32'] },
-  { value: 'cuda', label: 'CUDA (NVIDIA)', description: 'Needs the CUDA provider below, CUDA 12 and cuDNN 9.', os: ['linux'], arch: ['x64'] },
-  { value: 'tensorrt', label: 'TensorRT (NVIDIA)', description: 'Needs TensorRT 10 as well; slow first start while it builds engines.', os: ['linux'], arch: ['x64'] },
-  { value: 'coreml', label: 'Core ML (Apple GPU / Neural Engine)', description: 'Apple Silicon GPU and Neural Engine (NPU).', os: ['darwin'] },
-  { value: 'webgpu', label: 'WebGPU (Dawn)', description: 'Vulkan, Metal or Direct3D 12 through WebGPU; any vendor.', os: ['win32', 'linux', 'darwin'] },
-  { value: 'qnn', label: 'QNN (Qualcomm NPU)', description: 'Snapdragon Hexagon NPU. Needs an ONNX Runtime built with QNN (custom runtime below).' },
-  { value: 'custom', label: 'Custom providers (JSON)', description: 'Any providers a custom ONNX Runtime build supports.' },
-];
-
-function OnnxSection({ c, save, status, hw }: { c: EmbeddingConfig; save: (p: EmbeddingConfigPatch) => void; status: EmbeddingStatus | null; hw: HardwareInfo | null }) {
+function OnnxSection({ c, save, status }: { c: EmbeddingConfig; save: (p: EmbeddingConfigPatch) => void; status: EmbeddingStatus | null }) {
   const o = c.onnx;
-  const rt = status?.runtime;
   const installed = new Map(status?.models.onnx.map((m) => [m.repo, m.dtypes]) ?? []);
   const catalog = EMBEDDING_MODELS.filter((m) => m.onnx);
   const current = catalog.find((m) => m.id === o.model);
   const repo = current?.onnx?.repo ?? o.model;
   const dtype: OnnxDtype = o.dtype === 'auto' ? (current?.onnx?.recommended ?? 'fp32') : o.dtype;
-  const devices = ONNX_DEVICES.filter((d) => !hw || ((!d.os || d.os.includes(hw.os)) && (!d.arch || d.arch.includes(hw.arch))));
   const onnx = (p: Partial<EmbeddingConfig['onnx']>) => save({ onnx: p });
   return (
     <>
-      <Group title="ONNX Runtime" desc={t('Runs the model inside NovelWriter. The runtime (about 60–90 MB) is downloaded from the npm registry when you install it; nothing is downloaded until then.')}>
-        <div style={{ gridColumn: '1 / -1' }} className="row between">
-          <span>
-            {rt?.installed ? (
-              <>
-                <Check size={14} /> {rt.version} · {mb(rt.sizeMB)}
-              </>
-            ) : (
-              t('Not installed')
-            )}
-          </span>
-          <span className="row" style={{ gap: 8 }}>
-            <button type="button" className="btn small" onClick={() => void run(api.installRuntime('onnx'))}>
-              <DownloadSimple size={14} /> {rt?.installed ? t('Reinstall') : t('Install')}
-            </button>
-            {rt?.installed && (
-              <button type="button" className="btn small" onClick={() => void run(api.removeRuntime('onnx'))}>
-                <Trash size={14} /> {t('Remove')}
-              </button>
-            )}
-          </span>
-        </div>
-        {rt?.installed && rt.cudaAvailable && (
-          <div style={{ gridColumn: '1 / -1' }} className="row between">
-            <span>
-              {t('CUDA / TensorRT providers')}: {rt.cudaProviders ? t('Installed') : t('Not installed')}
-              <span className="desc" style={{ display: 'block' }}>{t("About 240 MB from Microsoft's NuGet package. Also needs CUDA 12 and cuDNN 9 on the system.")}</span>
-            </span>
-            {rt.cudaProviders ? (
-              <button type="button" className="btn small" onClick={() => void run(api.removeRuntime('onnx-cuda'))}>
-                <Trash size={14} /> {t('Remove')}
-              </button>
-            ) : (
-              <button type="button" className="btn small" onClick={() => void run(api.installRuntime('onnx-cuda'))}>
-                <DownloadSimple size={14} /> {t('Install')}
-              </button>
-            )}
-          </div>
-        )}
-      </Group>
-
       <Group title="Model" wide>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
           {catalog.map((m) => {
@@ -292,113 +105,6 @@ function OnnxSection({ c, save, status, hw }: { c: EmbeddingConfig; save: (p: Em
         />
       </Group>
 
-      <Group title="Hardware Acceleration" desc={t('Execution providers ONNX Runtime runs the model on. Providers the stock runtime does not include need a custom ONNX Runtime build.')}>
-        <Pick label="Execution Provider" value={o.device} onChange={(v) => onnx({ device: v })} options={devices} />
-        {(o.device === 'dml' || o.device === 'cuda' || o.device === 'tensorrt') && <Num label="Device ID" help="Index of the GPU to use (0 = first)." value={o.deviceId} min={0} max={16} onChange={(v) => onnx({ deviceId: v })} />}
-        {o.device === 'coreml' && (
-          <>
-            <Pick
-              label="Compute Units"
-              value={o.coremlUnits}
-              onChange={(v) => onnx({ coremlUnits: v })}
-              options={[
-                { value: 'all', label: 'All (CPU, GPU and Neural Engine)' },
-                { value: 'ane', label: 'Neural Engine only' },
-                { value: 'cpu-gpu', label: 'CPU and GPU' },
-                { value: 'cpu', label: 'CPU only' },
-              ]}
-            />
-            <div className="number-field" style={{ gap: 8 }}>
-              <Checkbox on={o.coremlMlProgram} onChange={(v) => onnx({ coremlMlProgram: v })} label={t('ML Program format (newer, recommended)')} />
-              <Checkbox on={o.coremlStaticShapes} onChange={(v) => onnx({ coremlStaticShapes: v })} label={t('Only static input shapes')} />
-              <Checkbox on={o.coremlSubgraphs} onChange={(v) => onnx({ coremlSubgraphs: v })} label={t('Run subgraphs on Core ML')} />
-            </div>
-          </>
-        )}
-        {o.device === 'qnn' && (
-          <>
-            <Pick
-              label="QNN Backend"
-              value={o.qnnBackend}
-              onChange={(v) => onnx({ qnnBackend: v })}
-              options={[
-                { value: 'htp', label: 'HTP (Hexagon NPU)' },
-                { value: 'gpu', label: 'GPU (Adreno)' },
-                { value: 'cpu', label: 'CPU' },
-              ]}
-            />
-            <Text label="QNN Backend Library" help="Path to QnnHtp.dll / libQnnHtp.so; overrides the backend above." value={o.qnnBackendPath} onChange={(v) => onnx({ qnnBackendPath: v })} />
-            <ToggleRow title={t('FP16 Precision')} on={o.qnnFp16} onChange={(v) => onnx({ qnnFp16: v })} />
-          </>
-        )}
-        {o.device === 'webgpu' && (
-          <Pick
-            label="Preferred Layout"
-            value={o.webgpuLayout}
-            onChange={(v) => onnx({ webgpuLayout: v })}
-            options={[
-              { value: 'NCHW', label: 'NCHW' },
-              { value: 'NHWC', label: 'NHWC' },
-            ]}
-          />
-        )}
-        {o.device === 'custom' && (
-          <Text
-            multiline
-            label="Execution Providers (JSON)"
-            help='Passed to ONNX Runtime as executionProviders, e.g. [{"name":"qnn","backendType":"htp"},"cpu"].'
-            value={o.customProviders}
-            placeholder='[{"name":"qnn","backendType":"htp"},"cpu"]'
-            onChange={(v) => onnx({ customProviders: v })}
-          />
-        )}
-        <Text
-          label="Custom ONNX Runtime"
-          help="Folder of an onnxruntime-node package built with more providers (QNN for Snapdragon, …). Empty = the installed runtime."
-          value={o.customRuntime}
-          onChange={(v) => onnx({ customRuntime: v })}
-        />
-        {o.device !== 'cpu' && o.device !== 'auto' && <ToggleRow title={t('CPU Fallback')} desc={t('Operators the chosen provider cannot run go to the CPU.')} on={o.cpuFallback} onChange={(v) => onnx({ cpuFallback: v })} />}
-      </Group>
-
-      <Group title="Runtime Tuning">
-        <Num label="Intra-op Threads" help="Threads within an operator (0 = automatic)." value={o.intraOpThreads} min={0} max={256} onChange={(v) => onnx({ intraOpThreads: v })} />
-        <Num label="Inter-op Threads" help="Threads across operators in parallel mode (0 = automatic)." value={o.interOpThreads} min={0} max={256} onChange={(v) => onnx({ interOpThreads: v })} />
-        <Pick
-          label="Graph Optimization"
-          value={o.graphOptimization}
-          onChange={(v) => onnx({ graphOptimization: v })}
-          options={[
-            { value: 'all', label: 'All' },
-            { value: 'extended', label: 'Extended' },
-            { value: 'basic', label: 'Basic' },
-            { value: 'disabled', label: 'Disabled' },
-          ]}
-        />
-        <Pick
-          label="Execution Mode"
-          value={o.executionMode}
-          onChange={(v) => onnx({ executionMode: v })}
-          options={[
-            { value: 'sequential', label: 'Sequential' },
-            { value: 'parallel', label: 'Parallel' },
-          ]}
-        />
-        <ToggleRow title={t('CPU Memory Arena')} desc={t('Faster repeated runs, more memory held.')} on={o.memArena} onChange={(v) => onnx({ memArena: v })} />
-        <ToggleRow title={t('Memory Pattern')} desc={t('Pre-plans memory for inputs of the same shape.')} on={o.memPattern} onChange={(v) => onnx({ memPattern: v })} />
-        <Pick
-          label="Log Level"
-          value={String(o.logLevel) as '0'}
-          onChange={(v) => onnx({ logLevel: Number(v) as 0 })}
-          options={[
-            { value: '0', label: 'Verbose' },
-            { value: '1', label: 'Info' },
-            { value: '2', label: 'Warning' },
-            { value: '3', label: 'Error' },
-            { value: '4', label: 'Fatal' },
-          ]}
-        />
-      </Group>
     </>
   );
 }
@@ -697,11 +403,15 @@ export function EmbeddingsTab() {
         </Group>
       )}
 
-      <Group title="This Computer">
-        <Hardware hw={hw} onRefresh={() => void api.hardware(true).then(setHw, () => {})} />
-      </Group>
+      {c.source === 'onnx' ? (
+        <OnnxRuntimeSection status={status} hw={hw} onRefreshHardware={() => void api.hardware(true).then(setHw, () => {})} />
+      ) : (
+        <Group title="This Computer">
+          <Hardware hw={hw} onRefresh={() => void api.hardware(true).then(setHw, () => {})} />
+        </Group>
+      )}
 
-      {c.source === 'onnx' && <OnnxSection c={c} save={save} status={status} hw={hw} />}
+      {c.source === 'onnx' && <OnnxSection c={c} save={save} status={status} />}
       {c.source === 'llamacpp' && <LlamaSection c={c} save={save} status={status} hw={hw} />}
       {c.source === 'endpoint' && <EndpointSection c={c} save={save} />}
 

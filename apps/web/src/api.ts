@@ -1,4 +1,4 @@
-import { backendCaps, type BackendFlavor, type EmbeddingConfig, type EmbeddingConfigPatch, type OnnxDtype, type OnnxDevice, type GenerateRequest, type InstructTemplateId, type ModelCaps, type Preset, type Shelf, type Story, type StoryMeta, type TokenLogprob } from '@novelwriter/core';
+import { backendCaps, type BackendFlavor, type EmbeddingConfig, type EmbeddingConfigPatch, type OnnxDtype, type OnnxDevice, type GenerateRequest, type InstructTemplateId, type ModelCaps, type ModelReading, type NlpConfig, type NlpConfigPatch, type NlpTask, type Preset, type Shelf, type Story, type StoryMeta, type TokenLogprob } from '@novelwriter/core';
 
 export interface ProviderInfo {
   id: string;
@@ -167,6 +167,14 @@ export const api = {
   downloadModel: (m: { kind: 'onnx'; repo: string; dtype?: OnnxDtype } | { kind: 'gguf'; model: string; quant: string }) => post('/api/embeddings/models', m).then((r) => json<EmbeddingTask>(r)),
   deleteModel: (m: { kind: 'onnx'; repo: string; dtype?: OnnxDtype } | { kind: 'gguf'; repo: string; file: string }) => del('/api/embeddings/models', m).then((r) => json<{ ok: true }>(r)),
   cancelTask: (id: string) => del(`/api/embeddings/tasks/${id}`).then((r) => json<{ ok: boolean }>(r)),
+  nlpConfig: () => fetch('/api/nlp/config').then((r) => json<NlpConfig>(r)),
+  saveNlpConfig: (c: NlpConfigPatch) => put('/api/nlp/config', c).then((r) => json<{ ok: true }>(r)),
+  nlpStatus: () => fetch('/api/nlp/status').then((r) => json<{ installed: { id: string; sizeMB: number }[]; modelsDir: string }>(r)),
+  downloadNlpModel: (id: string) => post('/api/nlp/models', { id }).then((r) => json<EmbeddingTask>(r)),
+  deleteNlpModel: (id: string) => del('/api/nlp/models', { id }).then((r) => json<{ ok: true }>(r)),
+  testNlp: (task: NlpTask, text: string) => post('/api/nlp/test', { task, text }).then((r) => json<{ text: string; result: unknown; ms: number }>(r)),
+  /** What the local text-analysis models make of typed lines (nulls when none is set up). */
+  nlpRead: (texts: string[], signal?: AbortSignal) => post('/api/nlp/read', { texts }, signal).then((r) => json<{ readings: (ModelReading | null)[] }>(r)),
   testEmbeddings: () => post('/api/embeddings/test').then((r) => json<{ dims: number; ms: number; queryMs: number; related: number; unrelated: number }>(r)),
   syncVectors: (storyId: string, text: string) => post(`/api/vectors/${storyId}/sync`, { text }).then((r) => json<IndexStatus>(r)),
   vectorStatus: (storyId: string, text?: string) => post(`/api/vectors/${storyId}/status`, { text }).then((r) => json<IndexStatus>(r)),

@@ -54,21 +54,50 @@ describe('structured layout', () => {
     expect(r.system).toContain('<lore name="Door">\nThe door is old.\n</lore>');
     expect(r.system).toContain('Prose quality: exceptional');
     expect(r.system).not.toContain('[ S:');
-    const user = r.messages[0].content;
-    expect(user.startsWith('<story>\nThe rain fell')).toBe(true);
-    expect(user).not.toContain('Mara is a detective');
-    expect(user.indexOf('Tone: bleak')).toBeGreaterThan(user.indexOf('</story>'));
-    expect(r.messages).toHaveLength(1);
+    // The story is the model's own earlier turn; the request with the Author's Note closes the conversation.
+    expect(r.messages.map((m) => m.role)).toEqual(['user', 'assistant', 'user']);
+    expect(r.messages[1].content).toBe('The rain fell on the town.\nMara opened the door and');
+    const last = r.messages[2].content;
+    expect(last).toContain('Tone: bleak');
+    expect(last).toContain('it ends with "Mara opened the door and"');
+    expect(JSON.stringify(r.messages)).not.toContain('Mara is a detective');
     expect(r.raw).toContain('Mara is a detective.');
   });
   it('opens the reply with the story tail when the model takes a prefill, with a fallback', () => {
     const s = story('First paragraph.\nMara opened the door and');
     const r = buildStoryRequest(s, { maxContextTokens: 4000, layout: 'structured', prefill: true });
+    expect(r.messages.map((m) => m.role)).toEqual(['user', 'assistant', 'user', 'assistant']);
+    expect(r.messages[1].content).toBe('First paragraph.');
     expect(r.messages.at(-1)).toEqual({ role: 'assistant', content: 'Mara opened the door and' });
-    expect(r.messages[0].content).not.toContain('Mara opened');
-    expect(r.fallbackMessages?.[0].content).toContain('Mara opened the door and');
+    expect(r.fallbackMessages?.map((m) => m.role)).toEqual(['user', 'assistant', 'user']);
+    expect(r.fallbackMessages?.[1].content).toContain('Mara opened the door and');
     // A story ending at a line break has nothing to continue word for word.
-    expect(buildStoryRequest(story('Done.\n'), { maxContextTokens: 4000, layout: 'structured', prefill: true }).messages).toHaveLength(1);
+    const done = buildStoryRequest(story('Done.\n'), { maxContextTokens: 4000, layout: 'structured', prefill: true });
+    expect(done.messages.at(-1)?.role).toBe('user');
+    expect(done.messages.at(-1)?.content).toContain('starting on a new line');
+  });
+  it('sends adventure actions as the player\'s turns', () => {
+    const s = story('The gate is shut.\n> 你说：谁在那里？\n', { mode: 'adventure', authorsNote: 'Keep it eerie.' });
+    const r = buildStoryRequest(s, { maxContextTokens: 4000, layout: 'structured', prefill: true });
+    expect(r.messages.map((m) => m.role)).toEqual(['user', 'assistant', 'user']);
+    expect(r.messages[1].content).toBe('The gate is shut.');
+    expect(r.messages[2].content.startsWith('你说：谁在那里？\n\n<instructions>')).toBe(true);
+    expect(r.messages[2].content).toContain('Keep it eerie.');
+  });
+  it('leaves bracketed cues alone when the story is written in them', () => {
+    const script = Array.from({ length: 6 }, (_, i) => `[Wind ${i}.]\nA line ${i}.`).join('\n');
+    const r = buildStoryRequest(story(script), { maxContextTokens: 4000, layout: 'structured' });
+    expect(r.system).not.toContain('Never write square brackets');
+    expect(r.system).not.toContain('[square brackets]');
+    expect(r.singleBreaks).toBe(true);
+    const notes = buildStoryRequest(story('[ Chapter One ]\nShe ran. She hid.\n\nThen it rained.'), { maxContextTokens: 4000, layout: 'structured' });
+    expect(notes.system).toContain('Never write square brackets');
+    expect(notes.system).toContain('Lines in [square brackets] within the story');
+  });
+  it('asks for a length target, not a ceiling', () => {
+    const r = buildStoryRequest(story('Hello there.'), { maxContextTokens: 4000, layout: 'structured' });
+    expect(JSON.stringify(r)).toContain('Write about 1024 characters.');
+    expect(JSON.stringify(r)).not.toContain('or less');
   });
   it('keeps the classic single message', () => {
     const r = buildStoryRequest(story('Hello there.', { memory: 'M.' }), { maxContextTokens: 4000 });

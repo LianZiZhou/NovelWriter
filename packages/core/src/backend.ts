@@ -89,6 +89,9 @@ export interface ModelCaps extends BackendCaps {
   restricted?: 'reasoning' | 'learned';
 }
 
+/** Claude models that reject an assistant prefill: 4.6 and later (claude-sonnet-4-6, claude-opus-5-5…). */
+const NO_PREFILL_CLAUDE = /claude-(?:[a-z]+-)*(?:4-[6-9]|[5-9]-\d)/i;
+
 /** OpenAI reasoning models under any host's naming: o3, openai/o4-mini, openai.gpt-5.4, gpt-5.3-codex… */
 const OPENAI_REASONING = /(^|[/.:])(o\d+(-|$)|gpt-5|[\w.-]*codex)/i;
 
@@ -100,8 +103,9 @@ const OPENAI_REASONING = /(^|[/.:])(o\d+(-|$)|gpt-5|[\w.-]*codex)/i;
  */
 export function modelCaps(flavor: BackendFlavor, m: ModelTraits, rejected: Iterable<string> = []): ModelCaps {
   const caps: ModelCaps = { ...backendCaps(flavor) };
-  // Claude continues a final assistant message; with thinking on it refuses one.
-  if (m.api === 'anthropic-messages') caps.prefill = !m.thinkingForced;
+  // Claude continues a final assistant message; with thinking on it refuses one, and from Claude 4.6 on it refuses
+  // one outright (Anthropic's docs move continuations into the user turn).
+  if (m.api === 'anthropic-messages') caps.prefill = !m.thinkingForced && !NO_PREFILL_CLAUDE.test(m.id);
   const fixedSampling =
     m.api === 'openai-codex-responses' ||
     (m.reasoning && OPENAI_REASONING.test(m.id)) ||

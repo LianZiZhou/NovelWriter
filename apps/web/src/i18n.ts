@@ -4,6 +4,7 @@
  */
 import { ZH_EXTRA } from './i18n-zh-extra.ts';
 import { ZH_EMBEDDINGS } from './i18n-zh-embeddings.ts';
+import { ZH_NLP } from './i18n-zh-nlp.ts';
 
 export type Lang = 'en' | 'zh';
 
@@ -349,4 +350,5 @@ const ZH: Record<string, string> = {
   'Server unreachable': '无法连接服务器',
   ...ZH_EXTRA,
   ...ZH_EMBEDDINGS,
+  ...ZH_NLP,
 };

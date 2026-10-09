@@ -1,5 +1,6 @@
 import { countTokens } from './tokenizer.ts';
 import { textHash } from './embeddings.ts';
+import { sentences as splitSentences } from './nlp/segment.ts';
 
 /** Vector search results for the story's chunks (by `textHash` of the chunk), best first. */
 export interface VectorHits {
@@ -65,7 +66,7 @@ export function recallPassages(earlier: string, query: string, budget: number, v
     // Too long for what is left: keep just its sentences that share terms with the latest text, or (a passage
     // found by meaning alone) its first sentences.
     if (used + n > budget) {
-      const sentences = text.match(/[^.!?…。！？\n]+[.!?…。！？]*["'”’」』)]*/g) ?? [];
+      const sentences = splitSentences(text).map((x) => x.trim()).filter(Boolean);
       const matching = sentences.filter((x) => q.some((t) => termCounts(x).has(t)));
       const keep: string[] = [];
       let size = 2;

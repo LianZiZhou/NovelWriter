@@ -61,7 +61,8 @@ try {
   console.log(`  FAIL ${(e as Error).message}`);
 } finally {
   await app.close();
-  if (!process.argv.includes('--keep')) rmSync(dir, { recursive: true, force: true });
+  // Windows keeps a stopped server's files locked for a moment.
+  if (!process.argv.includes('--keep')) rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 500 });
 }
 if (failures.length) {
   console.error(`embedding check failed: ${failures.join('; ')}`);

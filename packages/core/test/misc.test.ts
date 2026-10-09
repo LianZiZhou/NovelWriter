@@ -8,15 +8,28 @@ import { postProcess } from '../src/prompts.ts';
 
 describe('adventure', () => {
   it('converts do/say input', () => {
-    expect(adventureInput('charge the dragon', 'do')).toBe('> You charge the dragon.');
-    expect(adventureInput('hello there', 'say')).toBe('> You say, "Hello there."');
-    expect(adventureInput('who are you?', 'say')).toBe('> You ask, "Who are you?"');
-    expect(adventureInput('run!', 'say')).toBe('> You yell, "Run!"');
-    expect(adventureInput('n', 'do')).toBe('> You go north.');
-    expect(adventureInput('x the door', 'do')).toBe('> You examine the door.');
+    expect(adventureInput('charge the dragon', 'do')).toBe('> You: charge the dragon.');
+    expect(adventureInput('hello there', 'say')).toBe('> You say: hello there.');
+    expect(adventureInput('look out', 'say')).toBe('> You say: look out!');
+    expect(adventureInput('Who are you?', 'say')).toBe('> You say: Who are you?');
+    expect(adventureInput('n', 'do')).toBe('> You: go north.');
+    expect(adventureInput('x the door', 'do')).toBe('> You: examine the door.');
     expect(adventureInput('!The guard falls asleep.', 'do')).toBe('> The guard falls asleep.');
-    expect(adventureInput('"hi', 'do')).toBe('> You say, "Hi."');
+    expect(adventureInput('"hi', 'do')).toBe('> You say: hi.');
+    expect(adventureInput('wait for*', 'do')).toBe('> You: wait for');
     expect(adventureInput('A storm rolls in.', 'story')).toBe('A storm rolls in.');
+  });
+  it('words input in the story\'s language, ending it as its meaning calls for', () => {
+    const zh = '风穿过门缝，带来远方陌生的草木气息。';
+    expect(adventureInput('你是谁？', 'say', zh)).toBe('> 你说：你是谁？');
+    expect(adventureInput('我该去往何处', 'say', zh)).toBe('> 你说：我该去往何处？');
+    expect(adventureInput('快跑', 'say', zh)).toBe('> 你说：快跑！');
+    expect(adventureInput('推开门', 'do', zh)).toBe('> 你：推开门。');
+    expect(adventureInput('who are you', 'say', zh)).toBe('> 你说：who are you？');
+    expect(adventureInput('誰', 'say', 'ドアの向こうから風が吹いてきた。')).toBe('> あなたは言う：誰？');
+    expect(adventureInput('Кто ты', 'say', 'Ветер дул с моря.')).toBe('> Вы говорите: Кто ты?');
+    expect(adventureInput('qué pasa', 'say', 'El viento soplaba por la puerta y la casa estaba vacía.')).toBe('> Dices: ¿qué pasa?');
+    expect(adventureInput('who are you', 'say', 'The wind blew.')).toBe('> You say: who are you?');
   });
 });
 
@@ -60,6 +73,10 @@ describe('formats', () => {
 });
 
 describe('postProcess', () => {
+  it('keeps a story\'s single line breaks between paragraphs', () => {
+    expect(postProcess('One.\n', 'Two.\n\nThree.', { singleBreaks: true })).toBe('Two.\nThree.');
+    expect(postProcess('One.\n', 'Two.\n\nThree.')).toBe('Two.\n\nThree.');
+  });
   it('adds a space after sentence ends and applies stops', () => {
     expect(postProcess('He left.', 'She stayed.')).toBe(' She stayed.');
     expect(postProcess('He left. ', 'She stayed.')).toBe('She stayed.');

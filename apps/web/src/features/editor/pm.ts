@@ -431,6 +431,10 @@ export function NovelPlugins(opts: EditorOptionsRef) {
             decorations(state) {
               return decoKey.getState(state) as DecorationSet;
             },
+            // One paragraph is one line of the story: copy them with single line breaks, not ProseMirror's blank lines.
+            clipboardTextSerializer(slice) {
+              return slice.content.textBetween(0, slice.content.size, '\n');
+            },
           },
         }),
       ];

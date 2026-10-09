@@ -2,7 +2,7 @@ import { useRef } from 'react';
 import { create } from 'zustand';
 import {
   BUILTIN_PRESETS,
-  adventureInput,
+  adventureInputWith,
   amend,
   applyChange,
   backendCaps,
@@ -49,6 +49,7 @@ import {
   type ChatMessage,
   type HistoryNodeType,
   type ModelRef,
+  type MoodModel,
   type Preset,
   type Shelf,
   type Span,
@@ -664,7 +665,7 @@ export const useStory = create<StoryState>((set, get) => ({
       const hooked = hasHook('onTextAdventureInput') ? await runScriptHook('onTextAdventureInput', { text: input.text, mode: input.mode ?? 'do' }) : { text: input.text };
       s = get().current!;
       if (useSettings.getState().ttsSpeakInputs) speak(hooked.text);
-      let text = s.mode === 'adventure' ? adventureInput(hooked.text, input.mode ?? 'do') : hooked.text;
+      let text = s.mode === 'adventure' ? await adventureInputWith(hooked.text, input.mode ?? 'do', docText(s.doc), moodModel) : hooked.text;
       const before = docText(s.doc);
       if (before && !before.endsWith('\n')) text = '\n' + text;
       if (s.mode === 'adventure') text += '\n';
@@ -805,6 +806,22 @@ export function rememberModel(m: ModelRef | null) {
 }
 
 /**
+ * What the local text-analysis models make of player input the words leave open (question or not, its language).
+ * Kept short: a model that is slow to answer (still loading, say) is not waited for.
+ */
+const moodModel: MoodModel = async (texts) => {
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), 1500);
+  try {
+    return (await api.nlpRead(texts, ctl.signal)).readings;
+  } catch {
+    return texts.map(() => null);
+  } finally {
+    clearTimeout(timer);
+  }
+};
+
+/**
  * Stream a story continuation into the editor at `from` (end of story, or a
  * cursor position for inline generation) and record it as an AI history node.
  */
@@ -893,7 +910,7 @@ async function runGeneration(
         raw += ev.text;
         if (settings.streamResponses) {
           if (settings.streamDelay > 0) await new Promise((r) => setTimeout(r, settings.streamDelay * 10));
-          show(postProcess(before, raw, { stop: req.stop, banned }));
+          show(postProcess(before, raw, { stop: req.stop, banned, singleBreaks: req.singleBreaks }));
         }
       } else if (ev.type === 'error') {
         error = ev.message;
@@ -907,6 +924,7 @@ async function runGeneration(
     banned,
     trimToSentence: settings.continueToSentenceEnd && !abort.signal.aborted,
     minLength: s.params.minLength,
+    singleBreaks: req.singleBreaks,
   });
   if (final && hasHook('onResponse')) final = String((await runScriptHook('onResponse', { text: final, inline: !!opts.inline })).text ?? final);
   if (settings.autoFormat) final = autoFormat(final);
