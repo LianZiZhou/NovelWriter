@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { ArrowRight, ArrowSquareOut, ArrowsLeftRight, Book, CaretDown, CaretUp, ChartBar, Copy, ImageSquare, CornersOut, DownloadSimple, MagnifyingGlass, Sword, Article } from '@phosphor-icons/react';
 import { countTokens, exportNovelAIStory, exportPlaintext, exportScenario, exportStoryFile, searchLore } from '@novelwriter/core';
-import { download, safeFileName, useStory, useStoryMeta } from '../../store/story.ts';
+import { download, rememberModel, safeFileName, useStory, useStoryMeta } from '../../store/story.ts';
 import { useSettings } from '../../store/settings.ts';
 import { useUI } from '../../store/ui.ts';
 import { t } from '../../i18n.ts';
@@ -85,7 +85,7 @@ export function StoryTab() {
             {t('Change Default')} <ArrowSquareOut size={14} />
           </button>
         </div>
-        <ModelSelect value={store.resolveModel()} onChange={(m) => store.update((s) => void (s.model = m))} />
+        <ModelSelect value={store.resolveModel()} onChange={(m) => (store.update((s) => void (s.model = m)), rememberModel(m))} />
       </div>
 
       <div className="panel-section">
@@ -111,15 +111,14 @@ export function StoryTab() {
         <ToggleRow
           title={t('Editor Token Probabilities')}
           desc={
-            !logprobsCaps
-              ? t('Enable to show selectable alternate tokens and probabilities in the editor.') + ' ' + t('(Not reported by this model.)')
-              : !tokenProbs
-                ? t('Enable to show selectable alternate tokens and probabilities in the editor.') + ' ' + t('Turn on Token Probabilities in AI Settings first.')
-                : t('Enable to show selectable alternate tokens and probabilities in the editor.')
+            !tokenProbs && logprobsCaps
+              ? t('Enable to show selectable alternate tokens and probabilities in the editor.') + ' ' + t('Turn on Token Probabilities in AI Settings first.')
+              : t('Enable to show selectable alternate tokens and probabilities in the editor.')
           }
           on={tokenProbs && editorProbs && !!logprobsCaps}
           onChange={(v) => useSettings.getState().set({ editorTokenProbabilities: v })}
-          disabled={!tokenProbs || !logprobsCaps}
+          disabled={!tokenProbs}
+          unsupported={logprobsCaps ? undefined : t('{model} does not report token probabilities.', { model: modelInfo?.name || t('This model') })}
         />
       </div>
 

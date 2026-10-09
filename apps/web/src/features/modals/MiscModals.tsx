@@ -667,7 +667,7 @@ export function SamplersModal({ onClose }: { onClose: () => void }) {
             role="listitem"
             className={`sampler-row ${drag === i ? 'dragging' : ''} ${caps.params.includes(s.id as SamplerId) ? '' : 'unsupported'}`}
             draggable
-            title={t(SAMPLER_INFO[s.id as SamplerId].help)}
+            title={caps.params.includes(s.id as SamplerId) ? t(SAMPLER_INFO[s.id as SamplerId].help) : t('{model} does not support this setting, so it is not sent. It stays saved in the preset.', { model: info?.name || t('This model') })}
             onDragStart={() => setDrag(i)}
             onDragEnd={() => setDrag(null)}
             onDragOver={(e) => e.preventDefault()}
@@ -683,7 +683,6 @@ export function SamplersModal({ onClose }: { onClose: () => void }) {
             <span className="sampler-name">
               {t(SAMPLER_NAMES[s.id as SamplerId])}
               {!s.enabled && <span className="sampler-off">({t('disabled')})</span>}
-              {!caps.params.includes(s.id as SamplerId) && <span className="sampler-unsupported">{t('not used by this model')}</span>}
             </span>
             <button type="button" className="sampler-toggle" aria-label={`${s.enabled ? 'disable' : 'enable'} ${s.id}`} onClick={() => setOrder(order.map((x, j) => (j === i ? { ...x, enabled: !x.enabled } : x)))}>
               {s.enabled ? t('disable') : t('enable')}

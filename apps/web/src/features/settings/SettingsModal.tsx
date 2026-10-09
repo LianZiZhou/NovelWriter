@@ -618,7 +618,7 @@ function DefaultsTab() {
         <div className="grow">
           <ModelSelect className="plain" value={s.defaultModel} onChange={(m) => s.set({ defaultModel: m })} />
           <div className="model-card-desc">
-            {info ? `${info.provider} · ${Math.round(info.contextWindow / 1000)}k ${t('context')}${info.reasoning ? ` · ${t('reasoning')}` : ''}` : t('The best connected model is picked automatically.')}
+            {info ? `${info.provider} · ${Math.round(info.contextWindow / 1000)}k ${t('context')}${info.reasoning ? ` · ${t('reasoning')}` : ''}` : t('When unset, new stories use the model you used last.')}
           </div>
         </div>
       </div>

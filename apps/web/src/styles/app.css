@@ -3473,10 +3473,16 @@
 .sampler-row.unsupported .sampler-name {
   opacity: 0.55;
 }
-.sampler-unsupported {
-  font-weight: 400;
-  font-size: 12px;
-  opacity: 0.8;
+/* Settings the current model doesn't take: greyed out, with the reason as the tooltip on the whole block. */
+.param-unsupported {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.param-unsupported * {
+  pointer-events: none;
+}
+.param-unsupported .toggle {
+  opacity: 1 !important; /* the row is already faded */
 }
 .key-chip .chip-text {
   font-weight: inherit;
