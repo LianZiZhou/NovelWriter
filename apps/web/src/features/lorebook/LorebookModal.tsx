@@ -224,7 +224,7 @@ export function LorebookModal({ onClose, entryId, generate }: { onClose: () => v
         <div className="lib-head" style={{ borderBottomColor: 'var(--bg2)' }}>
           <span className="title">{t('Entries')}</span>
           <div className="tools">
-            <button type="button" className="icon-btn" aria-label="Start Multiselect Operation" title={t('Select')} onClick={() => setMulti(multi ? null : new Set())}>
+            <button type="button" className="icon-btn" aria-label={t('Select')} onClick={() => setMulti(multi ? null : new Set())}>
               <CheckSquare size={20} />
             </button>
             <button type="button" className="icon-btn" aria-label={t('Sort by')} onClick={() => setSortOpen(!sortOpen)}>

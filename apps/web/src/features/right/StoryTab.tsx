@@ -253,7 +253,7 @@ export function StoryTab() {
               <MagnifyingGlass size={18} weight="bold" />
             </span>
           </div>
-          <button type="button" className="enter-input-btn" style={{ height: 41, width: 41 }} aria-label="Open Lorebook" onClick={() => ui.open('lorebook')}>
+          <button type="button" className="enter-input-btn" style={{ height: 41, width: 41 }} aria-label={t('Open Lorebook')} onClick={() => ui.open('lorebook')}>
             <Book size={18} weight="fill" />
           </button>
         </div>
