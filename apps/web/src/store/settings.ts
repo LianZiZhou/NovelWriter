@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { ModelRef, PromptLayout, TokenCalibration, UserScript } from '@novelwriter/core';
+import type { ModelRef, PromptLayout, TokenCalibration, TrustPolicy, UserScript } from '@novelwriter/core';
 import { api } from '../api.ts';
 import { BUILTIN_THEMES, type Theme } from '../theme/themes.ts';
 import { applyTheme } from '../theme/applyTheme.ts';
@@ -45,6 +45,10 @@ export interface Settings {
   ttsSavedVoices: SavedVoice[];
   loreGenModel: ModelRef | null;
   loreGenPresetId: string;
+  /** Model that plans and steers Director runs; null = the story's own model. Needs tool calling to work best. */
+  directorModel: ModelRef | null;
+  /** What the Director may do on its own, ask about first, or not do at all (app-wide; stories can override). */
+  directorTrust: TrustPolicy;
   changelogSeen: string;
   streamResponses: boolean;
   streamDelay: number;
@@ -95,7 +99,7 @@ export interface Settings {
   ttsStreamed: boolean;
   leftOpen: boolean;
   rightOpen: boolean;
-  rightTab: 'story' | 'advanced' | 'generation' | 'chat' | 'scripts';
+  rightTab: 'story' | 'advanced' | 'generation' | 'chat' | 'scripts' | 'director';
   librarySort: 'recent' | 'alpha' | 'created';
   librarySortAsc: boolean;
   favoritesOnly: boolean;
@@ -188,6 +192,8 @@ export const DEFAULT_SETTINGS: Settings = {
   ttsSavedVoices: [],
   loreGenModel: null,
   loreGenPresetId: 'default',
+  directorModel: null,
+  directorTrust: {},
   changelogSeen: '',
   streamResponses: true,
   streamDelay: 0,

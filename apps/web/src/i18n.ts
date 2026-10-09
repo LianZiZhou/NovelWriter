@@ -5,6 +5,7 @@
 import { ZH_EXTRA } from './i18n-zh-extra.ts';
 import { ZH_EMBEDDINGS } from './i18n-zh-embeddings.ts';
 import { ZH_NLP } from './i18n-zh-nlp.ts';
+import { ZH_DIRECTOR } from './i18n-zh-director.ts';
 
 export type Lang = 'en' | 'zh';
 
@@ -351,4 +352,5 @@ const ZH: Record<string, string> = {
   ...ZH_EXTRA,
   ...ZH_EMBEDDINGS,
   ...ZH_NLP,
+  ...ZH_DIRECTOR,
 };

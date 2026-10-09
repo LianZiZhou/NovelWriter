@@ -1,4 +1,4 @@
-import Fastify, { type FastifyInstance } from 'fastify';
+import Fastify, { type FastifyInstance, type FastifyReply } from 'fastify';
 import cors from '@fastify/cors';
 import websocket from '@fastify/websocket';
 import fastifyStatic from '@fastify/static';
@@ -6,7 +6,7 @@ import { existsSync } from 'node:fs';
 import { timingSafeEqual } from 'node:crypto';
 import { join } from 'node:path';
 import type { AuthType } from '@earendil-works/pi-ai';
-import { migrateStory, type GenerateRequest, type Preset, type Shelf, type Story } from '@novelwriter/core';
+import { migrateStory, type DirectorTurnRequest, type GenerateRequest, type Preset, type Shelf, type Story } from '@novelwriter/core';
 import { Storage } from './storage.ts';
 import { FileCredentialStore } from './credentials.ts';
 import { LLM, type CustomProviderConfig } from './llm.ts';
@@ -136,7 +136,8 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
   });
 
   // ------------------------------------------------------------- generation (SSE)
-  app.post<{ Body: GenerateRequest }>('/api/generate', async (req, reply) => {
+  /** Stream an async generator's events to the client as SSE; the request aborts when the client goes away. */
+  const sse = async (req: { headers: Record<string, unknown> }, reply: FastifyReply, run: (signal: AbortSignal) => AsyncIterable<unknown>) => {
     const controller = new AbortController();
     reply.raw.on('close', () => controller.abort());
     reply.hijack();
@@ -149,12 +150,15 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     });
     const send = (data: unknown) => reply.raw.write(`data: ${JSON.stringify(data)}\n\n`);
     try {
-      for await (const ev of llm.generate(req.body, controller.signal)) send(ev);
+      for await (const ev of run(controller.signal)) send(ev);
     } catch (e) {
       send({ type: 'error', message: (e as Error).message });
     }
     reply.raw.end();
-  });
+  };
+  app.post<{ Body: GenerateRequest }>('/api/generate', (req, reply) => sse(req, reply, (signal) => llm.generate(req.body, signal)));
+  /** One Director (agent) turn: text deltas, then the reply with its tool calls. */
+  app.post<{ Body: DirectorTurnRequest }>('/api/agent/turn', (req, reply) => sse(req, reply, (signal) => llm.turn(req.body, signal)));
 
   app.post<{ Body: { model: { provider: string; id: string }; text: string } }>('/api/tokenize', async (req, reply) => {
     try {

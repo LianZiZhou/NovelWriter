@@ -1,3 +1,4 @@
+import type { DirectorToolCall, DirectorTurnRequest } from '@novelwriter/core';
 /**
  * Offline demo "model": a word-level Markov chain over the request context
  * plus a small built-in corpus. Lets the app (and tests) run with no API key.
@@ -72,4 +73,45 @@ export function demoContinuation(context: string, maxChars: number, seed = Date.
   }
   const text = join(out);
   return /^[.,!?;:]/.test(text) ? text : ' ' + text.trimStart();
+}
+
+const DEMO_BEATS = [
+  'The traveller reaches the edge of town as the rain begins; describe the empty street and the single lit window.',
+  'A stranger at the inn seems to recognise the traveller; keep the exchange short and guarded.',
+  'Night falls; the traveller notices the stranger leaving through the back door and decides to follow.',
+  'At the river the stranger stops and speaks without turning around; end on what is said.',
+];
+
+/**
+ * The offline Demo model as Director: a fixed little session (plan, a few passages, a lorebook entry, memory,
+ * finish) chosen from how far the transcript has got, so the whole harness can be tried without an AI provider.
+ */
+export function demoDirector(req: DirectorTurnRequest): { text: string; toolCalls: DirectorToolCall[] } {
+  const done = (name: string) => req.messages.filter((m) => m.role === 'tool' && m.name === name && !m.isError).length;
+  const can = (name: string) => req.tools.some((t) => t.name === name);
+  const id = () => `demo-${Math.random().toString(36).slice(2, 10)}`;
+  const call = (name: string, args: Record<string, unknown>): DirectorToolCall => ({ id: id(), name, args });
+  const passages = done('write_passage');
+  const plan = (active: number) =>
+    call('update_plan', {
+      steps: ['Set the scene', 'Introduce the stranger', 'Raise the stakes', 'Record what we learned'].map((text, i) => ({ text, status: i < active ? 'done' : i === active ? 'active' : 'pending' })),
+    });
+  const first = !req.messages.some((m) => m.role === 'assistant');
+  if (first) {
+    return { text: "I'll set a short plan, then write the opening beats one at a time.", toolCalls: [plan(0), ...(can('write_passage') ? [call('write_passage', { beat: DEMO_BEATS[0] })] : [])] };
+  }
+  if (can('write_passage') && passages < 3) {
+    return { text: passages === 1 ? 'Good start. Now the stranger.' : 'Raising the stakes.', toolCalls: [plan(Math.min(passages, 2)), call('write_passage', { beat: DEMO_BEATS[passages] })] };
+  }
+  if (can('upsert_lore_entry') && !done('upsert_lore_entry')) {
+    return {
+      text: 'The stranger will matter later, so they get a lorebook entry and a line in memory.',
+      toolCalls: [
+        plan(3),
+        call('upsert_lore_entry', { name: 'The Stranger', keys: ['stranger'], type: 'Person', text: 'The Stranger is a tall figure in a grey coat who seems to know the traveller from somewhere. Speaks softly, rarely gives a straight answer.' }),
+        ...(can('update_memory') ? [call('update_memory', { text: 'A traveller arrives in a river town in the rain and is drawn after a stranger who seems to know them.' })] : []),
+      ],
+    };
+  }
+  return { text: 'That covers the goal for this session.', toolCalls: [call('finish', { summary: `Wrote ${passages} passages, added a lorebook entry for the stranger and updated memory.` })] };
 }

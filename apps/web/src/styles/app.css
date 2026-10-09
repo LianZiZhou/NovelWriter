@@ -4415,3 +4415,408 @@ body.desktop .app {
   overflow-wrap: anywhere;
   pointer-events: none;
 }
+
+/* Director (right sidebar tab): an agent that runs the writing session. */
+.right-body:has(.director) {
+  display: flex;
+  flex-direction: column;
+}
+.director {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+}
+.director-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--bg2);
+  color: var(--text-headings);
+}
+.director-head > .select-wrap {
+  flex: 1;
+  min-width: 0;
+}
+.director-head .icon-btn.on {
+  background: var(--bg3);
+}
+.director-title {
+  font-weight: 600;
+}
+.director-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+.director-new,
+.director-settings {
+  gap: 10px;
+}
+.director-goal,
+.director-input textarea,
+.director-pending textarea {
+  width: 100%;
+  resize: vertical;
+  background: var(--bg0);
+  border: 1px solid var(--bg2);
+  border-radius: 3px;
+  padding: 6px 8px;
+  color: var(--text-main);
+  font: inherit;
+  font-size: 0.9rem;
+}
+.director-examples {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.director-chip {
+  text-align: left;
+  font-size: 0.78rem;
+  line-height: 1.35;
+  padding: 5px 8px;
+  border: 1px solid var(--bg2);
+  border-radius: 12px;
+  color: var(--text-placeholder);
+  background: var(--bg1);
+}
+.director-chip:hover {
+  color: var(--text-main);
+  background: var(--bg2);
+}
+.director-start,
+.director-buttons .btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.director-trust {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.director-trust-row {
+  display: grid;
+  grid-template-columns: 1fr 120px;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
+}
+.director-summary {
+  gap: 8px;
+}
+.director-goal-text {
+  color: var(--text-headings);
+  font-weight: 600;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 7.5em;
+  overflow-y: auto;
+}
+.director-status {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.director-badge {
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 2px 7px;
+  border-radius: 3px;
+  background: var(--bg3);
+  color: var(--text-main);
+}
+.director-badge.running {
+  background: var(--text-headings);
+  color: var(--bg0);
+}
+.director-badge.waiting {
+  background: var(--warning);
+  color: var(--bg0);
+}
+.director-badge.done {
+  background: var(--success);
+  color: var(--bg0);
+}
+.director-badge.error {
+  background: var(--warning);
+  color: var(--bg0);
+}
+.director-result {
+  font-size: 0.85rem;
+  white-space: pre-wrap;
+}
+.director-phases {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  font-size: 0.75rem;
+}
+.director-phases li {
+  padding: 2px 7px;
+  border-radius: 10px;
+  border: 1px solid var(--bg2);
+  color: var(--text-placeholder);
+}
+.director-phases li.done {
+  color: var(--text-main);
+  background: var(--bg2);
+}
+.director-phases li.active {
+  color: var(--bg0);
+  background: var(--text-headings);
+  border-color: var(--text-headings);
+}
+.director-plan,
+.director-chapters {
+  list-style: none;
+  padding: 0;
+  margin: 6px 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 0.88rem;
+}
+.director-plan li {
+  display: flex;
+  gap: 7px;
+  align-items: flex-start;
+}
+.director-plan li svg {
+  flex: none;
+  margin-top: 2px;
+}
+.director-plan li.done {
+  color: var(--text-placeholder);
+}
+.director-plan li.done span {
+  text-decoration: line-through;
+}
+.director-plan li.active {
+  color: var(--text-headings);
+}
+.director-plan li.skipped {
+  color: var(--text-disabled);
+}
+.spin {
+  animation: spin 1.2s linear infinite;
+}
+.director-chapters li {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0 8px;
+  counter-increment: chapter;
+}
+.director-chapters li .desc {
+  grid-column: 1 / -1;
+}
+.director-chapter-title::before {
+  content: counter(chapter) '. ';
+  color: var(--text-placeholder);
+}
+.director-chapters {
+  counter-reset: chapter;
+}
+.director-chapter-status {
+  font-size: 0.72rem;
+  color: var(--text-placeholder);
+}
+.director-chapters li.drafted .director-chapter-status,
+.director-chapters li.revised .director-chapter-status {
+  color: var(--success);
+}
+.director-chapters li.drafting .director-chapter-status {
+  color: var(--text-headings);
+}
+.director-feed-section {
+  border-bottom: none;
+}
+.director-feed {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 6px;
+}
+.director-entry {
+  font-size: 0.85rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  border-radius: 4px;
+}
+.director-entry.user {
+  align-self: flex-end;
+  max-width: 92%;
+  padding: 6px 9px;
+  background: var(--bg2);
+}
+.director-entry.thought {
+  color: var(--text-placeholder);
+  font-style: italic;
+  padding: 0 2px;
+}
+.director-entry.thought.live {
+  color: var(--text-main);
+}
+.director-entry.system {
+  display: flex;
+  gap: 6px;
+  align-items: flex-start;
+  padding: 6px 9px;
+  border-left: 2px solid var(--text-headings);
+  background: var(--bg1);
+}
+.director-entry.error {
+  color: var(--warning);
+}
+.director-entry.tool {
+  padding: 6px 9px;
+  background: var(--bg1);
+  border: 1px solid var(--bg2);
+}
+.director-entry.tool.failed {
+  border-color: var(--warning);
+}
+.director-entry.tool.reverted {
+  opacity: 0.55;
+}
+.director-entry-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.director-tool-name {
+  flex: 1;
+  text-align: left;
+  font-weight: 600;
+  font-size: 0.8rem;
+  color: var(--text-headings);
+}
+.director-entry.tool.failed .director-tool-name {
+  color: var(--warning);
+}
+.director-tag {
+  font-size: 0.7rem;
+  color: var(--text-placeholder);
+}
+.director-undo {
+  width: 22px;
+  height: 22px;
+}
+.director-entry-text {
+  margin-top: 3px;
+  color: var(--text-main);
+}
+.director-entry-text.clamped {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  cursor: pointer;
+}
+.director-args {
+  margin: 6px 0 0;
+  padding: 6px;
+  background: var(--bg0);
+  font-family: var(--font-code);
+  font-size: 0.75rem;
+  white-space: pre-wrap;
+  max-height: 240px;
+  overflow: auto;
+}
+.director-checkpoint {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 4px 0 2px;
+  font-size: 0.72rem;
+  color: var(--text-placeholder);
+  border-top: 1px dashed var(--bg2);
+  padding-top: 4px;
+}
+.director-checkpoint .link-btn {
+  font-size: 0.72rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.director-working {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
+  color: var(--text-placeholder);
+}
+.director-pending {
+  margin: 0 12px 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--warning);
+  border-radius: 4px;
+  background: var(--bg1);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.director-pending-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  color: var(--text-headings);
+}
+.director-pending-text {
+  font-size: 0.88rem;
+  white-space: pre-wrap;
+}
+.director-diff {
+  font-size: 0.8rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 160px;
+  overflow-y: auto;
+  padding: 6px 8px;
+  border-radius: 3px;
+  background: var(--bg0);
+}
+.director-diff.before {
+  border-left: 2px solid var(--warning);
+}
+.director-diff.after {
+  border-left: 2px solid var(--success);
+}
+.director-diff-label {
+  display: block;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--text-placeholder);
+  text-transform: uppercase;
+}
+.director-controls {
+  border-top: 1px solid var(--bg2);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.director-input {
+  display: flex;
+  gap: 6px;
+  align-items: flex-end;
+}
+.director-input textarea {
+  resize: none;
+}
+.director-buttons {
+  gap: 8px;
+  justify-content: flex-end;
+}

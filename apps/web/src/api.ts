@@ -1,4 +1,4 @@
-import { backendCaps, type BackendFlavor, type EmbeddingConfig, type EmbeddingConfigPatch, type OnnxDtype, type OnnxDevice, type GenerateRequest, type InstructTemplateId, type ModelCaps, type ModelReading, type NlpConfig, type NlpConfigPatch, type NlpTask, type Preset, type Shelf, type Story, type StoryMeta, type TokenLogprob } from '@novelwriter/core';
+import { backendCaps, type NativeReply, type BackendFlavor, type EmbeddingConfig, type EmbeddingConfigPatch, type OnnxDtype, type OnnxDevice, type GenerateRequest, type InstructTemplateId, type ModelCaps, type ModelReading, type NlpConfig, type NlpConfigPatch, type NlpTask, type Preset, type Shelf, type Story, type StoryMeta, type TokenLogprob, type DirectorToolCall, type DirectorTurnEvent, type DirectorTurnRequest } from '@novelwriter/core';
 
 export interface ProviderInfo {
   id: string;
@@ -192,12 +192,12 @@ export type GenerateEvent =
   | { type: 'done'; stopReason: string; usage?: { input?: number; output?: number; cacheRead?: number; cacheWrite?: number } }
   | { type: 'error'; message: string };
 
-/** Stream a generation from the server (SSE over fetch). */
-export async function* generateStream(req: GenerateRequest, signal: AbortSignal): AsyncGenerator<GenerateEvent> {
-  const res = await fetch('/api/generate', {
+/** POST a JSON body and read the server-sent events it streams back. */
+async function* sse<T>(url: string, body: unknown, signal: AbortSignal, aborted: T): AsyncGenerator<T> {
+  const res = await fetch(url, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(req),
+    body: JSON.stringify(body),
     signal,
   });
   if (!res.ok || !res.body) throw new Error(`Generation failed: HTTP ${res.status}`);
@@ -214,16 +214,38 @@ export async function* generateStream(req: GenerateRequest, signal: AbortSignal)
         const chunk = buf.slice(0, idx);
         buf = buf.slice(idx + 2);
         const line = chunk.split('\n').find((l) => l.startsWith('data: '));
-        if (line) yield JSON.parse(line.slice(6)) as GenerateEvent;
+        if (line) yield JSON.parse(line.slice(6)) as T;
       }
     }
   } catch (e) {
     if ((e as Error).name === 'AbortError') {
-      yield { type: 'done', stopReason: 'aborted' };
+      yield aborted;
       return;
     }
     throw e;
   }
+}
+
+/** Stream a generation from the server (SSE over fetch). */
+export function generateStream(req: GenerateRequest, signal: AbortSignal): AsyncGenerator<GenerateEvent> {
+  return sse<GenerateEvent>('/api/generate', req, signal, { type: 'done', stopReason: 'aborted' });
+}
+
+/** One Director turn: streams its text through `onDelta`, resolves with the reply and its tool calls. */
+export async function directorTurn(req: DirectorTurnRequest, signal: AbortSignal, onDelta?: (all: string) => void): Promise<{ text: string; toolCalls: DirectorToolCall[]; native?: NativeReply }> {
+  let text = '';
+  for await (const ev of sse<DirectorTurnEvent>('/api/agent/turn', req, signal, { type: 'done', text: '', toolCalls: [], stopReason: 'aborted' })) {
+    if (ev.type === 'delta') {
+      text += ev.text;
+      onDelta?.(text);
+    } else if (ev.type === 'error') throw new Error(ev.message);
+    else if (ev.type === 'done') {
+      if (ev.stopReason === 'aborted' && signal.aborted) throw new DOMException('Aborted', 'AbortError');
+      return { text: ev.text, toolCalls: ev.toolCalls, ...(ev.native ? { native: ev.native } : {}) };
+    }
+  }
+  if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
+  throw new Error('The director reply ended early.');
 }
 
 /** Collect a whole (non-streamed to UI) generation. */

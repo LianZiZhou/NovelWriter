@@ -20,3 +20,4 @@ export * from './stats.ts';
 export * from './backend.ts';
 export * from './foreign.ts';
 export * from './zip.ts';
+export * from './director/index.ts';

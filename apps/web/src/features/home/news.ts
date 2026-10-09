@@ -2,12 +2,19 @@
 /** Also shown in Settings → Change Log; `id` marks what the user has seen. */
 export const NEWS: { id: string; date: string; tag: 'Update' | 'Tip' | 'New'; title: string; body: string; fresh?: boolean }[] = [
   {
+    id: 'director',
+    date: '2026-10-10',
+    tag: 'New',
+    title: 'Director: let the AI run the writing session',
+    body: "A new Director tab in the right sidebar. Give it a goal — the next scene, a chapter, or a whole book from one idea — and it plans, has your writing model write passage by passage, and keeps Memory, the Lorebook, the Author's Note and an outline up to date by itself. Pause, step in or roll back at any time; every change it makes can be undone, and you choose what it may do on its own and what it asks about first.",
+    fresh: true,
+  },
+  {
     id: 'round3-writing',
     date: '2026-10-08',
     tag: 'New',
     title: 'Everything for writing, in one place',
     body: 'Long stories stay fast. Token probabilities, logit bias and sampler order now reach the models that support them. New: Side Chat, Find & Replace, instruction lines, Infill and Rewrite Style in the Writer\'s Toolbox, a docked Lorebook with equations and keyword locations, nested shelves, NovelAI/KoboldAI/AI Dungeon/SillyTavern imports, speech endpoints for text to speech, and an interactive tutorial.',
-    fresh: true,
   },
   {
     id: 'ui-fidelity',

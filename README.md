@@ -119,6 +119,9 @@ the Windows installer is unsigned.
   generation, TTS, Writer's Toolbox), and a right-click menu (special characters, add to
   Memory/Author's Note/a new or existing lore entry/Side Chat, Generate Lore… by type,
   Writer's Toolbox, tokenize, screenshot, TTS).
+- **Director**: an agent that runs the writing session (right sidebar, see below). Give it a goal or a
+  one-line book idea; it plans, has the writing model write passage by passage, and keeps Memory, the
+  Lorebook, the Author's Note and an outline up to date, with pause, interjections, approvals and undo.
 - **Side Chat**: per-story chats with the model about the story (right sidebar), with excerpts
   from the recent story, a selection or a lore entry; nothing is written into the story.
 - **New stories** ask for Genre & Tags and a `[ S: n ]` style tag for the ATTG line; title
@@ -174,6 +177,31 @@ the Windows installer is unsigned.
 - **Hypebot** (click its avatar for a new comment), **19 themes** plus a theme editor, custom CSS,
   rebindable hotkeys, a command palette (Ctrl+K), English and Simplified Chinese UI,
   drag-and-drop import, mobile layout.
+
+### Director
+
+The Director tab (film-slate icon in the right sidebar) automates the loop of Send, Retry, editing Memory and adding
+lore entries. A tool-calling "director" model plans and steers; every passage is still written by the story's own
+model through the normal context (Memory, Author's Note, lorebook, recall, budgets), with the director's direction for
+that passage added to the Author's Note.
+
+- **Writing Session**: continue the story toward a goal (a scene, a chapter, a length). **Whole Book**: premise →
+  world → cast → outline → chapters → review, from one idea; the outline and chapter progress show in the panel and
+  chapter boundaries are plain heading lines in the text.
+- Tools: read the story, the context report and the lorebook; write a passage; rewrite or insert text; start a
+  chapter; set story info, Memory, the Author's Note, lorebook entries and the outline; update the running summary;
+  ask an editor's critique; keep a plan; ask the author; finish.
+- **Trust levels** per kind of action (automatic, ask first, never), for all stories or one. Approvals appear as
+  cards in the panel with a before/after preview; a rejection (with an optional note) goes back to the director.
+- **Undo**: text changes are ordinary history steps; Memory, Author's Note, lorebook, outline and story-info changes
+  are recorded with their previous value and undo from the activity list (with a warning if they changed again).
+  **Roll back to here** returns everything to a turn boundary; abandoned text stays in the history as a branch.
+- **Pause** stops after the current step, **Stop** cuts off the passage being written, and messages typed while it
+  runs reach the director before its next move. Edits you make in the meantime are reported to it. Runs are saved
+  with the story and resume where they left off; budgets cap turns, passages and characters.
+- Models without native tool calling (local text-completion servers) get the tools described in the prompt and
+  answer with fenced `tool` blocks. The offline Demo model runs a scripted session, so the feature can be tried
+  without an AI provider. Pick the director model in the panel's settings (default: the story's model).
 
 ### User scripts
 
