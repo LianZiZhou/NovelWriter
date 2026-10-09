@@ -133,7 +133,30 @@ export interface LoreEntry {
   loreBiasGroups: PhraseBiasGroup[];
   conditions: Condition[];
   lastUpdatedAt: number;
+  /** Chance (1-100) the entry activates when its keys match; unset = always. */
+  probability?: number;
+  /** Inclusion group: when several entries of a group activate, only one is kept. */
+  group?: string;
+  /** Relative chance of being the one kept in its group (default 100). */
+  groupWeight?: number;
+  /** In its group, keep the entry with the highest insertion order instead of a weighted random pick. */
+  groupPrioritize?: boolean;
+  /** Stays active for this many generations after it activates. */
+  sticky?: number;
+  /** Can't activate again for this many generations after it was active. */
+  cooldown?: number;
+  /** Can't activate before this story step. */
+  delay?: number;
+  /** Its text never activates other entries (cascading activation). */
+  preventRecursion?: boolean;
+  /** Keys match letter case exactly. */
+  caseSensitive?: boolean;
+  /** Keys only match whole words (alphabetic scripts). */
+  wholeWords?: boolean;
 }
+
+/** Per-entry timing kept with the story for sticky and cooldown entries (story steps, inclusive). */
+export type LoreState = Record<string, { stickyUntil: number; cooldownUntil: number }>;
 
 export interface LoreCategory {
   id: string;
@@ -209,6 +232,9 @@ export interface GenerationParams {
   repetitionPenaltyWhitelist: boolean;
   dynamicPenaltyRange: boolean;
   phraseRepPen: 'off' | 'very_light' | 'light' | 'medium' | 'aggressive' | 'very_aggressive';
+  /** XTC: with this probability, drop every token above the threshold but the least likely of them. 0 = off. */
+  xtcProbability?: number;
+  xtcThreshold?: number;
   order: { id: SamplerId; enabled: boolean }[];
 }
 
@@ -270,8 +296,23 @@ export interface Story {
   styleTag: number;
   /** The new-story Genre & Tags prompt was answered or dismissed. */
   attgPrompted: boolean;
+  /** Timing of sticky / cooldown lorebook entries. */
+  loreState?: LoreState;
+  /** Variables set by `{{setvar}}` macros. */
+  vars?: Record<string, string>;
+  /** Running summary of the story text that no longer fits in the context. */
+  summary?: StorySummary;
+  /** Put relevant passages from earlier in the story (out of context) back into it. */
+  recall?: { enabled: boolean; tokenBudget: number };
   /** Per-script data kept with the story (`api.v1.storyStorage` / `historyStorage`). */
   scriptStorage?: Record<string, Record<string, unknown>>;
+}
+
+export interface StorySummary {
+  enabled: boolean;
+  text: string;
+  /** Story characters covered by the summary (it summarizes text[0, upTo)). */
+  upTo: number;
 }
 
 /** A Side Chat conversation: talk with the model about the story without touching it. */
@@ -351,4 +392,8 @@ export interface GenerateRequest {
   banned?: string[];
   /** Ask for this many top alternatives per token (token probabilities). */
   logprobs?: number;
+  /** `messages` without a story-tail prefill, used if the model rejects the prefill. */
+  fallbackMessages?: ChatMessage[];
+  /** The context as plain text, for models run as raw text completion. */
+  prompt?: string;
 }

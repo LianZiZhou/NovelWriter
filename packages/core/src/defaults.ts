@@ -83,6 +83,8 @@ export function defaultParams(p: Partial<GenerationParams> = {}): GenerationPara
     repetitionPenaltyWhitelist: true,
     dynamicPenaltyRange: false,
     phraseRepPen: 'off',
+    xtcProbability: 0,
+    xtcThreshold: 0.1,
     order: cloneJson(DEFAULT_SAMPLER_ORDER),
     ...p,
   };

@@ -2,10 +2,16 @@ import { docText } from './doc.ts';
 import { activateLorebook, type Activation } from './lorebook.ts';
 import { ephemeralActive } from './ephemeral.ts';
 import { contextConfig } from './defaults.ts';
+import { expandMacros, type MacroEnv } from './macros.ts';
+import { recallPassages } from './recall.ts';
 import { countTokens, tokenize } from './tokenizer.ts';
 import type { ContextConfig, LoreCategory, PhraseBiasGroup, Story, TrimType } from './types.ts';
 
-export type ContextSourceKind = 'story' | 'memory' | 'authorsNote' | 'lore' | 'ephemeral' | 'subcontext' | 'attg';
+export type ContextSourceKind = 'story' | 'memory' | 'authorsNote' | 'lore' | 'ephemeral' | 'subcontext' | 'attg' | 'summary' | 'recall';
+
+/** How the story summary and recalled passages are marked in the context text. */
+export const SUMMARY_WRAP = { prefix: '[ Earlier in the story: ', suffix: ' ]\n' };
+export const RECALL_WRAP = { prefix: '[ From earlier in the story:\n', suffix: ' ]\n' };
 
 export interface ContextSegment {
   text: string;
@@ -48,6 +54,10 @@ export interface BuiltContext {
   usedTokens: number;
   phraseBias: PhraseBiasGroup[];
   activations: Activation[];
+  /** Offset in the story text where the part that made it into the context starts (0 = all of it). */
+  storyStart: number;
+  /** Macro state after expansion; its `vars` include anything `{{setvar}}` changed. */
+  macroEnv: MacroEnv;
 }
 
 interface Candidate {
@@ -231,7 +241,7 @@ function joinSegments(segs: ContextSegment[]): string {
  * reserve tokens in insertion-order, then insert entries (highest order
  * first), trimming each to its budget, at its insertion position.
  */
-export function assemble(candidates: Candidate[], maxTokens: number): Omit<BuiltContext, 'phraseBias' | 'activations' | 'maxTokens'> {
+export function assemble(candidates: Candidate[], maxTokens: number): Omit<BuiltContext, 'phraseBias' | 'activations' | 'maxTokens' | 'storyStart' | 'macroEnv'> {
   const order = [...candidates].sort((a, b) => b.config.budgetPriority - a.config.budgetPriority || a.index - b.index);
   const report = new Map<string, ContextReportEntry>();
   const reserved = new Map<string, number>();
@@ -409,15 +419,21 @@ function collectBias(story: Story, activations: Activation[], cats: LoreCategory
 export function buildContext(story: Story, opts: BuildContextOptions): BuiltContext {
   const maxTokens = Math.max(64, opts.maxContextTokens - opts.outputTokens);
   const storyText = stripComments(opts.storyText ?? docText(story.doc));
+  const random = opts.random ?? Math.random;
+  const macroEnv: MacroEnv = { title: story.title, author: story.author, genre: story.genre, tags: story.tags, step: story.step, seed: story.id, vars: { ...(story.vars ?? {}) }, random };
+  const macro = (t: string) => expandMacros(t, macroEnv);
+  const memoryText = macro(story.memory);
+  const authorsNoteText = macro(story.authorsNote);
   const activations = activateLorebook({
     lorebook: story.lorebook,
     storyText,
-    memoryText: story.memory,
-    authorsNoteText: story.authorsNote,
+    memoryText,
+    authorsNoteText,
     currentStep: story.step,
     model: opts.model ?? story.model?.id ?? '',
     mode: story.mode,
-    random: opts.random,
+    random,
+    state: story.loreState,
   });
   const cats = story.lorebook.categories;
   const catById = new Map(cats.map((c) => [c.id, c]));
@@ -437,8 +453,8 @@ export function buildContext(story: Story, opts: BuildContextOptions): BuiltCont
     });
   }
   candidates.push({ id: 'story', label: 'Story', kind: 'story', text: storyText, config: cs.story, index: index++ });
-  candidates.push({ id: 'memory', label: 'Memory', kind: 'memory', text: stripComments(story.memory), config: cs.memory, index: index++ });
-  candidates.push({ id: 'authorsNote', label: "Author's Note", kind: 'authorsNote', text: stripComments(story.authorsNote), config: cs.authorsNote, index: index++ });
+  candidates.push({ id: 'memory', label: 'Memory', kind: 'memory', text: stripComments(memoryText), config: cs.memory, index: index++ });
+  candidates.push({ id: 'authorsNote', label: "Author's Note", kind: 'authorsNote', text: stripComments(authorsNoteText), config: cs.authorsNote, index: index++ });
 
   const subcontextMembers = new Map<string, Candidate[]>();
   // "Order by Key Location": entries whose keys appear later in the story come later among equal priorities.
@@ -449,7 +465,7 @@ export function buildContext(story: Story, opts: BuildContextOptions): BuiltCont
     if (!a.active || !a.entry.text) continue;
     const e = a.entry;
     const cat = e.category ? catById.get(e.category) : undefined;
-    const text = stripComments(cat?.entryHeader ? `${cat.entryHeader}\n${e.text}` : e.text);
+    const text = stripComments(macro(cat?.entryHeader ? `${cat.entryHeader}\n${e.text}` : e.text));
     const cand: Candidate = {
       id: e.id,
       label: e.displayName,
@@ -483,13 +499,49 @@ export function buildContext(story: Story, opts: BuildContextOptions): BuiltCont
       id: `ephemeral:${e.id}`,
       label: 'Ephemeral',
       kind: 'ephemeral',
-      text: stripComments(e.text),
+      text: stripComments(macro(e.text)),
       config: contextConfig({ budgetPriority: -10000, insertionPosition: e.position, prefix: '', suffix: '\n', trimDirection: 'doNotTrim' }),
       index: index++,
     });
   }
 
-  const built = assemble(candidates, maxTokens);
+  let built = assemble(candidates, maxTokens);
+  let storyStart = storyText.length - storyLength(built.segments);
+
+  // Story text that no longer fits comes back as a running summary and as passages relevant to the latest text.
+  if (storyStart > 0) {
+    const extra: Candidate[] = [];
+    const sum = story.summary;
+    if (sum?.enabled && sum.text.trim()) {
+      extra.push({
+        id: 'summary',
+        label: 'Story Summary',
+        kind: 'summary',
+        text: stripComments(sum.text.trim()),
+        config: contextConfig({ ...SUMMARY_WRAP, budgetPriority: 840, insertionPosition: 0, tokenBudget: 0.15, trimDirection: 'trimTop', maximumTrimType: 'sentence' }),
+        index: index++,
+      });
+    }
+    const rc = story.recall;
+    if (rc?.enabled && rc.tokenBudget > 0) {
+      // Text the summary already covers is still searched: a summary loses the details a passage keeps.
+      const passages = recallPassages(storyText.slice(0, storyStart), storyText.slice(storyStart).slice(-1500) + '\n' + authorsNoteText, rc.tokenBudget);
+      if (passages.length) {
+        extra.push({
+          id: 'recall',
+          label: 'Recalled Passages',
+          kind: 'recall',
+          text: passages.join('\n…\n'),
+          config: contextConfig({ ...RECALL_WRAP, budgetPriority: 850, insertionPosition: 0, tokenBudget: rc.tokenBudget, reservedTokens: rc.tokenBudget, trimDirection: 'trimTop', maximumTrimType: 'newline' }),
+          index: index++,
+        });
+      }
+    }
+    if (extra.length) {
+      built = assemble([...candidates, ...extra], maxTokens);
+      storyStart = storyText.length - storyLength(built.segments);
+    }
+  }
 
   // Report inactive lore entries too, so the viewer can show why they were left out.
   const reported = new Set(built.report.map((r) => r.id).concat(subReports.map((r) => r.id)));
@@ -517,5 +569,11 @@ export function buildContext(story: Story, opts: BuildContextOptions): BuiltCont
     maxTokens,
     phraseBias: collectBias(story, activations, cats),
     activations,
+    storyStart,
+    macroEnv,
   };
+}
+
+function storyLength(segs: ContextSegment[]): number {
+  return segs.reduce((n, x) => n + (x.kind === 'story' ? x.text.length : 0), 0);
 }

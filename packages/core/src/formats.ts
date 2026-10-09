@@ -444,7 +444,7 @@ export function exportPreset(name: string, p: GenerationParams): string {
       name,
       id: uid(),
       parameters: novelAIParameters(p),
-      novelwriter: { maxContext: p.maxContext, dynamicPenaltyRange: p.dynamicPenaltyRange },
+      novelwriter: { maxContext: p.maxContext, dynamicPenaltyRange: p.dynamicPenaltyRange, xtcProbability: p.xtcProbability, xtcThreshold: p.xtcThreshold },
     },
     null,
     2,
@@ -460,8 +460,10 @@ export function importPreset(raw: unknown, fallbackName = 'Imported Preset'): { 
     return { name, params: { ...newStory().params, ...(d.novelwriter as Partial<GenerationParams>) } };
   }
   const params = importParams((d.parameters ?? d) as Record<string, unknown>);
-  const extra = (d.novelwriter ?? {}) as { maxContext?: number; dynamicPenaltyRange?: boolean };
+  const extra = (d.novelwriter ?? {}) as { maxContext?: number; dynamicPenaltyRange?: boolean; xtcProbability?: number; xtcThreshold?: number };
   if (typeof extra.maxContext === 'number') params.maxContext = extra.maxContext;
+  if (typeof extra.xtcProbability === 'number') params.xtcProbability = extra.xtcProbability;
+  if (typeof extra.xtcThreshold === 'number') params.xtcThreshold = extra.xtcThreshold;
   if (typeof extra.dynamicPenaltyRange === 'boolean') params.dynamicPenaltyRange = extra.dynamicPenaltyRange;
   return { name, params };
 }
