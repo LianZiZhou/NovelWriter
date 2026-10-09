@@ -5,6 +5,7 @@ import './styles/global.css';
 import './styles/app.css';
 import { App } from './App.tsx';
 import { TitleBar, desktop } from './components/TitleBar.tsx';
+import { Tooltips } from './components/Tooltip.tsx';
 import { useSettings } from './store/settings.ts';
 import { useStory } from './store/story.ts';
 
@@ -31,5 +32,6 @@ createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <TitleBar />
     <Root />
+    <Tooltips />
   </StrictMode>,
 );

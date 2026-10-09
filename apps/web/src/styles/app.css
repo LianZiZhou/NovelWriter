@@ -3890,9 +3890,23 @@
 }
 .lore-modal.docked .lore-side .lore-title {
   height: auto;
+  min-height: 56px;
   flex-wrap: wrap;
   gap: 8px;
-  padding: 10px 14px;
+  padding: 10px 12px;
+}
+/* The narrow docked column can't fit the full-width buttons: shrink them, and let the heading
+   keep its one line (it was being squeezed to one character per line). */
+.lore-modal.docked .lore-side .lore-title .heading {
+  flex: none;
+  white-space: nowrap;
+}
+.lore-modal.docked .lore-side .lore-title > .row {
+  gap: 4px !important;
+  margin-left: auto;
+}
+.lore-modal.docked .lore-side .square-btn {
+  width: 30px;
 }
 .lore-modal.docked .lore-main {
   padding: 18px 18px 0;
@@ -4382,4 +4396,22 @@ body.desktop .app {
 }
 .titlebar.blurred .titlebar-btn:not(:hover) {
   color: var(--text-disabled);
+}
+
+/* App-wide tooltip (components/Tooltip.tsx). */
+.app-tooltip {
+  position: fixed;
+  z-index: 2000;
+  max-width: 280px;
+  padding: 5px 8px;
+  border-radius: 3px;
+  background: var(--bg3);
+  color: var(--text-main);
+  border: 1px solid color-mix(in srgb, var(--text-main) 12%, transparent);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+  font-size: 12px;
+  line-height: 1.4;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+  pointer-events: none;
 }
