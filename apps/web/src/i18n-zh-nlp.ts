@@ -2,10 +2,7 @@
 export const ZH_NLP: Record<string, string> = {
   "Text Analysis": "文本分析",
   "Local models that read story text. Each one is optional: without a model, built-in rules do the job.": "在本地读取故事文本的模型。每个都是可选的：不装模型时由内置规则完成。",
-  "Shared with Vector Search.": "与向量检索共用。",
-  "Run On": "运行于",
-  "CPU": "CPU",
-  "Same as Vector Search": "与向量检索相同",
+  "Shared by Vector Search and Text Analysis: a change here applies to both.": "向量检索和文本分析共用：在这里改动，两边同时生效。",
   "Built-in rules": "内置规则",
   "Punctuation": "标点",
   "Sentence Segmentation": "断句",

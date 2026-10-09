@@ -155,19 +155,17 @@ export function nlpModel(id: string): NlpModelInfo | undefined {
 export interface NlpConfig {
   /** Model per task; empty = the built-in rules only. */
   models: Record<NlpTask, string>;
-  /** `cpu`, or the accelerator chosen for Vector Search. */
-  device: 'cpu' | 'embeddings';
 }
 
 export const DEFAULT_NLP_CONFIG: NlpConfig = {
   models: { punctuation: '', segmentation: '', language: '', entities: '' },
-  device: 'cpu',
 };
 
-export type NlpConfigPatch = Partial<Omit<NlpConfig, 'models'>> & { models?: Partial<Record<NlpTask, string>> };
+/** The runtime settings (execution provider, threads…) are the embeddings' ONNX settings, shared by both. */
+export type NlpConfigPatch = { models?: Partial<Record<NlpTask, string>> };
 
 export function normalizeNlpConfig(c: NlpConfigPatch | undefined): NlpConfig {
-  return { ...DEFAULT_NLP_CONFIG, ...c, models: { ...DEFAULT_NLP_CONFIG.models, ...c?.models } };
+  return { models: { ...DEFAULT_NLP_CONFIG.models, ...c?.models } };
 }
 
 // ------------------------------------------------------------- results

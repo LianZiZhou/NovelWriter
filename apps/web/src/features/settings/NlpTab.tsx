@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react';
-import { Check, DownloadSimple, Play, Trash } from '@phosphor-icons/react';
+import { DownloadSimple, Play, Trash } from '@phosphor-icons/react';
 import { NLP_MODELS, NLP_TASKS, normalizeNlpConfig, type NlpConfig, type NlpConfigPatch, type NlpTask } from '@novelwriter/core';
-import { api, type EmbeddingStatus } from '../../api.ts';
+import { api, type EmbeddingStatus, type HardwareInfo } from '../../api.ts';
+import { useEmbeddings } from '../../store/embeddings.ts';
 import { t } from '../../i18n.ts';
 import { SegmentedControl } from '../../components/ui.tsx';
-import { Group, mb, run, TaskRow, toast } from './EmbeddingsTab.tsx';
+import { Group, mb, run, TaskRow, toast } from './fields.tsx';
+import { OnnxRuntimeSection } from './RuntimeSection.tsx';
 
 const TASKS: Record<NlpTask, { title: string; desc: string }> = {
   punctuation: { title: 'Punctuation', desc: 'Tells questions from statements in adventure input you leave unpunctuated. Exclamations are always judged from the words.' },
@@ -21,8 +23,11 @@ export function NlpTab() {
   const [input, setInput] = useState('');
   const [output, setOutput] = useState('');
   const [testing, setTesting] = useState(false);
+  const [hw, setHw] = useState<HardwareInfo | null>(null);
   useEffect(() => {
     void api.nlpConfig().then(setC, () => setC(normalizeNlpConfig({})));
+    void useEmbeddings.getState().load();
+    void api.hardware().then(setHw, () => {});
   }, []);
   const busy = emb?.tasks.some((x) => x.status === 'running') ?? false;
   useEffect(() => {
@@ -40,44 +45,13 @@ export function NlpTab() {
   }, [busy]);
   if (!c) return null;
   const save = (p: NlpConfigPatch) => {
-    setC(normalizeNlpConfig({ ...c, ...p, models: { ...c.models, ...p.models } }));
+    setC(normalizeNlpConfig({ models: { ...c.models, ...p.models } }));
     void api.saveNlpConfig(p).catch((e: Error) => toast(e.message));
   };
-  const rt = emb?.runtime;
   const downloads = emb?.tasks.filter((x) => (x.key.startsWith('nlp:') || x.key === 'runtime:onnx') && (x.status === 'running' || Date.now() - x.startedAt < 120_000)) ?? [];
   return (
     <>
-      <Group title="Text Analysis" desc={t('Local models that read story text. Each one is optional: without a model, built-in rules do the job.')}>
-        <div style={{ gridColumn: '1 / -1' }} className="row between">
-          <span>
-            {t('ONNX Runtime')}:{' '}
-            {rt?.installed ? (
-              <>
-                <Check size={14} /> {rt.version}
-              </>
-            ) : (
-              t('Not installed')
-            )}
-            <span className="desc" style={{ display: 'block' }}>{t('Shared with Vector Search.')}</span>
-          </span>
-          {!rt?.installed && (
-            <button type="button" className="btn small" onClick={() => void run(api.installRuntime('onnx'))}>
-              <DownloadSimple size={14} /> {t('Install')}
-            </button>
-          )}
-        </div>
-        <div style={{ gridColumn: '1 / -1' }}>
-          <div className="heading" style={{ marginBottom: 8 }}>{t('Run On')}</div>
-          <SegmentedControl
-            value={c.device}
-            onChange={(v) => save({ device: v })}
-            options={[
-              { value: 'cpu', label: t('CPU') },
-              { value: 'embeddings', label: t('Same as Vector Search') },
-            ]}
-          />
-        </div>
-      </Group>
+      <div className="desc" style={{ marginBottom: 12 }}>{t('Local models that read story text. Each one is optional: without a model, built-in rules do the job.')}</div>
 
       {downloads.length > 0 && (
         <Group title="Downloads">
@@ -86,6 +60,8 @@ export function NlpTab() {
           ))}
         </Group>
       )}
+
+      <OnnxRuntimeSection status={emb} hw={hw} onRefreshHardware={() => void api.hardware(true).then(setHw, () => {})} />
 
       {NLP_TASKS.map((k) => {
         const rows = [{ id: '', name: t('Built-in rules'), note: '', meta: '' }, ...NLP_MODELS.filter((m) => m.task === k).map((m) => ({ id: m.id, name: m.name, note: m.note, meta: ` · ${m.languages} · ${mb(m.sizeMB)} · ${m.license}` }))];

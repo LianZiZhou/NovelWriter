@@ -37,6 +37,8 @@ const localName = (f: NlpModelInfo['files'][number]) => f.as ?? f.path;
 export class Nlp {
   private worker: NlpWorker | null = null;
   private workerSig = '';
+  /** The suggested accelerator failed to load a model: "Automatic" uses the CPU from then on, as for embeddings. */
+  private autoCpu = false;
   private loaded = new Map<string, Promise<unknown>>();
 
   constructor(
@@ -55,7 +57,7 @@ export class Nlp {
 
   async saveConfig(next: NlpConfigPatch): Promise<void> {
     const prev = await this.config();
-    await this.storage.writeJson(FILE, normalizeNlpConfig({ ...prev, ...next, models: { ...prev.models, ...next.models } }));
+    await this.storage.writeJson(FILE, normalizeNlpConfig({ models: { ...prev.models, ...next.models } }));
   }
 
   /** Next to the embedding models, so one folder setting covers both. */
@@ -91,11 +93,12 @@ export class Nlp {
   }
 
   /** The worker, restarted when the device settings or the models folder change. */
-  private async ensureWorker(c: NlpConfig): Promise<{ worker: NlpWorker; device: string; options: Record<string, unknown> }> {
+  private async ensureWorker(): Promise<{ worker: NlpWorker; device: string; options: Record<string, unknown> }> {
     const ec = await this.emb.config();
-    let o = c.device === 'embeddings' ? ec.onnx : { ...ec.onnx, device: 'cpu' as const, customRuntime: '' };
+    // The runtime settings are shared with Vector Search.
+    let o = ec.onnx;
     if (o.device === 'auto') {
-      let device = (await detectHardware()).suggest.onnxDevice;
+      let device = this.autoCpu ? 'cpu' : (await detectHardware()).suggest.onnxDevice;
       if ((device === 'cuda' || device === 'tensorrt') && !this.emb.runtime.status().cudaProviders) device = 'cpu';
       o = { ...o, device };
     }
@@ -103,7 +106,7 @@ export class Nlp {
     const sig = JSON.stringify([o, dir]);
     if (!this.worker?.alive() || sig !== this.workerSig) {
       this.stop();
-      if (!this.emb.runtime.installed()) throw new Error('The ONNX runtime is not installed. Install it in Settings → Text Analysis.');
+      if (!this.emb.runtime.installed()) throw new Error('The ONNX runtime is not installed. Install it in Settings → Text Analysis or Vector Search.');
       this.worker = new NlpWorker(this.emb.runtime.workerDir(o.customRuntime), dir);
       this.workerSig = sig;
     }
@@ -115,7 +118,7 @@ export class Nlp {
     c ??= await this.config();
     const m = nlpModel(c.models[task]);
     if (!m || !isInstalled(await this.modelsDir(), m)) return null;
-    const { worker, device, options } = await this.ensureWorker(c);
+    const { worker, device, options } = await this.ensureWorker();
     const key = `${this.workerSig}|${m.id}`;
     let p = this.loaded.get(key);
     if (!p) {
@@ -123,7 +126,13 @@ export class Nlp {
       this.loaded.set(key, p);
       p.catch(() => this.loaded.delete(key));
     }
-    await p;
+    try {
+      await p;
+    } catch (e) {
+      if (device === 'cpu' || this.autoCpu || (await this.emb.config()).onnx.device !== 'auto') throw e;
+      this.autoCpu = true;
+      return this.model(task, c);
+    }
     return { worker, m };
   }
 
