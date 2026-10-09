@@ -514,6 +514,72 @@ await step('scripts: sandbox, examples with buttons, windows, panels, decoration
   await page.locator('.right-tabs').getByRole('tab', { name: 'Story' }).click();
 });
 
+await step('director runs a writing session, asks before what it was told to, and its changes undo', async () => {
+  const currentStory = () =>
+    page.evaluate(async () => {
+      const list = await (await fetch('/api/stories')).json();
+      const id = [...list].sort((a, b) => b.updatedAt - a.updatedAt)[0].id;
+      return (await fetch(`/api/stories/${id}`)).json();
+    });
+  await page.getByRole('button', { name: 'create a new story' }).click();
+  await page.getByRole('button', { name: /Storyteller/ }).first().click();
+  await page.locator('.ProseMirror').click();
+  await page.keyboard.type('The rain had not stopped for three days.');
+  const before = (await editorText()).length;
+  await page.locator('.right-tabs').getByRole('tab', { name: 'Director' }).click();
+  await page.getByRole('textbox', { name: 'Goal' }).fill('Write the opening scene.');
+  await page.locator('.director-start').click();
+  // The demo director plans, writes three passages, adds a lorebook entry and memory, then finishes.
+  await page.locator('.director-badge.done').waitFor({ timeout: 60000 });
+  assert.ok((await editorText()).length > before + 50, 'the director wrote passages into the editor');
+  assert.equal(await page.locator('.director-plan li').count(), 4);
+  assert.equal(await page.locator('.director-entry.tool', { hasText: 'Wrote a passage' }).count(), 3);
+  await page.waitForFunction(async () => {
+    const list = await (await fetch('/api/stories')).json();
+    const id = [...list].sort((a, b) => b.updatedAt - a.updatedAt)[0].id;
+    const s = await (await fetch(`/api/stories/${id}`)).json();
+    return s.memory.includes('traveller') && s.lorebook.entries.some((e) => e.displayName === 'The Stranger') && s.director?.runs[0]?.status === 'done';
+  }, null, { timeout: 10000, polling: 300 });
+
+  // Undo the memory change from the activity list.
+  await page.locator('.director-entry.tool', { hasText: 'Updated memory' }).locator('.director-undo').click();
+  await page.locator('.director-entry.tool.reverted', { hasText: 'Updated memory' }).waitFor();
+  await page.waitForFunction(async () => {
+    const list = await (await fetch('/api/stories')).json();
+    const id = [...list].sort((a, b) => b.updatedAt - a.updatedAt)[0].id;
+    return (await (await fetch(`/api/stories/${id}`)).json()).memory === '';
+  }, null, { timeout: 10000, polling: 300 });
+
+  // "Ask First" for passages: the run waits for approval, a rejection goes back to the director.
+  await page.getByRole('button', { name: 'Director Settings' }).click();
+  await page.locator('.director-trust-row', { hasText: 'Write passages' }).locator('.select-box').click();
+  await page.getByRole('option', { name: 'Ask First' }).click();
+  await page.getByRole('button', { name: 'Director Settings' }).click();
+  await page.getByRole('button', { name: 'New Run', exact: true }).first().click();
+  await page.getByRole('textbox', { name: 'Goal' }).fill('One more scene.');
+  await page.locator('.director-start').click();
+  await page.locator('.director-pending').waitFor({ timeout: 30000 });
+  await page.locator('.director-badge.waiting').waitFor();
+  const len = (await editorText()).length;
+  await page.locator('.director-pending').getByRole('button', { name: 'Approve' }).click();
+  await page.locator('.director-pending').waitFor({ timeout: 30000 });
+  assert.ok((await editorText()).length > len, 'the approved passage was written');
+  await page.locator('.director-pending').getByRole('textbox', { name: 'Note for the Director' }).fill('Not yet.');
+  await page.locator('.director-pending').getByRole('button', { name: 'Reject' }).click();
+  await page.locator('.director-entry.tool.failed', { hasText: 'Rejected: Not yet.' }).waitFor({ timeout: 30000 });
+  await page.getByRole('button', { name: 'Stop', exact: true }).click();
+  await page.locator('.director-badge.stopped, .director-badge.done').first().waitFor({ timeout: 30000 });
+  const s = await currentStory();
+  assert.ok(s.director.runs.length === 2, 'both runs are kept with the story');
+
+  // Back to the defaults for later runs.
+  await page.evaluate(async () => {
+    const st = await (await fetch('/api/settings')).json();
+    await fetch('/api/settings', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...st, directorTrust: {}, rightTab: 'story' }) });
+  });
+  await page.locator('.right-tabs').getByRole('tab', { name: 'Story' }).click();
+});
+
 await page.screenshot({ path: `${out}final.png` });
 await browser.close();
 if (errors.length) {

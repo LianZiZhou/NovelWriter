@@ -78,6 +78,26 @@ export function canonical(doc: Span[]): Span[] {
   return fromParagraphs(paragraphs(doc));
 }
 
+/** What a generation produced (the Director reads it back). */
+export interface PassageResult {
+  /** Text added to the story ('' when nothing was). */
+  text: string;
+  /** Where it went. */
+  from: number;
+  error?: string;
+  aborted: boolean;
+  /** History node of the generation, and the node current before it. */
+  node?: string;
+  nodeBefore?: string;
+}
+
+export interface PassageOptions {
+  /** A direction for this passage only, shown to the writing model with the author's note. */
+  directive?: string;
+  /** Output length in characters for this passage. */
+  maxLength?: number;
+}
+
 export interface HypebotComment {
   text: string;
   time: number;
@@ -145,6 +165,11 @@ interface StoryState {
    */
   pickAlternative: (nodeId: string, from: number, to: number, text: string) => Promise<void>;
   generateInline: () => Promise<void>;
+  /**
+   * Generate one passage at the end of the story for the Director: no toasts, errors come back in the
+   * result, and the running summary is brought up to date before it resolves.
+   */
+  generatePassage: (o?: PassageOptions) => Promise<PassageResult>;
   stop: () => void;
   /** `ask`: confirm before replacing a title the user already has. */
   generateTitle: (ask?: boolean) => Promise<void>;
@@ -189,6 +214,11 @@ function scheduleSave(get: () => StoryState, set: (p: Partial<StoryState>) => vo
     void fetch(`/api/stories/${s.id}`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body, keepalive: body.length < 60000 }).catch(() => {});
   };
   saveTimer = setTimeout(() => whenIdle(() => void save()), 600);
+}
+
+/** Send a scheduled save now instead of after the debounce (a Director run that just ended, say). */
+export function flushSave(): void {
+  pendingSave?.();
 }
 
 if (typeof window !== 'undefined') {
@@ -742,6 +772,15 @@ export const useStory = create<StoryState>((set, get) => ({
     await runGeneration(set, get, sel.to < end ? { from: sel.to, inline: true } : { from: end });
   },
 
+  async generatePassage(o = {}) {
+    const s = get().current;
+    if (!s) return { text: '', from: 0, aborted: false, error: 'No story is open.' };
+    const from = docText(s.doc).length;
+    if (get().generating) return { text: '', from, aborted: false, error: 'A generation is already running.' };
+    if (!get().resolveModel()) return { text: '', from, aborted: false, error: 'No AI model is configured.' };
+    return runGeneration(set, get, { from, ...o, quiet: true, awaitSummary: true });
+  },
+
   stop() {
     abort?.abort();
   },
@@ -821,6 +860,15 @@ const moodModel: MoodModel = async (texts) => {
   }
 };
 
+/** The story as the writing model should see it for one passage: the Director's beat joins the author's note. */
+function directed(s: Story, o: PassageOptions): Story {
+  if (!o.directive?.trim() && !o.maxLength) return s;
+  const out = { ...s };
+  if (o.directive?.trim()) out.authorsNote = [s.authorsNote.trim(), `Direction for this passage: ${o.directive.trim()}`].filter(Boolean).join('\n');
+  if (o.maxLength) out.params = { ...s.params, maxLength: o.maxLength };
+  return out;
+}
+
 /**
  * Stream a story continuation into the editor at `from` (end of story, or a
  * cursor position for inline generation) and record it as an AI history node.
@@ -828,14 +876,17 @@ const moodModel: MoodModel = async (texts) => {
 async function runGeneration(
   set: (p: Partial<StoryState>) => void,
   get: () => StoryState,
-  opts: { from: number; inline?: boolean },
-): Promise<void> {
+  opts: { from: number; inline?: boolean; quiet?: boolean; awaitSummary?: boolean } & PassageOptions,
+): Promise<PassageResult> {
   // Scripts may cancel the generation or change the story before the context is built.
   if (hasHook('onGenerationRequested') || hasHook('onBeforeContextBuild')) {
     const atEnd = opts.from >= docText(get().current!.doc).length;
     set({ generating: true, task: 'story' });
     const req = await runScriptHook('onGenerationRequested', { inline: !!opts.inline, cancel: false });
-    if (req.cancel) return void set({ generating: false, task: null });
+    if (req.cancel) {
+      set({ generating: false, task: null });
+      return { text: '', from: opts.from, aborted: false, error: 'A user script cancelled the generation.' };
+    }
     await runScriptHook('onBeforeContextBuild', {});
     if (atEnd) opts = { ...opts, from: docText(get().current!.doc).length };
   }
@@ -851,17 +902,18 @@ async function runGeneration(
   const maxCtx = Math.min(s.params.maxContext, info?.contextWindow ?? Infinity, useSettings.getState().maxContextCap || Infinity);
   const caps = capsOf(info);
   if (settings.calibrateTokens) await seedCalibration(model, info, fullText);
+  const ctx = directed(s, opts);
   const reqOpts = requestOptions(info, {
     maxContextTokens: maxCtx,
     model: model.id,
     inline: opts.inline ? { before, after, bidirectional: settings.bidirectionalInline } : undefined,
   });
-  let req = buildStoryRequest(s, reqOpts);
+  let req = buildStoryRequest(ctx, reqOpts);
   // Part of the story is out of view: look for earlier passages close in meaning to the latest text too.
   if (req.context.storyStart > 0 && s.recall?.enabled) {
     set({ generating: true, task: 'story' });
     const vectors = await searchVectors(s, stripComments(opts.inline ? before : fullText));
-    if (vectors) req = buildStoryRequest(s, { ...reqOpts, vectors });
+    if (vectors) req = buildStoryRequest(ctx, { ...reqOpts, vectors });
   }
   // "Default Bias": keep dinkuses and asterisms out unless the story already uses them.
   const banned = [...s.bannedTokens, ...(settings.defaultBias ? ['***', '⁂'].filter((x) => !fullText.includes(x)) : [])];
@@ -892,7 +944,7 @@ async function runGeneration(
         model,
         system: req.system,
         messages: req.messages,
-        params: s.params,
+        params: ctx.params,
         maxTokens: req.maxTokens,
         stop: req.stop,
         bias: req.bias,
@@ -931,7 +983,10 @@ async function runGeneration(
   if (opts.inline && after && !/^\s/.test(after) && final && !/\s$/.test(final)) final += ' ';
   if (!final.trim()) final = '';
   show(final);
+  const aborted = abort?.signal.aborted ?? false;
   abort = null;
+  let node: string | undefined;
+  let nodeBefore: string | undefined;
 
   const cur = get().current;
   if (cur && cur.id === s.id && final) {
@@ -940,6 +995,8 @@ async function runGeneration(
     const tokenProbs = alignTokenProbs(raw, final, probs);
     get().update((st) => {
       const r = commit(st.history, 'ai', [change]);
+      nodeBefore = st.history.current;
+      node = r.node.id;
       st.history = tokenProbs.length ? setNodeProbs(r.history, r.node.id, tokenProbs) : r.history;
       st.doc = doc;
       // Sticky / cooldown lore timing and `{{setvar}}` variables carry over to the next generation.
@@ -959,14 +1016,19 @@ async function runGeneration(
     if (settings.ttsSpeakOutputs) speak(final);
     if (hasHook('onGenerationEnd')) void runScriptHook('onGenerationEnd', { text: final });
     void maybeHypebot(set, get, final);
-    void updateSummary(get, req.context.storyStart);
+    if (opts.awaitSummary) {
+      // The Director reads the summary next; give it the one that covers the text now out of view.
+      set({ task: 'summary' });
+      await updateSummary(get, req.context.storyStart);
+    } else void updateSummary(get, req.context.storyStart);
     const latest = get().current;
     if (latest?.id === s.id) void syncVectors(latest);
   } else if (!final) {
     ed?.setDoc(get().current?.doc ?? []);
   }
   set({ generating: false, task: null });
-  if (error) ui.toast(error, 'error');
+  if (error && !opts.quiet) ui.toast(error, 'error');
+  return { text: node ? final : '', from: opts.from, aborted, ...(error ? { error } : {}), ...(node ? { node, nodeBefore } : {}) };
 }
 
 /**

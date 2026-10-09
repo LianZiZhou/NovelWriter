@@ -247,6 +247,10 @@ export function migrateStory(raw: Partial<Story> & { id?: string }): Story {
   s.lorebook.categories = s.lorebook.categories.map((c) => newLoreCategory(c));
   // Older stories never saw the Genre & Tags prompt; don't show it on them.
   if (raw.attgPrompted === undefined) s.attgPrompted = true;
+  // A Director run can't still be going in a story just loaded: it waits to be resumed.
+  if (s.director?.runs.some((r) => r.status === 'running' || r.status === 'waiting')) {
+    s.director = { ...s.director, runs: s.director.runs.map((r) => (r.status === 'running' || r.status === 'waiting' ? { ...r, status: 'paused' } : r)) };
+  }
   s.version = STORY_VERSION;
   return s;
 }

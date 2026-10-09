@@ -1,3 +1,5 @@
+import type { DirectorState, Outline } from './director/types.ts';
+
 /** Where a piece of story text came from. Drives editor coloring. */
 export type Origin = 'prompt' | 'ai' | 'edit' | 'user';
 
@@ -306,6 +308,10 @@ export interface Story {
   recall?: { enabled: boolean; tokenBudget: number };
   /** Per-script data kept with the story (`api.v1.storyStorage` / `historyStorage`). */
   scriptStorage?: Record<string, Record<string, unknown>>;
+  /** The book plan written by the Director (premise and chapters). */
+  outline?: Outline;
+  /** Director runs on this story. */
+  director?: DirectorState;
 }
 
 export interface StorySummary {

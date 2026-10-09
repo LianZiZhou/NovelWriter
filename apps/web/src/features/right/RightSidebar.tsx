@@ -1,4 +1,4 @@
-import { CaretRight, ChatCircleText, Code, SlidersHorizontal } from '@phosphor-icons/react';
+import { CaretRight, ChatCircleText, Code, FilmSlate, SlidersHorizontal } from '@phosphor-icons/react';
 import { useSettings } from '../../store/settings.ts';
 import { t } from '../../i18n.ts';
 import { Tabs } from '../../components/ui.tsx';
@@ -6,6 +6,7 @@ import { StoryTab } from './StoryTab.tsx';
 import { AdvancedTab } from './AdvancedTab.tsx';
 import { GenerationTab } from './GenerationTab.tsx';
 import { SideChatTab } from './SideChatTab.tsx';
+import { DirectorTab } from '../director/DirectorTab.tsx';
 import { ScriptPanels, useExtensions } from '../scripts/ScriptUI.tsx';
 
 export function RightSidebar({ onCollapse, mobileOpen }: { onCollapse: () => void; mobileOpen: boolean }) {
@@ -26,6 +27,7 @@ export function RightSidebar({ onCollapse, mobileOpen }: { onCollapse: () => voi
             { value: 'story', label: t('Story') },
             { value: 'advanced', label: t('Advanced') },
             { value: 'generation', label: <SlidersHorizontal size={22} />, ariaLabel: t('Generation Settings') },
+            { value: 'director', label: <FilmSlate size={22} />, ariaLabel: t('Director') },
             { value: 'chat', label: <ChatCircleText size={22} />, ariaLabel: t('Side Chat') },
             ...(panels ? [{ value: 'scripts' as const, label: <Code size={22} />, ariaLabel: t('Script Panels') }] : []),
           ]}
@@ -35,6 +37,7 @@ export function RightSidebar({ onCollapse, mobileOpen }: { onCollapse: () => voi
         {tab === 'story' && <StoryTab />}
         {tab === 'advanced' && <AdvancedTab />}
         {tab === 'generation' && <GenerationTab />}
+        {tab === 'director' && <DirectorTab />}
         {tab === 'chat' && <SideChatTab />}
         {tab === 'scripts' && <ScriptPanels />}
       </div>

@@ -9,6 +9,9 @@ import {
   type Message,
   type Model,
   type MutableModels,
+  type AssistantMessage,
+  type Tool,
+  type ToolCall,
 } from '@earendil-works/pi-ai';
 import { builtinModels } from '@earendil-works/pi-ai/providers/all';
 import { openAICompletionsApi } from '@earendil-works/pi-ai/api/openai-completions.lazy';
@@ -31,8 +34,14 @@ import {
   type ModelCaps,
   type GenerateRequest,
   type TokenLogprob,
+  type DirectorToolCall,
+  type DirectorTurnEvent,
+  type DirectorTurnRequest,
+  parseTextToolCalls,
+  textToolManifest,
+  textTranscript,
 } from '@novelwriter/core';
-import { demoContinuation } from './demo.ts';
+import { demoContinuation, demoDirector } from './demo.ts';
 import { FileCredentialStore } from './credentials.ts';
 
 export interface CustomProviderConfig {
@@ -319,6 +328,105 @@ export class LLM {
         if (signal.aborted || !retryWithout((e as Error).message ?? String(e))) throw e;
       }
     }
+  }
+
+  /**
+   * One Director turn: the model replies with text and tool calls. Native tool calling where the model has it;
+   * otherwise (text completion, or a server that refuses tools) the tools are described in the prompt and the
+   * calls parsed from fenced blocks in the reply.
+   */
+  async *turn(req: DirectorTurnRequest, signal: AbortSignal): AsyncGenerator<DirectorTurnEvent> {
+    const model = this.models.getModel(req.model.provider, req.model.id);
+    if (!model) throw new Error(`Unknown model ${req.model.provider}/${req.model.id}`);
+    if (model.provider === DEMO_PROVIDER) {
+      const reply = demoDirector(req);
+      for (const word of reply.text.match(/\S+\s*/g) ?? []) {
+        if (signal.aborted) return void (yield { type: 'done', text: '', toolCalls: [], stopReason: 'aborted' });
+        await new Promise((r) => setTimeout(r, 15));
+        yield { type: 'delta', text: word };
+      }
+      yield { type: 'done', text: reply.text, toolCalls: reply.toolCalls, stopReason: reply.toolCalls.length ? 'toolUse' : 'stop' };
+      return;
+    }
+    const maxTokens = Math.min(req.maxTokens ?? 4096, model.maxTokens || 4096);
+    if (this.completionMode(model.provider) !== 'off') {
+      yield* this.textTurn(req, maxTokens, signal);
+      return;
+    }
+
+    const now = Date.now();
+    const usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
+    const messages: Message[] = req.messages.map((m): Message => {
+      if (m.role === 'user') return { role: 'user', content: m.content, timestamp: now };
+      if (m.role === 'tool') return { role: 'toolResult', toolCallId: m.toolCallId, toolName: m.name, content: [{ type: 'text', text: m.content || '(empty)' }], isError: Boolean(m.isError), timestamp: now };
+      let content: AssistantMessage['content'] = [];
+      // The reply as this model sent it, thinking signatures included, when it is the same model.
+      if (m.native && m.native.provider === model.provider && m.native.model === model.id) content = m.native.content as AssistantMessage['content'];
+      else {
+        if (m.content) content.push({ type: 'text', text: m.content });
+        for (const c of m.toolCalls ?? []) content.push({ type: 'toolCall', id: c.id, name: c.name, arguments: c.args as ToolCall['arguments'] });
+      }
+      return { role: 'assistant', content, api: model.api, provider: model.provider, model: model.id, usage, stopReason: m.toolCalls?.length ? 'toolUse' : 'stop', timestamp: now };
+    });
+    const tools = req.tools.map((t) => ({ name: t.name, description: t.description, parameters: t.parameters }) as unknown as Tool);
+    const context: Context = { systemPrompt: req.system, messages, tools };
+    const options: Record<string, unknown> = { maxTokens, signal };
+    if (req.temperature !== undefined && !model.reasoning) options.temperature = req.temperature;
+    // Like story generation: thinking stays off unless the model can't turn it off, then it gets the lowest level.
+    if (model.reasoning) {
+      const levels = getSupportedThinkingLevels(model);
+      if (!levels.includes('off') && levels.length) {
+        options.reasoning = levels[0];
+        options.maxTokens = maxTokens + 4096;
+      }
+    }
+    let emitted = false;
+    try {
+      const s = this.models.streamSimple(model as Model<Api>, context, options);
+      for await (const ev of s) {
+        if (ev.type === 'text_delta') {
+          emitted = true;
+          yield { type: 'delta', text: ev.delta };
+        } else if (ev.type === 'error') {
+          if (ev.reason === 'aborted') return void (yield { type: 'done', text: '', toolCalls: [], stopReason: 'aborted' });
+          throw new Error(ev.error.errorMessage || 'Director request failed');
+        } else if (ev.type === 'done') {
+          const msg = await s.result();
+          const text = msg.content.flatMap((c) => (c.type === 'text' ? [c.text] : [])).join('');
+          const toolCalls: DirectorToolCall[] = msg.content.flatMap((c) => (c.type === 'toolCall' ? [{ id: c.id, name: c.name, args: (c.arguments ?? {}) as Record<string, unknown> }] : []));
+          const native = msg.content.some((c) => c.type === 'thinking' || (c.type === 'toolCall' && c.thoughtSignature)) ? { provider: model.provider, model: model.id, content: msg.content } : undefined;
+          yield { type: 'done', text, toolCalls, stopReason: msg.stopReason, usage: { input: msg.usage.input, output: msg.usage.output }, ...(native ? { native } : {}) };
+          return;
+        }
+      }
+    } catch (e) {
+      // Servers without tool support (many local ones) reject the request; describe the tools in text instead.
+      if (signal.aborted || emitted || !/tool|function/i.test((e as Error).message)) throw e;
+      yield* this.textTurn(req, maxTokens, signal);
+    }
+  }
+
+  /** A Director turn over plain generation, with tools described in the prompt. */
+  private async *textTurn(req: DirectorTurnRequest, maxTokens: number, signal: AbortSignal): AsyncGenerator<DirectorTurnEvent> {
+    let text = '';
+    let stopReason = 'stop';
+    for await (const ev of this.generate(
+      {
+        model: req.model,
+        system: `${req.system}\n\n${textToolManifest(req.tools)}`,
+        messages: textTranscript(req.messages),
+        maxTokens,
+        params: defaultParams({ temperature: req.temperature ?? 0.7, maxLength: maxTokens * 4 }),
+      },
+      signal,
+    )) {
+      if (ev.type === 'delta') {
+        text += ev.text;
+        yield { type: 'delta', text: ev.text };
+      } else if (ev.type === 'done') stopReason = ev.stopReason;
+    }
+    const parsed = parseTextToolCalls(text);
+    yield { type: 'done', text: parsed.text, toolCalls: parsed.toolCalls, stopReason: parsed.toolCalls.length ? 'toolUse' : stopReason };
   }
 
   /**
