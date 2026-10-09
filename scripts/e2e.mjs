@@ -174,7 +174,7 @@ await step('text adventure input', async () => {
   await page.waitForSelector('.ProseMirror .action-line');
   await page.waitForFunction(() => document.querySelector('.send-btn')?.getAttribute('aria-label') === 'Send');
   const txt = await editorText();
-  assert.ok(txt.includes('You open the door.'), 'action inserted');
+  assert.ok(txt.includes('You: open the door.'), 'action inserted');
   assert.ok(!txt.includes('> You'), 'the > marker is hidden');
   await page.screenshot({ path: `${out}adventure.png` });
 });

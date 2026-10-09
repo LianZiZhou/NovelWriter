@@ -6,6 +6,7 @@ export * from './tokenizer.ts';
 export * from './defaults.ts';
 export * from './lorebook.ts';
 export * from './ephemeral.ts';
+export * from './nlp/index.ts';
 export * from './adventure.ts';
 export * from './scenario.ts';
 export * from './context.ts';

@@ -1,4 +1,4 @@
-import { backendCaps, type BackendFlavor, type EmbeddingConfig, type EmbeddingConfigPatch, type OnnxDtype, type OnnxDevice, type GenerateRequest, type InstructTemplateId, type ModelCaps, type Preset, type Shelf, type Story, type StoryMeta, type TokenLogprob } from '@novelwriter/core';
+import { backendCaps, type BackendFlavor, type EmbeddingConfig, type EmbeddingConfigPatch, type OnnxDtype, type OnnxDevice, type GenerateRequest, type InstructTemplateId, type ModelCaps, type MoodScores, type Preset, type Shelf, type Story, type StoryMeta, type TokenLogprob } from '@novelwriter/core';
 
 export interface ProviderInfo {
   id: string;
@@ -167,6 +167,8 @@ export const api = {
   downloadModel: (m: { kind: 'onnx'; repo: string; dtype?: OnnxDtype } | { kind: 'gguf'; model: string; quant: string }) => post('/api/embeddings/models', m).then((r) => json<EmbeddingTask>(r)),
   deleteModel: (m: { kind: 'onnx'; repo: string; dtype?: OnnxDtype } | { kind: 'gguf'; repo: string; file: string }) => del('/api/embeddings/models', m).then((r) => json<{ ok: true }>(r)),
   cancelTask: (id: string) => del(`/api/embeddings/tasks/${id}`).then((r) => json<{ ok: boolean }>(r)),
+  /** Mood scores for sentences from the embedding model (nulls when embeddings are off). */
+  nlpMood: (texts: string[], lang: string, signal?: AbortSignal) => post('/api/nlp/mood', { texts, lang }, signal).then((r) => json<{ scores: (MoodScores | null)[] }>(r)),
   testEmbeddings: () => post('/api/embeddings/test').then((r) => json<{ dims: number; ms: number; queryMs: number; related: number; unrelated: number }>(r)),
   syncVectors: (storyId: string, text: string) => post(`/api/vectors/${storyId}/sync`, { text }).then((r) => json<IndexStatus>(r)),
   vectorStatus: (storyId: string, text?: string) => post(`/api/vectors/${storyId}/status`, { text }).then((r) => json<IndexStatus>(r)),

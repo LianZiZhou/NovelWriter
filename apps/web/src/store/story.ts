@@ -2,7 +2,7 @@ import { useRef } from 'react';
 import { create } from 'zustand';
 import {
   BUILTIN_PRESETS,
-  adventureInput,
+  adventureInputWith,
   amend,
   applyChange,
   backendCaps,
@@ -49,6 +49,7 @@ import {
   type ChatMessage,
   type HistoryNodeType,
   type ModelRef,
+  type MoodModel,
   type Preset,
   type Shelf,
   type Span,
@@ -664,7 +665,7 @@ export const useStory = create<StoryState>((set, get) => ({
       const hooked = hasHook('onTextAdventureInput') ? await runScriptHook('onTextAdventureInput', { text: input.text, mode: input.mode ?? 'do' }) : { text: input.text };
       s = get().current!;
       if (useSettings.getState().ttsSpeakInputs) speak(hooked.text);
-      let text = s.mode === 'adventure' ? adventureInput(hooked.text, input.mode ?? 'do', docText(s.doc)) : hooked.text;
+      let text = s.mode === 'adventure' ? await adventureInputWith(hooked.text, input.mode ?? 'do', docText(s.doc), moodModel) : hooked.text;
       const before = docText(s.doc);
       if (before && !before.endsWith('\n')) text = '\n' + text;
       if (s.mode === 'adventure') text += '\n';
@@ -808,6 +809,22 @@ export function rememberModel(m: ModelRef | null) {
  * Stream a story continuation into the editor at `from` (end of story, or a
  * cursor position for inline generation) and record it as an AI history node.
  */
+/**
+ * The embedding model's opinion of a sentence's mood, for punctuating player input the words leave open. Kept
+ * short: an engine that is slow to answer (still starting, say) is not waited for.
+ */
+const moodModel: MoodModel = async (texts, lang) => {
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), 1500);
+  try {
+    return (await api.nlpMood(texts, lang, ctl.signal)).scores;
+  } catch {
+    return texts.map(() => null);
+  } finally {
+    clearTimeout(timer);
+  }
+};
+
 async function runGeneration(
   set: (p: Partial<StoryState>) => void,
   get: () => StoryState,

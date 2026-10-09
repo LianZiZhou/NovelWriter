@@ -5,6 +5,7 @@ import { contextConfig } from './defaults.ts';
 import { expandMacros, type MacroEnv } from './macros.ts';
 import { recallPassages, type VectorHits } from './recall.ts';
 import { countTokens, tokenize } from './tokenizer.ts';
+import { sentenceEnds } from './nlp/segment.ts';
 import type { ContextConfig, LoreCategory, PhraseBiasGroup, Story, TrimType } from './types.ts';
 
 export type ContextSourceKind = 'story' | 'memory' | 'authorsNote' | 'lore' | 'ephemeral' | 'subcontext' | 'attg' | 'summary' | 'recall';
@@ -97,15 +98,13 @@ export function resolveTokens(v: number, max: number): number {
   return Math.max(0, Math.floor(v));
 }
 
-const SENTENCE_END = /[.!?…。！？]+["'”’)\]]*(\s+|$)|\n/g;
-
 /** Offsets where units of the given type start; always includes 0 and text.length. */
 export function unitBoundaries(text: string, type: TrimType): number[] {
   const b = new Set<number>([0, text.length]);
   if (type === 'newline') {
     for (let i = 0; i < text.length; i++) if (text[i] === '\n') b.add(i + 1);
   } else if (type === 'sentence') {
-    for (const m of text.matchAll(SENTENCE_END)) b.add((m.index ?? 0) + m[0].length);
+    for (const end of sentenceEnds(text)) b.add(end);
   } else {
     let pos = 0;
     for (const t of tokenize(text)) {

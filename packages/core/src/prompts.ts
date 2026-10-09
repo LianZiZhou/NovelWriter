@@ -5,6 +5,7 @@ import { expandMacros } from './macros.ts';
 import { DEFAULT_SYSTEM_PROMPT_ADVENTURE, DEFAULT_SYSTEM_PROMPT_STORY } from './defaults.ts';
 import { docText } from './doc.ts';
 import { countTokens } from './tokenizer.ts';
+import { endsSentence, sentenceEnds } from './nlp/index.ts';
 import type { VectorHits } from './recall.ts';
 import type { ChatMessage, GenerationParams, PhraseBiasGroup, SideChat, Story } from './types.ts';
 
@@ -97,9 +98,8 @@ export function continuationTail(text: string): string {
   // Long paragraphs: start at a sentence or word boundary within the last ~300 characters.
   if (text.length - from > 300) {
     const win = text.slice(-300);
-    const cut = /[.!?…。！？」』"”]\s*/g;
     let at = -1;
-    for (const m of win.matchAll(cut)) if ((m.index ?? 0) + m[0].length < win.length - 20) at = (m.index ?? 0) + m[0].length;
+    for (const end of sentenceEnds(win)) if (end < win.length - 20) at = end;
     if (at < 0) at = Math.max(0, win.indexOf(' ') + 1);
     from = text.length - 300 + at;
   }
@@ -364,8 +364,10 @@ export function postProcess(
     if (t) g = g.split(t).join('');
   }
   if (opts.trimToSentence) {
-    const m = /^([\s\S]*[.!?…。！？]["'”’)\]]*)(?=\s|$)/.exec(g);
-    if (m && m[1].trim().length > 0) g = m[1];
+    // Up to the end of the last whole sentence (line breaks don't count as one here).
+    const ends = sentenceEnds(g).filter((e) => endsSentence(g.slice(0, e)));
+    const last = ends[ends.length - 1];
+    if (last !== undefined && g.slice(0, last).trim()) g = g.slice(0, last).replace(/[ \t]+$/, '');
   }
   // At the start of a story or paragraph, leading spaces are never wanted.
   if (!existing || existing.endsWith('\n')) g = g.replace(/^[ \t]+/, '');

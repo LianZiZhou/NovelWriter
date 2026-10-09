@@ -10,6 +10,7 @@ describe('adventure', () => {
   it('converts do/say input', () => {
     expect(adventureInput('charge the dragon', 'do')).toBe('> You: charge the dragon.');
     expect(adventureInput('hello there', 'say')).toBe('> You say: hello there.');
+    expect(adventureInput('look out', 'say')).toBe('> You say: look out!');
     expect(adventureInput('Who are you?', 'say')).toBe('> You say: Who are you?');
     expect(adventureInput('n', 'do')).toBe('> You: go north.');
     expect(adventureInput('x the door', 'do')).toBe('> You: examine the door.');
@@ -18,15 +19,17 @@ describe('adventure', () => {
     expect(adventureInput('wait for*', 'do')).toBe('> You: wait for');
     expect(adventureInput('A storm rolls in.', 'story')).toBe('A storm rolls in.');
   });
-  it('words input in the story\'s language, keeping the player\'s own sentence ending', () => {
+  it('words input in the story\'s language, ending it as its meaning calls for', () => {
     const zh = '风穿过门缝，带来远方陌生的草木气息。';
     expect(adventureInput('你是谁？', 'say', zh)).toBe('> 你说：你是谁？');
-    expect(adventureInput('我该去往何处', 'say', zh)).toBe('> 你说：我该去往何处。');
+    expect(adventureInput('我该去往何处', 'say', zh)).toBe('> 你说：我该去往何处？');
+    expect(adventureInput('快跑', 'say', zh)).toBe('> 你说：快跑！');
     expect(adventureInput('推开门', 'do', zh)).toBe('> 你：推开门。');
-    expect(adventureInput('open the door', 'do', zh)).toBe('> 你：open the door。');
-    expect(adventureInput('だれ？', 'say')).toBe('> あなたは言う：だれ？');
-    expect(adventureInput('Кто ты', 'say', 'Ветер дул с моря.')).toBe('> Вы говорите: Кто ты.');
-    expect(adventureInput('who are you', 'say', 'The wind blew.')).toBe('> You say: who are you.');
+    expect(adventureInput('who are you', 'say', zh)).toBe('> 你说：who are you？');
+    expect(adventureInput('誰', 'say', 'ドアの向こうから風が吹いてきた。')).toBe('> あなたは言う：誰？');
+    expect(adventureInput('Кто ты', 'say', 'Ветер дул с моря.')).toBe('> Вы говорите: Кто ты?');
+    expect(adventureInput('qué pasa', 'say', 'El viento soplaba por la puerta y la casa estaba vacía.')).toBe('> Dices: ¿qué pasa?');
+    expect(adventureInput('who are you', 'say', 'The wind blew.')).toBe('> You say: who are you?');
   });
 });
 
