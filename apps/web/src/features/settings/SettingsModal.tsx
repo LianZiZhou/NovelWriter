@@ -134,7 +134,7 @@ function AITab() {
           desc={
             s.promptLayout === 'classic'
               ? t("The context is sent to chat models as one block of text, exactly as NovelAI's own models see it.")
-              : t("Chat models get Memory and lorebook entries as background in the system prompt, the story as the message, and the Author's Note right after it. Models that allow it continue the story's last lines word for word.")
+              : t("Chat models get Memory and lorebook entries as background in the system prompt and see the story as their own earlier replies, with your adventure actions as your turns and the Author's Note at the end. Models that allow it continue the story's last lines word for word.")
           }
           on={s.promptLayout !== 'classic'}
           onChange={(v) => s.set({ promptLayout: v ? 'structured' : 'classic' })}

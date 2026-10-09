@@ -893,7 +893,7 @@ async function runGeneration(
         raw += ev.text;
         if (settings.streamResponses) {
           if (settings.streamDelay > 0) await new Promise((r) => setTimeout(r, settings.streamDelay * 10));
-          show(postProcess(before, raw, { stop: req.stop, banned }));
+          show(postProcess(before, raw, { stop: req.stop, banned, singleBreaks: req.singleBreaks }));
         }
       } else if (ev.type === 'error') {
         error = ev.message;
@@ -907,6 +907,7 @@ async function runGeneration(
     banned,
     trimToSentence: settings.continueToSentenceEnd && !abort.signal.aborted,
     minLength: s.params.minLength,
+    singleBreaks: req.singleBreaks,
   });
   if (final && hasHook('onResponse')) final = String((await runScriptHook('onResponse', { text: final, inline: !!opts.inline })).text ?? final);
   if (settings.autoFormat) final = autoFormat(final);

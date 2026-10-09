@@ -18,6 +18,14 @@ describe('adventure', () => {
     expect(adventureInput('"hi', 'do')).toBe('> You say, "Hi."');
     expect(adventureInput('A storm rolls in.', 'story')).toBe('A storm rolls in.');
   });
+  it('writes Chinese and Japanese input in the story\'s own language', () => {
+    expect(adventureInput('你是谁？', 'say')).toBe('> 你问：“你是谁？”');
+    expect(adventureInput('我该去往何处', 'say')).toBe('> 你说：“我该去往何处。”');
+    expect(adventureInput('快跑！', 'say')).toBe('> 你喊：“快跑！”');
+    expect(adventureInput('我推开门', 'do')).toBe('> 你推开门。');
+    expect(adventureInput('“等等', 'do')).toBe('> 你说：“等等。”');
+    expect(adventureInput('だれ？', 'say')).toBe('> 「だれ？」');
+  });
 });
 
 describe('scenario placeholders', () => {
@@ -60,6 +68,10 @@ describe('formats', () => {
 });
 
 describe('postProcess', () => {
+  it('keeps a story\'s single line breaks between paragraphs', () => {
+    expect(postProcess('One.\n', 'Two.\n\nThree.', { singleBreaks: true })).toBe('Two.\nThree.');
+    expect(postProcess('One.\n', 'Two.\n\nThree.')).toBe('Two.\n\nThree.');
+  });
   it('adds a space after sentence ends and applies stops', () => {
     expect(postProcess('He left.', 'She stayed.')).toBe(' She stayed.');
     expect(postProcess('He left. ', 'She stayed.')).toBe('She stayed.');
