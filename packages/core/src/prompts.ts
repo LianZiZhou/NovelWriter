@@ -4,11 +4,23 @@ import { docText } from './doc.ts';
 import { countTokens } from './tokenizer.ts';
 import type { ChatMessage, GenerationParams, PhraseBiasGroup, SideChat, Story } from './types.ts';
 
-/** Rough characters-per-token ratio for converting NovelAI's character output length. */
+/** Characters per token for English prose; the fallback when there is no text to measure. */
 export const CHARS_PER_TOKEN = 4;
 
-export function outputTokens(params: GenerationParams): number {
-  return Math.max(16, Math.ceil(params.maxLength / CHARS_PER_TOKEN));
+/**
+ * Characters per token of `sample` (the story's own text), so a length in characters becomes the right
+ * number of tokens: about 4 for English but only ~1.1 for Chinese.
+ */
+export function charsPerToken(sample: string): number {
+  const s = sample.slice(-4000);
+  if (s.trim().length < 40) return CHARS_PER_TOKEN;
+  const n = countTokens(s);
+  return n > 0 ? Math.min(6, Math.max(0.8, s.length / n)) : CHARS_PER_TOKEN;
+}
+
+/** Output tokens for NovelAI's character output length, measured against the story's own text. */
+export function outputTokens(params: GenerationParams, sample = ''): number {
+  return Math.max(16, Math.ceil(params.maxLength / charsPerToken(sample)));
 }
 
 export interface StoryRequest {
@@ -56,7 +68,7 @@ export function buildStoryRequest(
   },
 ): StoryRequest {
   const params = story.params;
-  const out = outputTokens(params);
+  const out = outputTokens(params, opts.inline?.before ?? opts.storyText ?? (docText(story.doc) || story.memory));
   // Text after the gap is part of the request too, so it comes out of the context budget.
   const afterText = opts.inline?.bidirectional ? stripComments(opts.inline.after.slice(0, 2000)) : '';
   const ctx = buildContext(story, {
