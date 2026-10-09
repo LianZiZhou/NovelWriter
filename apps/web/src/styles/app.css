@@ -4309,6 +4309,16 @@ body.desktop .app {
   flex: none;
   justify-content: center;
 }
+.titlebar-title svg {
+  flex: none; /* a long story title shrinks itself, not the logo */
+}
+/* Centre the capitals, not the line boxes: Eczar and Source Sans carry different ascent and
+   descent, so centring their line boxes leaves the letters riding above the icons. */
+.titlebar-app,
+.titlebar-sep,
+.titlebar-story {
+  text-box: trim-both cap alphabetic;
+}
 .titlebar-app {
   font-family: var(--font-headings);
   font-weight: 600;
@@ -4318,6 +4328,8 @@ body.desktop .app {
   color: var(--text-disabled);
 }
 .titlebar-story {
+  /* Trimmed to the capitals; even padding keeps them centred while descenders stay inside the clip. */
+  padding-block: 0.3em;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
