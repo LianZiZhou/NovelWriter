@@ -6,6 +6,10 @@ import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const WORKER = String.raw`// Written by NovelWriter: runs text-analysis models for the server.
+// Where the JavaScript engine has Float16Array (Electron, Node 24+), onnxruntime-common turns float16 data into one,
+// which onnxruntime-node's native code does not read ("not enough space: expected 30, got 0"). Hidden before the
+// runtime loads, float16 tensors stay the Uint16Array the native code expects.
+delete globalThis.Float16Array;
 import { createRequire } from 'node:module';
 const t = await import('./node_modules/@huggingface/transformers/dist/transformers.node.mjs');
 const ort = createRequire(import.meta.url)('onnxruntime-node');
