@@ -203,7 +203,7 @@ export function executionProviders(o: OnnxEmbeddingConfig): unknown[] | undefine
 }
 
 /** transformers.js `device`: the stock runtime refuses providers it was not told about, so pass the closest one. */
-function transformersDevice(o: OnnxEmbeddingConfig): string {
+export function transformersDevice(o: OnnxEmbeddingConfig): string {
   if (o.device === 'auto') return 'auto';
   if (o.device === 'dml' || o.device === 'cuda' || o.device === 'coreml' || o.device === 'webgpu') return o.device;
   if (o.device === 'tensorrt') return 'cuda';

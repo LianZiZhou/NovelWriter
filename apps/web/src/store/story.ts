@@ -806,18 +806,14 @@ export function rememberModel(m: ModelRef | null) {
 }
 
 /**
- * Stream a story continuation into the editor at `from` (end of story, or a
- * cursor position for inline generation) and record it as an AI history node.
+ * What the local text-analysis models make of player input the words leave open (question or not, its language).
+ * Kept short: a model that is slow to answer (still loading, say) is not waited for.
  */
-/**
- * The embedding model's opinion of a sentence's mood, for punctuating player input the words leave open. Kept
- * short: an engine that is slow to answer (still starting, say) is not waited for.
- */
-const moodModel: MoodModel = async (texts, lang) => {
+const moodModel: MoodModel = async (texts) => {
   const ctl = new AbortController();
   const timer = setTimeout(() => ctl.abort(), 1500);
   try {
-    return (await api.nlpMood(texts, lang, ctl.signal)).scores;
+    return (await api.nlpRead(texts, ctl.signal)).readings;
   } catch {
     return texts.map(() => null);
   } finally {
@@ -825,6 +821,10 @@ const moodModel: MoodModel = async (texts, lang) => {
   }
 };
 
+/**
+ * Stream a story continuation into the editor at `from` (end of story, or a
+ * cursor position for inline generation) and record it as an AI history node.
+ */
 async function runGeneration(
   set: (p: Partial<StoryState>) => void,
   get: () => StoryState,

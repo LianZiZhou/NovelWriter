@@ -15,9 +15,10 @@ import { NEWS } from '../home/news.ts';
 import { ModelSelect } from '../right/ModelSelect.tsx';
 import { ProvidersTab } from './ProvidersTab.tsx';
 import { EmbeddingsTab } from './EmbeddingsTab.tsx';
+import { NlpTab } from './NlpTab.tsx';
 import { FIXED_HOTKEYS, HOTKEY_LABELS, hotkeyParts } from '../../hotkeys.ts';
 
-type Tab = 'ai' | 'interface' | 'theme' | 'tts' | 'defaults' | 'hotkeys' | 'providers' | 'embeddings' | 'about';
+type Tab = 'ai' | 'interface' | 'theme' | 'tts' | 'defaults' | 'hotkeys' | 'providers' | 'embeddings' | 'nlp' | 'about';
 
 const TITLES: Record<Tab, string> = {
   ai: 'AI Settings',
@@ -28,6 +29,7 @@ const TITLES: Record<Tab, string> = {
   hotkeys: 'Hotkeys',
   providers: 'AI Providers',
   embeddings: 'Vector Search',
+  nlp: 'Text Analysis',
   about: 'Support',
 };
 
@@ -858,7 +860,7 @@ export function SettingsModal({ onClose, initialTab }: { onClose: () => void; in
   const [tab, setTab] = useState<Tab>(initialTab ?? 'ai');
   const [log, setLog] = useState(false);
   const changelogSeen = useSettings((x) => x.changelogSeen);
-  const tabs: Tab[] = ['ai', 'interface', 'theme', 'tts', 'defaults', 'hotkeys', 'providers', 'embeddings'];
+  const tabs: Tab[] = ['ai', 'interface', 'theme', 'tts', 'defaults', 'hotkeys', 'providers', 'embeddings', 'nlp'];
   return (
     <Modal onClose={onClose} width={1150} className="split-modal" label={t('User Settings')}>
       <div className="side">
@@ -904,6 +906,7 @@ export function SettingsModal({ onClose, initialTab }: { onClose: () => void; in
           {tab === 'hotkeys' && <HotkeysTab />}
           {tab === 'providers' && <ProvidersTab />}
           {tab === 'embeddings' && <EmbeddingsTab />}
+          {tab === 'nlp' && <NlpTab />}
           {tab === 'about' && <AboutTab />}
         </div>
       </div>

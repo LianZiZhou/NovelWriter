@@ -12,7 +12,7 @@ import { FileCredentialStore } from './credentials.ts';
 import { LLM, type CustomProviderConfig } from './llm.ts';
 import { runLogin } from './auth-ws.ts';
 import { Embeddings, registerEmbeddingRoutes } from './embeddings/index.ts';
-import { Nlp, registerNlpRoutes } from './nlp.ts';
+import { Nlp, registerNlpRoutes } from './nlp/index.ts';
 import { MASK, listVoices, readTTS, synthesize, writeTTS, type TTSConfig } from './tts.ts';
 
 export interface AppOptions {
@@ -187,7 +187,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
   // ------------------------------------------------------------- embeddings / vector recall
   registerEmbeddingRoutes(app, embeddings);
   // Text analysis (sentence moods for punctuation) on the embedding engine
-  registerNlpRoutes(app, new Nlp(embeddings));
+  registerNlpRoutes(app, new Nlp(storage, embeddings));
 
   app.get('/api/health', async () => ({ ok: true }));
 

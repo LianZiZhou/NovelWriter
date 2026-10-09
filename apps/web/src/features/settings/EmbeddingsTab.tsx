@@ -30,8 +30,8 @@ const DTYPE_LABELS: Record<OnnxDtype, string> = {
 };
 const LANG = { zh: 'Chinese', en: 'English', multi: 'Multilingual' } as const;
 
-const toast = (msg: string, kind: 'error' | 'success' | 'info' = 'error') => useUI.getState().toast(msg, kind);
-const run = async (p: Promise<unknown>) => {
+export const toast = (msg: string, kind: 'error' | 'success' | 'info' = 'error') => useUI.getState().toast(msg, kind);
+export const run = async (p: Promise<unknown>) => {
   try {
     await p;
   } catch (e) {
@@ -39,7 +39,7 @@ const run = async (p: Promise<unknown>) => {
   }
 };
 
-function Group({ title, desc, children, wide }: { title: string; desc?: ReactNode; children: ReactNode; wide?: boolean }) {
+export function Group({ title, desc, children, wide }: { title: string; desc?: ReactNode; children: ReactNode; wide?: boolean }) {
   return (
     <>
       <div className="settings-group-title">{t(title)}</div>
@@ -51,7 +51,7 @@ function Group({ title, desc, children, wide }: { title: string; desc?: ReactNod
   );
 }
 
-function Label({ text, help }: { text: string; help?: string }) {
+export function Label({ text, help }: { text: string; help?: string }) {
   return (
     <span className="field-label" style={{ margin: 0 }}>
       {t(text)}
@@ -106,11 +106,11 @@ function Pick<V extends string>({ label, help, value, options, onChange }: { lab
   );
 }
 
-function mb(n: number): string {
+export function mb(n: number): string {
   return n >= 1024 ? `${(n / 1024).toFixed(1)} GB` : `${Math.round(n)} MB`;
 }
 
-function TaskRow({ task }: { task: EmbeddingTask }) {
+export function TaskRow({ task }: { task: EmbeddingTask }) {
   const pct = task.total ? Math.min(100, Math.round((task.received / task.total) * 100)) : 0;
   return (
     <div style={{ gridColumn: '1 / -1', background: 'var(--bg0)', padding: '8px 12px' }}>

@@ -27,6 +27,8 @@ export type Lang =
   | 'am'
   | 'my';
 
+export const LANGS: Lang[] = ['en', 'zh', 'ja', 'ko', 'ru', 'uk', 'es', 'fr', 'de', 'it', 'pt', 'nl', 'ar', 'fa', 'he', 'el', 'hi', 'th', 'hy', 'ka', 'am', 'my'];
+
 export interface LangGuess {
   lang: Lang;
   /** 0–1: the share of letters in the winning script, lowered when function words barely tell Latin languages apart. */

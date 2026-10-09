@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { unitBoundaries } from '../src/context.ts';
 import { postProcess } from '../src/prompts.ts';
-import { blendMood, detectLanguage, endsSentence, guessMood, punctuate, sentenceEnds, sentences, terminate, words } from '../src/nlp/index.ts';
+import { blendMood, langFromLabel, NLP_MODELS, NLP_TASKS, detectLanguage, endsSentence, guessMood, punctuate, sentenceEnds, sentences, terminate, words } from '../src/nlp/index.ts';
 
 describe('language', () => {
   it('tells languages apart by script, then by function words', () => {
@@ -52,8 +52,18 @@ describe('punctuation', () => {
   });
   it('lets a model decide only where the words are not decisive', () => {
     const decisive = guessMood('你是谁', 'zh');
-    expect(blendMood(decisive, { statement: 0.9, question: 0.05, exclamation: 0.05 }).mood).toBe('question');
+    expect(blendMood(decisive, 0.05).mood).toBe('question');
     const open = guessMood('你来过这里', 'zh');
-    expect(blendMood(open, { statement: 0.1, question: 0.85, exclamation: 0.05 })).toEqual({ mood: 'question', source: 'model' });
+    expect(blendMood(open, 0.85)).toEqual({ mood: 'question', source: 'model' });
+    // The model can't tell exclamations; the words still can.
+    expect(blendMood(guessMood('快躲起来', 'zh'), 0.1).mood).toBe('exclamation');
+    expect(punctuate('门后面有人', '风。', { question: 0.9 })).toMatchObject({ text: '门后面有人？', source: 'model' });
+    expect(punctuate('快跑', '风。', { question: 0.1, lang: 'zh' }).text).toBe('快跑！');
+  });
+  it('maps model language labels', () => {
+    expect(langFromLabel('zho_Hani')).toBe('zh');
+    expect(langFromLabel('ko')).toBe('ko');
+    expect(langFromLabel('swh_Latn')).toBeNull();
+    expect(NLP_MODELS.every((m) => NLP_TASKS.includes(m.task) && m.files.length)).toBe(true);
   });
 });

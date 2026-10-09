@@ -1,11 +1,12 @@
-// Measures how well the text-analysis pipeline picks sentence-final punctuation: the words alone, an embedding
-// model alone, and the two blended, on sentences that are not among the model's examples. Installs the ONNX runtime
-// and the given models into a temporary data folder.
-// Usage: tsx apps/server/scripts/check-nlp.ts [model ids…]   (default: bge-small-zh-v1.5 multilingual-e5-small)
+// Measures the text-analysis pipeline on adventure input: how well the words alone, the punctuation model alone and
+// the two together pick the sentence-final mark, on sentences written for this check. Then runs each other task's
+// model on its sample. Installs the ONNX runtime and the models into a temporary data folder, or into --data <dir>
+// (kept, so later runs skip the downloads).
+// Usage: tsx apps/server/scripts/check-nlp.ts [--data <dir>] [model ids…]   (default: one model per task)
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { bestMood, blendMood, guessMood, type Lang, type Mood, type MoodScores } from '@novelwriter/core';
+import { blendMood, guessMood, nlpModel, type Lang, type ModelReading, type Mood } from '@novelwriter/core';
 import { buildApp } from '../src/app.ts';
 
 const CASES: [string, Lang, Mood][] = [
@@ -54,8 +55,11 @@ const CASES: [string, Lang, Mood][] = [
   ['it is quiet here', 'en', 'statement'],
 ];
 
-const models = process.argv.slice(2).length ? process.argv.slice(2) : ['bge-small-zh-v1.5', 'multilingual-e5-small'];
-const dir = mkdtempSync(join(tmpdir(), 'nw-nlp-'));
+const args = process.argv.slice(2);
+const dataAt = args.indexOf('--data');
+const keep = dataAt >= 0 ? args.splice(dataAt, 2)[1] : '';
+const models = args.length ? args : ['punct-horizon-small', 'sat-3l-sm', 'lid-horizon-small', 'ner-mbert-hrl'];
+const dir = keep || mkdtempSync(join(tmpdir(), 'nw-nlp-'));
 const app = await buildApp({ dataDir: dir });
 const call = async <T = Record<string, unknown>>(method: 'GET' | 'POST' | 'PUT', url: string, payload?: object): Promise<T> => {
   const r = await app.inject({ method, url, payload });
@@ -76,25 +80,34 @@ const pct = (n: number) => `${Math.round((n / CASES.length) * 100)}%`;
 const rules = CASES.map(([t, lang]) => guessMood(t, lang));
 console.log(`words alone: ${pct(rules.filter((g, i) => g.mood === CASES[i][2]).length)}`);
 try {
-  await call('PUT', '/api/embeddings/config', { enabled: true, source: 'onnx', onnx: { device: 'cpu' } });
+  await call('PUT', '/api/embeddings/config', { onnx: { device: 'cpu' } });
   await waitTask(await call('POST', '/api/embeddings/runtime/onnx'));
-  for (const model of models) {
-    await call('PUT', '/api/embeddings/config', { onnx: { model } });
-    await waitTask(await call('POST', '/api/embeddings/models', { kind: 'onnx', repo: model }));
-    const { scores } = await call<{ scores: (MoodScores | null)[] }>('POST', '/api/nlp/mood', { texts: CASES.map((c) => c[0]) });
+  for (const id of models) {
+    const m = nlpModel(id);
+    if (!m) throw new Error(`Unknown model ${id}`);
+    await waitTask(await call('POST', '/api/nlp/models', { id }));
+    await call('PUT', '/api/nlp/config', { models: { [m.task]: id } });
+    const sample = await call<{ text: string; result: unknown; ms: number }>('POST', '/api/nlp/test', { task: m.task });
+    console.log(`${id} on its sample (${sample.ms} ms, first run loads the model):\n  ${sample.text}\n  → ${JSON.stringify(sample.result)}`);
+    if (m.task !== 'punctuation') continue;
+    const t0 = Date.now();
+    const { readings } = await call<{ readings: (ModelReading | null)[] }>('POST', '/api/nlp/read', { texts: CASES.map((c) => c[0]) });
+    const ms = Date.now() - t0;
     let alone = 0;
     let blended = 0;
     const wrong: string[] = [];
     CASES.forEach(([t, , want], i) => {
-      if (scores[i] && bestMood(scores[i]!) === want) alone++;
-      const got = blendMood(rules[i], scores[i]).mood;
+      const q = readings[i]?.question ?? 0;
+      const own: Mood = q >= 0.5 ? 'question' : 'statement';
+      if (own === want) alone++;
+      const got = blendMood(rules[i], q).mood;
       if (got === want) blended++;
-      else wrong.push(`${t} (${got}, want ${want})`);
+      else wrong.push(`${t} (${got}, want ${want}, q ${q.toFixed(2)})`);
     });
-    console.log(`${model}: model alone ${pct(alone)}, blended ${pct(blended)}`);
+    console.log(`${id}: model alone ${pct(alone)} (question or not; it has no "!"), with the words ${pct(blended)}, ${ms} ms for ${CASES.length} lines`);
     console.log(`  wrong: ${wrong.join('; ')}`);
   }
 } finally {
   await app.close();
-  rmSync(dir, { recursive: true, force: true });
+  if (!keep) rmSync(dir, { recursive: true, force: true });
 }
