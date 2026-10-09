@@ -1,4 +1,4 @@
-import type { BackendFlavor, GenerateRequest, Preset, Shelf, Story, StoryMeta, TokenLogprob } from '@novelwriter/core';
+import { backendCaps, type BackendFlavor, type GenerateRequest, type ModelCaps, type Preset, type Shelf, type Story, type StoryMeta, type TokenLogprob } from '@novelwriter/core';
 
 export interface ProviderInfo {
   id: string;
@@ -23,6 +23,13 @@ export interface ModelInfo {
   api: string;
   /** Server kind; decides which generation settings reach the model (see core/backend.ts). */
   flavor: BackendFlavor;
+  /** What this model takes (flavor minus what the model rejects); older servers leave it out. */
+  caps?: ModelCaps;
+}
+
+/** Capabilities of the selected model. */
+export function capsOf(info: ModelInfo | undefined): ModelCaps {
+  return info?.caps ?? backendCaps(info?.flavor ?? 'chat-only');
 }
 
 /** OpenAI-compatible speech endpoint (the key comes back masked). */

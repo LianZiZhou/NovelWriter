@@ -17,9 +17,13 @@ import {
   chunkLogprobs,
   defaultParams,
   loadTokenizer,
+  modelCaps,
+  rejectedFields,
   samplerPayload,
   tokenIds,
+  type BackendCaps,
   type BackendFlavor,
+  type ModelCaps,
   type GenerateRequest,
   type TokenLogprob,
 } from '@novelwriter/core';
@@ -62,6 +66,8 @@ export class LLM {
   readonly models: MutableModels;
   private customIds = new Set<string>();
   private custom = new Map<string, CustomProviderConfig>();
+  /** Request fields providers refused per model ("provider/id"), learned from their errors this run. */
+  private rejected = new Map<string, Set<string>>();
 
   constructor(readonly credentials: FileCredentialStore) {
     this.models = builtinModels({ credentials });
@@ -154,9 +160,18 @@ export class LLM {
     return 'chat-only';
   }
 
+  /** What a model accepts: its flavor's settings minus what the model itself (or its provider) rejects. */
+  capsOf(model: Model<Api>): ModelCaps {
+    const levels = model.reasoning ? getSupportedThinkingLevels(model) : [];
+    const thinkingForced = Boolean(model.reasoning && levels.length && !levels.includes('off'));
+    const traits = { provider: model.provider, api: model.api, id: model.id, reasoning: Boolean(model.reasoning), thinkingForced };
+    return modelCaps(this.flavorOf(model), traits, this.rejected.get(`${model.provider}/${model.id}`) ?? []);
+  }
+
   listModels(provider?: string) {
     return this.models.getModels(provider).map((m) => ({
       flavor: this.flavorOf(m),
+      caps: this.capsOf(m as Model<Api>),
       provider: m.provider,
       id: m.id,
       name: m.name,
@@ -198,53 +213,80 @@ export class LLM {
     }
 
     const flavor = this.flavorOf(model);
-    const caps = backendCaps(flavor);
-    const logitBias = await this.logitBias(req, flavor, model.provider).catch(() => undefined);
-    const { temperature, body } = samplerPayload(params, flavor, { logitBias, logprobs: req.logprobs, stop: req.stop });
-    const options: Record<string, unknown> = { maxTokens, signal };
-    // Story continuation wants no (or minimal) thinking. Models that cannot turn
-    // thinking off get the lowest level and extra budget so output isn't starved.
-    if (model.reasoning) {
-      const levels = getSupportedThinkingLevels(model);
-      if (!levels.includes('off') && levels.length) {
-        options.reasoning = levels[0];
-        options.maxTokens = maxTokens + 2048;
-      }
-    }
-    if (temperature !== undefined) options.temperature = temperature;
-    if (Object.keys(body).length && model.api === 'openai-completions') options.samplingParams = body;
-    // Token probabilities aren't surfaced by the adapter; read them from the raw stream.
-    const probs: TokenLogprob[] = [];
-    if (req.logprobs && caps.logprobs && model.api === 'openai-completions') options.fetch = tapLogprobs((t) => probs.push(...t));
-
-    const s = this.models.streamSimple(model as Model<Api>, context, options);
-    const flush = function* (): Generator<GenerateEvent> {
-      if (probs.length) yield { type: 'logprobs', tokens: probs.splice(0) };
-    };
-    for await (const ev of s) {
-      if (ev.type === 'text_delta') {
-        yield* flush();
-        yield { type: 'delta', text: ev.delta };
-      } else if (ev.type === 'error') {
-        if (ev.reason === 'aborted') {
-          yield { type: 'done', stopReason: 'aborted' };
-          return;
+    const key = `${model.provider}/${model.id}`;
+    // A provider may still refuse a setting we thought it takes; drop what it names and retry (twice at most).
+    for (let attempt = 0; ; attempt++) {
+      const caps = this.capsOf(model as Model<Api>);
+      const logitBias = await this.logitBias(req, flavor, model.provider, caps).catch(() => undefined);
+      const { temperature, body } = samplerPayload(params, flavor, { logitBias, logprobs: req.logprobs, stop: req.stop }, caps);
+      const options: Record<string, unknown> = { maxTokens, signal };
+      // Story continuation wants no (or minimal) thinking. Models that cannot turn
+      // thinking off get the lowest level and extra budget so output isn't starved.
+      if (model.reasoning) {
+        const levels = getSupportedThinkingLevels(model);
+        if (!levels.includes('off') && levels.length) {
+          options.reasoning = levels[0];
+          options.maxTokens = maxTokens + 2048;
         }
-        throw new Error(ev.error.errorMessage || 'Generation failed');
-      } else if (ev.type === 'done') {
-        const msg = await s.result();
-        // The tapped copy of the stream may finish parsing a moment after the adapter.
-        await new Promise((r) => setTimeout(r, 30));
-        yield* flush();
-        yield { type: 'done', stopReason: msg.stopReason, usage: msg.usage };
-        return;
+      }
+      if (temperature !== undefined) options.temperature = temperature;
+      const sendsBody = Object.keys(body).length > 0 && model.api === 'openai-completions';
+      if (sendsBody) options.samplingParams = body;
+      const sent = [...(temperature !== undefined ? ['temperature'] : []), ...(sendsBody ? Object.keys(body) : [])];
+      // Token probabilities aren't surfaced by the adapter; read them from the raw stream.
+      const probs: TokenLogprob[] = [];
+      if (sendsBody && body.logprobs) options.fetch = tapLogprobs((t) => probs.push(...t));
+
+      let emitted = false;
+      const retryWithout = (message: string): boolean => {
+        if (emitted || attempt >= 2) return false;
+        const bad = rejectedFields(message, sent);
+        if (!bad.length) return false;
+        const set = this.rejected.get(key) ?? new Set<string>();
+        for (const f of bad) set.add(f);
+        this.rejected.set(key, set);
+        return true;
+      };
+      const flush = function* (): Generator<GenerateEvent> {
+        if (probs.length) yield { type: 'logprobs', tokens: probs.splice(0) };
+      };
+      try {
+        const s = this.models.streamSimple(model as Model<Api>, context, options);
+        let retry = false;
+        for await (const ev of s) {
+          if (ev.type === 'text_delta') {
+            emitted = true;
+            yield* flush();
+            yield { type: 'delta', text: ev.delta };
+          } else if (ev.type === 'error') {
+            if (ev.reason === 'aborted') {
+              yield { type: 'done', stopReason: 'aborted' };
+              return;
+            }
+            const message = ev.error.errorMessage || 'Generation failed';
+            if (retryWithout(message)) {
+              retry = true;
+              break;
+            }
+            throw new Error(message);
+          } else if (ev.type === 'done') {
+            const msg = await s.result();
+            // The tapped copy of the stream may finish parsing a moment after the adapter.
+            await new Promise((r) => setTimeout(r, 30));
+            yield* flush();
+            yield { type: 'done', stopReason: msg.stopReason, usage: msg.usage };
+            return;
+          }
+        }
+        if (!retry) return;
+      } catch (e) {
+        if (signal.aborted || !retryWithout((e as Error).message ?? String(e))) throw e;
       }
     }
   }
 
   /** Phrase bias and single-token banned phrases as token-id logit biases, when the backend can tokenize. */
-  private async logitBias(req: GenerateRequest, flavor: BackendFlavor, provider: string): Promise<Record<number, number> | undefined> {
-    const caps = backendCaps(flavor);
+  private async logitBias(req: GenerateRequest, flavor: BackendFlavor, provider: string, caps: BackendCaps): Promise<Record<number, number> | undefined> {
     if (caps.tokenizer === 'none') return undefined;
     const encode = async (text: string): Promise<number[]> => {
       const ids = /^\s*\[([\d,\s]+)\]\s*$/.exec(text);
@@ -276,6 +318,7 @@ export class LLM {
     const model = this.models.getModel(ref.provider, ref.id);
     if (!model) throw new Error(`Unknown model ${ref.provider}/${ref.id}`);
     const flavor = this.flavorOf(model);
+    // The model's own tokenizer, even when it takes no logit bias (reasoning models).
     const kind = backendCaps(flavor).tokenizer;
     if (kind === 'o200k') {
       await loadTokenizer();

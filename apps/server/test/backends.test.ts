@@ -11,6 +11,8 @@ import { buildApp } from '../src/app.ts';
 let mock: Server;
 let mockUrl = '';
 const bodies: Record<string, unknown>[] = [];
+// When set, the mock answers like OpenAI does for reasoning models that get a temperature.
+let rejectTemperature = false;
 let app: FastifyInstance;
 let dir: string;
 
@@ -26,6 +28,11 @@ beforeAll(async () => {
         return;
       }
       bodies.push(body);
+      if (rejectTemperature && 'temperature' in body) {
+        res.writeHead(400, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({ error: { message: "Unsupported parameter: 'temperature' is not supported with this model.", type: 'invalid_request_error', param: 'temperature', code: 'unsupported_parameter' } }));
+        return;
+      }
       res.writeHead(200, { 'content-type': 'text/event-stream' });
       const chunk = (content: string, logprob: number) => ({
         id: 'x',
@@ -102,5 +109,41 @@ describe('backend parameters', () => {
     expect(body.top_k).toBeUndefined();
     expect(body.presence_penalty).toBe(0.3);
     expect(body.logit_bias).toBeUndefined();
+  });
+
+  it('drops a parameter the provider rejects, retries, and remembers it for the model', async () => {
+    await app.inject({ method: 'PUT', url: '/api/custom-providers', payload: [{ id: 'strict', name: 'Strict', baseUrl: mockUrl, flavor: 'openai-compatible', models: [{ id: 'r1' }] }] });
+    rejectTemperature = true;
+    try {
+      const generate = () =>
+        app.inject({ method: 'POST', url: '/api/generate', payload: { model: { provider: 'strict', id: 'r1' }, messages: [{ role: 'user', content: 'x' }], params: defaultParams({ topP: 0.9 }) } });
+      const before = bodies.length;
+      const ev = events((await generate()).payload);
+      expect(ev.filter((e) => e.type === 'delta').map((e) => e.text).join('')).toBe('Hello world');
+      // First attempt carried temperature and was refused; the retry left it out but kept top_p.
+      const tries = bodies.slice(before);
+      expect(tries.map((b) => 'temperature' in b)).toEqual([true, false]);
+      expect(tries[1].top_p).toBe(0.9);
+      // Learned: the next request goes out without temperature straight away, and the model list says so.
+      const n = bodies.length;
+      await generate();
+      expect(bodies.slice(n).map((b) => 'temperature' in b)).toEqual([false]);
+      const models = (await app.inject({ url: '/api/models?provider=strict' })).json() as { caps: { params: string[]; restricted?: string } }[];
+      expect(models[0].caps.params).not.toContain('temperature');
+      expect(models[0].caps.restricted).toBe('learned');
+    } finally {
+      rejectTemperature = false;
+    }
+  });
+
+  it('lists per-model capabilities: Codex and OpenAI reasoning models take no sampling settings', async () => {
+    const all = (await app.inject({ url: '/api/models' })).json() as { provider: string; id: string; api: string; caps: { params: string[]; restricted?: string } }[];
+    const codex = all.filter((m) => m.api === 'openai-codex-responses');
+    expect(codex.length).toBeGreaterThan(0);
+    for (const m of codex) expect(m.caps, m.id).toMatchObject({ params: [], restricted: 'reasoning' });
+    const gpt5 = all.find((m) => m.provider === 'openai' && /^gpt-5/.test(m.id));
+    expect(gpt5?.caps.params).toEqual([]);
+    const gpt41 = all.find((m) => m.provider === 'openai' && m.id === 'gpt-4.1');
+    expect(gpt41?.caps.params).toContain('temperature');
   });
 });

@@ -1,9 +1,10 @@
 import { useRef, useState } from 'react';
 import { CaretDown, CaretUp, PencilSimple, Plus, Trash, UploadSimple } from '@phosphor-icons/react';
-import { backendCaps, defaultParams, exportPreset, importPreset, uid, type GenerationParams, type ParamId, type SamplerId } from '@novelwriter/core';
+import { defaultParams, exportPreset, importPreset, uid, type GenerationParams, type ParamId, type SamplerId } from '@novelwriter/core';
 import { download, safeFileName, useStory, useStoryMeta } from '../../store/story.ts';
 import { useUI } from '../../store/ui.ts';
 import { t } from '../../i18n.ts';
+import { capsOf } from '../../api.ts';
 import { Collapsible, Select, SliderSetting } from '../../components/ui.tsx';
 
 export const SAMPLER_INFO: Record<SamplerId, { label: string; help: string }> = {
@@ -22,7 +23,7 @@ export const SAMPLER_INFO: Record<SamplerId, { label: string; help: string }> = 
 function useCaps() {
   const info = useStory((s) => s.modelInfo)();
   const flavor = info?.flavor ?? 'chat-only';
-  return { flavor, caps: backendCaps(flavor), model: info?.name ?? '' };
+  return { flavor, caps: capsOf(info), model: info?.name ?? '' };
 }
 
 export function GenerationTab() {
@@ -54,7 +55,13 @@ export function GenerationTab() {
   const enabled = p.order.filter((s) => s.enabled).map((s) => s.id);
   const hidden = p.order.length - enabled.length;
   const unsupportedOn = enabled.filter((id) => !can(id));
-  const na = (x: ParamId) => (can(x) ? undefined : t('Not used by {model}.', { model: model || t('this model') }));
+  // Why this model ignores sampling settings, when it does (reasoning models fix their own; others refused some).
+  const restrictedNote =
+    caps.restricted === 'reasoning'
+      ? t('{model} sets its own sampling (reasoning model), so Randomness and the samplers are not sent. They stay saved in the preset.', { model: model || t('This model') })
+      : caps.restricted === 'learned'
+        ? t('{model} refused some settings; they are no longer sent to it.', { model: model || t('This model') })
+        : null;
 
   const samplerSliders = (id: SamplerId) => {
     if (!can(id)) return null;
@@ -233,7 +240,18 @@ export function GenerationTab() {
       <div className="panel-section" style={{ gap: 18 }}>
         <Collapsible title={t('Generation Options')}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 28, marginTop: 14 }}>
-            <SliderSetting title={t('Randomness')} desc={t('The higher the value, the more random the output!')} value={p.temperature} min={0.05} max={2.5} step={0.01} def={1} onChange={(v) => set({ temperature: v })} />
+            {restrictedNote && <div className="desc warning-text">{restrictedNote}</div>}
+            <SliderSetting
+              title={t('Randomness')}
+              desc={t('The higher the value, the more random the output!')}
+              value={p.temperature}
+              min={0.05}
+              max={2.5}
+              step={0.01}
+              def={1}
+              disabled={!can('temperature')}
+              onChange={(v) => set({ temperature: v })}
+            />
             <SliderSetting
               title={t('Output Length')}
               desc={t('Increase the length of the generated responses')}

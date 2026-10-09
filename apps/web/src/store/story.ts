@@ -48,7 +48,7 @@ import {
   type Story,
   type StoryMeta,
 } from '@novelwriter/core';
-import { api, generateStream, generateText, type ModelInfo } from '../api.ts';
+import { api, capsOf, generateStream, generateText, type ModelInfo } from '../api.ts';
 import { useSettings } from './settings.ts';
 import { useUI } from './ui.ts';
 import { t } from '../i18n.ts';
@@ -626,7 +626,7 @@ export const useStory = create<StoryState>((set, get) => ({
     if (!s) return null;
     const info = get().modelInfo();
     const maxCtx = Math.min(s.params.maxContext, info?.contextWindow ?? Infinity, useSettings.getState().maxContextCap || Infinity);
-    const req = buildStoryRequest(s, { maxContextTokens: maxCtx, model: info?.id, preamble: useSettings.getState().preamble, nativeBias: backendCaps(info?.flavor ?? 'chat-only').tokenizer !== 'none' });
+    const req = buildStoryRequest(s, { maxContextTokens: maxCtx, model: info?.id, preamble: useSettings.getState().preamble, nativeBias: capsOf(info).tokenizer !== 'none' });
     return { system: req.system, messages: req.messages };
   },
 
@@ -815,7 +815,7 @@ async function runGeneration(
   const before = fullText.slice(0, opts.from);
   const after = fullText.slice(opts.from);
   const maxCtx = Math.min(s.params.maxContext, info?.contextWindow ?? Infinity, useSettings.getState().maxContextCap || Infinity);
-  const caps = backendCaps(info?.flavor ?? 'chat-only');
+  const caps = capsOf(info);
   const req = buildStoryRequest(s, {
     maxContextTokens: maxCtx,
     model: model.id,

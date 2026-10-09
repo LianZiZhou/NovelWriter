@@ -23,7 +23,7 @@ import {
   type SamplerId,
   type ToolboxMode,
 } from '@novelwriter/core';
-import { api, generateText } from '../../api.ts';
+import { api, capsOf, generateText } from '../../api.ts';
 import { invoke, useScripts } from '../scripts/host.ts';
 import { canonical, download, safeFileName, useStory } from '../../store/story.ts';
 import { useUI } from '../../store/ui.ts';
@@ -649,7 +649,7 @@ const SAMPLER_NAMES: Record<SamplerId, string> = {
 export function SamplersModal({ onClose }: { onClose: () => void }) {
   const story = useStory((s) => s.current)!;
   const info = useStory((s) => s.modelInfo)();
-  const caps = backendCaps(info?.flavor ?? 'chat-only');
+  const caps = capsOf(info);
   const store = useStory.getState();
   const order = story.params.order;
   const setOrder = (o: typeof order) => store.update((s) => void (s.params = { ...s.params, order: o }));
