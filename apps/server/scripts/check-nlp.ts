@@ -109,5 +109,6 @@ try {
   }
 } finally {
   await app.close();
-  if (!keep) rmSync(dir, { recursive: true, force: true });
+  // Windows keeps a stopped server's files locked for a moment.
+  if (!keep) rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 500 });
 }
