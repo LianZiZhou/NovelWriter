@@ -117,6 +117,13 @@ jobs:
           cache: npm
       - run: npm ci
 
+      # Downloads the ONNX runtime, a llama.cpp build and two small models, and embeds text with each on
+      # this platform (CPU, plus DirectML / Core ML / WebGPU where the runner has them).
+      - name: Check the embedding engines
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: npx tsx apps/server/scripts/check-embeddings.ts
+
       # Signing is optional. Without certificates macOS builds are ad-hoc signed and Windows
       # builds are unsigned, and electron-builder must not go looking for an identity.
       # Secrets (all optional): MAC_CSC_LINK, MAC_CSC_KEY_PASSWORD (Developer ID .p12, base64),
@@ -159,6 +166,8 @@ jobs:
 
       - name: Smoke test the packaged app
         if: runner.os == 'Linux'
+        env:
+          SMOKE_EMBEDDINGS: '1'
         run: xvfb-run -a npm run smoke -w @novelwriter/desktop -- "$PWD/apps/desktop/release/linux-unpacked/novelwriter"
 
       - name: List installers

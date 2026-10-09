@@ -11,6 +11,7 @@ import { Storage } from './storage.ts';
 import { FileCredentialStore } from './credentials.ts';
 import { LLM, type CustomProviderConfig } from './llm.ts';
 import { runLogin } from './auth-ws.ts';
+import { Embeddings, registerEmbeddingRoutes } from './embeddings/index.ts';
 import { MASK, listVoices, readTTS, synthesize, writeTTS, type TTSConfig } from './tts.ts';
 
 export interface AppOptions {
@@ -26,6 +27,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
   await storage.init();
   const llm = new LLM(new FileCredentialStore(join(opts.dataDir, 'auth.json')));
   llm.setCustomProviders(await storage.readJson<CustomProviderConfig[]>('custom-providers.json', []));
+  const embeddings = new Embeddings(opts.dataDir, storage);
 
   const app = Fastify({ logger: opts.logger ?? false, bodyLimit: 50 * 1024 * 1024 });
   if (opts.password) {
@@ -55,6 +57,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
   });
   app.delete<{ Params: { id: string } }>('/api/stories/:id', async (req) => {
     await storage.deleteStory(req.params.id);
+    embeddings.dropStory(req.params.id);
     return { ok: true };
   });
 
@@ -179,6 +182,9 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
       return reply.code(502).send({ error: (e as Error).message });
     }
   });
+
+  // ------------------------------------------------------------- embeddings / vector recall
+  registerEmbeddingRoutes(app, embeddings);
 
   app.get('/api/health', async () => ({ ok: true }));
 

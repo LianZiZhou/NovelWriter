@@ -1,11 +1,12 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ArrowRight, ArrowSquareOut, ArrowsLeftRight, Book, CaretDown, CaretUp, ChartBar, Copy, ImageSquare, CornersOut, DownloadSimple, MagnifyingGlass, Sword, Article } from '@phosphor-icons/react';
-import { countTokens, exportNovelAIStory, exportPlaintext, exportScenario, exportStoryFile, searchLore } from '@novelwriter/core';
+import { countTokens, docText, stripComments, exportNovelAIStory, exportPlaintext, exportScenario, exportStoryFile, searchLore } from '@novelwriter/core';
 import { download, rememberModel, safeFileName, updateSummary, useStory, useStoryMeta } from '../../store/story.ts';
 import { useSettings } from '../../store/settings.ts';
 import { useUI } from '../../store/ui.ts';
 import { t } from '../../i18n.ts';
-import { capsOf } from '../../api.ts';
+import { api, capsOf, type IndexStatus } from '../../api.ts';
+import { syncVectors, useEmbeddings } from '../../store/embeddings.ts';
 import { Collapsible, Select, ToggleRow } from '../../components/ui.tsx';
 import { ModelSelect } from './ModelSelect.tsx';
 
@@ -22,6 +23,61 @@ export function FieldBox({ value, onChange, placeholder, ariaLabel, onExpand, mi
       <span className="tokens" aria-label={`${ariaLabel} contains ${tokens} tokens`}>
         {tokens} {t('tokens')}
       </span>
+    </div>
+  );
+}
+
+/** Whether passages are also recalled by meaning, and how much of the story is indexed for it. */
+function VectorIndex() {
+  const story = useStoryMeta()!;
+  const config = useEmbeddings((s) => s.config);
+  const [status, setStatus] = useState<IndexStatus | null>(null);
+  useEffect(() => {
+    if (!config) void useEmbeddings.getState().load();
+  }, [config]);
+  const enabled = !!config?.enabled;
+  useEffect(() => {
+    if (!enabled) return;
+    let alive = true;
+    const tick = () => {
+      const s = useStory.getState().current;
+      if (s) void api.vectorStatus(s.id, stripComments(docText(s.doc))).then((r) => alive && setStatus(r), () => {});
+    };
+    tick();
+    const timer = setInterval(tick, status?.running ? 1000 : 8000);
+    return () => {
+      alive = false;
+      clearInterval(timer);
+    };
+  }, [enabled, story.id, status?.running]);
+  if (!enabled) {
+    return (
+      <div className="desc">
+        {t('Matched by shared words.')}{' '}
+        <button type="button" className="link-btn" onClick={() => useUI.getState().open('settings', { tab: 'embeddings' })}>
+          {t('Also match by meaning…')}
+        </button>
+      </div>
+    );
+  }
+  return (
+    <div className="row" style={{ justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+      <span className="desc">
+        {status ? t('Indexed for meaning search: {a} of {b} passages.', { a: status.indexed, b: status.total }) : t('Matched by shared words and by meaning.')}
+        {status?.running ? ` ${t('Indexing…')}` : ''}
+        {status?.error && <span className="warning-text" style={{ display: 'block' }}>{status.error}</span>}
+      </span>
+      <button
+        type="button"
+        className="btn"
+        disabled={status?.running}
+        onClick={() => {
+          const s = useStory.getState().current;
+          if (s) void syncVectors(s, true).then(() => setStatus((x) => (x ? { ...x, running: true } : x)));
+        }}
+      >
+        {t('Index Now')}
+      </button>
     </div>
   );
 }
@@ -70,6 +126,7 @@ function LongStoryMemory() {
         on={!!recall?.enabled}
         onChange={(v) => store.update((s) => void (s.recall = { tokenBudget: 400, ...s.recall, enabled: v }))}
       />
+      {recall?.enabled && <VectorIndex />}
       {recall?.enabled && (
         <label className="number-field">
           <span style={{ fontWeight: 600, fontSize: 14 }}>{t('Recall Budget (tokens)')}</span>

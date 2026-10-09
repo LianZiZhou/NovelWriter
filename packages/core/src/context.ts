@@ -3,7 +3,7 @@ import { activateLorebook, type Activation } from './lorebook.ts';
 import { ephemeralActive } from './ephemeral.ts';
 import { contextConfig } from './defaults.ts';
 import { expandMacros, type MacroEnv } from './macros.ts';
-import { recallPassages } from './recall.ts';
+import { recallPassages, type VectorHits } from './recall.ts';
 import { countTokens, tokenize } from './tokenizer.ts';
 import type { ContextConfig, LoreCategory, PhraseBiasGroup, Story, TrimType } from './types.ts';
 
@@ -82,6 +82,8 @@ export interface BuildContextOptions {
   random?: () => number;
   /** Override the story text (e.g. inline generation from the cursor). */
   storyText?: string;
+  /** Embedding search results for recalling earlier passages by meaning as well as by keywords. */
+  vectors?: VectorHits;
 }
 
 /** Resolve a budget value: fractions in (0, 1] are relative to the max context. */
@@ -525,7 +527,7 @@ export function buildContext(story: Story, opts: BuildContextOptions): BuiltCont
     const rc = story.recall;
     if (rc?.enabled && rc.tokenBudget > 0) {
       // Text the summary already covers is still searched: a summary loses the details a passage keeps.
-      const passages = recallPassages(storyText.slice(0, storyStart), storyText.slice(storyStart).slice(-1500) + '\n' + authorsNoteText, rc.tokenBudget);
+      const passages = recallPassages(storyText.slice(0, storyStart), storyText.slice(storyStart).slice(-1500) + '\n' + authorsNoteText, rc.tokenBudget, opts.vectors);
       if (passages.length) {
         extra.push({
           id: 'recall',

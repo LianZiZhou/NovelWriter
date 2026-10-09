@@ -1,4 +1,4 @@
-import { backendCaps, type BackendFlavor, type GenerateRequest, type InstructTemplateId, type ModelCaps, type Preset, type Shelf, type Story, type StoryMeta, type TokenLogprob } from '@novelwriter/core';
+import { backendCaps, type BackendFlavor, type EmbeddingConfig, type EmbeddingConfigPatch, type OnnxDtype, type OnnxDevice, type GenerateRequest, type InstructTemplateId, type ModelCaps, type Preset, type Shelf, type Story, type StoryMeta, type TokenLogprob } from '@novelwriter/core';
 
 export interface ProviderInfo {
   id: string;
@@ -53,6 +53,64 @@ export interface CustomProvider {
   models: { id: string; name?: string; contextWindow?: number; maxTokens?: number }[];
 }
 
+export interface EmbeddingTask {
+  id: string;
+  key: string;
+  label: string;
+  status: 'running' | 'done' | 'error' | 'canceled';
+  received: number;
+  total: number;
+  current?: string;
+  error?: string;
+  startedAt: number;
+}
+
+export interface HardwareDevice {
+  vendor: string;
+  name: string;
+  memoryMB?: number;
+  driver?: string;
+}
+
+export interface HardwareInfo {
+  os: string;
+  arch: string;
+  cpu: string;
+  cores: number;
+  memoryGB: number;
+  gpus: HardwareDevice[];
+  npus: HardwareDevice[];
+  cuda: { driver: boolean; runtime12: boolean; cudnn9: boolean };
+  vulkan: boolean;
+  suggest: { onnxDevice: OnnxDevice; llamaVariant: string };
+}
+
+export interface EmbeddingStatus {
+  runtime: { installed: boolean; version: string; dir: string; sizeMB: number; cudaProviders: boolean; cudaAvailable: boolean };
+  llamaBuilds: { tag: string; variant: string; dir: string; sizeMB: number; installedAt: number }[];
+  llama: { running: boolean; starting: boolean; pid?: number; url?: string; model?: string; args?: string[]; error?: string; log: string };
+  models: { onnx: { repo: string; dtypes: OnnxDtype[]; sizeMB: number }[]; gguf: { repo: string; file: string; sizeMB: number }[]; totalMB: number };
+  modelsDir: string;
+  tasks: EmbeddingTask[];
+  key: string;
+}
+
+export interface IndexStatus {
+  key: string;
+  total: number;
+  indexed: number;
+  running: boolean;
+  error?: string;
+  updatedAt: number;
+}
+
+export interface VectorSearchResult {
+  hashes: string[];
+  scores: number[];
+  indexed: number;
+  ms?: number;
+}
+
 async function json<T>(res: Response): Promise<T> {
   if (!res.ok) {
     let msg = `HTTP ${res.status}`;
@@ -67,6 +125,10 @@ async function json<T>(res: Response): Promise<T> {
 }
 
 const put = (url: string, body: unknown) => fetch(url, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+const post = (url: string, body?: unknown, signal?: AbortSignal) =>
+  fetch(url, { method: 'POST', headers: body === undefined ? {} : { 'content-type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body), signal });
+const del = (url: string, body?: unknown) =>
+  fetch(url, { method: 'DELETE', headers: body === undefined ? {} : { 'content-type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) });
 
 export const api = {
   listStories: () => fetch('/api/stories').then((r) => json<StoryMeta[]>(r)),
@@ -92,6 +154,24 @@ export const api = {
   ttsConfig: () => fetch('/api/tts/config').then((r) => json<TTSConfig>(r)),
   saveTtsConfig: (c: TTSConfig) => put('/api/tts/config', c).then((r) => json<{ ok: true }>(r)),
   ttsVoices: () => fetch('/api/tts/voices').then((r) => json<string[]>(r)),
+  embeddingConfig: () => fetch('/api/embeddings/config').then((r) => json<EmbeddingConfig>(r)),
+  saveEmbeddingConfig: (c: EmbeddingConfigPatch) => put('/api/embeddings/config', c).then((r) => json<{ ok: true }>(r)),
+  embeddingStatus: () => fetch('/api/embeddings/status').then((r) => json<EmbeddingStatus>(r)),
+  hardware: (refresh = false) => fetch(`/api/embeddings/hardware${refresh ? '?refresh=1' : ''}`).then((r) => json<HardwareInfo>(r)),
+  installRuntime: (which: 'onnx' | 'onnx-cuda' | 'llama') => post(`/api/embeddings/runtime/${which}`).then((r) => json<EmbeddingTask>(r)),
+  removeRuntime: (which: 'onnx' | 'onnx-cuda') => del(`/api/embeddings/runtime/${which}`).then((r) => json<{ ok: true }>(r)),
+  removeLlamaBuild: (tag: string, variant: string) => del(`/api/embeddings/runtime/llama/${encodeURIComponent(tag)}/${encodeURIComponent(variant)}`).then((r) => json<{ ok: true }>(r)),
+  llamaDevices: () => fetch('/api/embeddings/llama/devices').then((r) => json<{ output: string }>(r)),
+  llamaStart: () => post('/api/embeddings/llama/start').then((r) => json<{ url: string }>(r)),
+  llamaStop: () => post('/api/embeddings/llama/stop').then((r) => json<{ ok: true }>(r)),
+  downloadModel: (m: { kind: 'onnx'; repo: string; dtype?: OnnxDtype } | { kind: 'gguf'; model: string; quant: string }) => post('/api/embeddings/models', m).then((r) => json<EmbeddingTask>(r)),
+  deleteModel: (m: { kind: 'onnx'; repo: string; dtype?: OnnxDtype } | { kind: 'gguf'; repo: string; file: string }) => del('/api/embeddings/models', m).then((r) => json<{ ok: true }>(r)),
+  cancelTask: (id: string) => del(`/api/embeddings/tasks/${id}`).then((r) => json<{ ok: boolean }>(r)),
+  testEmbeddings: () => post('/api/embeddings/test').then((r) => json<{ dims: number; ms: number; queryMs: number; related: number; unrelated: number }>(r)),
+  syncVectors: (storyId: string, text: string) => post(`/api/vectors/${storyId}/sync`, { text }).then((r) => json<IndexStatus>(r)),
+  vectorStatus: (storyId: string, text?: string) => post(`/api/vectors/${storyId}/status`, { text }).then((r) => json<IndexStatus>(r)),
+  searchVectors: (storyId: string, query: string, signal?: AbortSignal) => post(`/api/vectors/${storyId}/search`, { query }, signal).then((r) => json<VectorSearchResult>(r)),
+  dropVectors: (storyId?: string) => del(storyId ? `/api/vectors/${storyId}` : '/api/vectors').then((r) => json<{ ok: true }>(r)),
   probeCustom: (baseUrl: string, apiKey?: string, id?: string) =>
     fetch('/api/custom-providers/probe', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ baseUrl, apiKey, id }) }).then((r) =>
       json<{ id: string }[]>(r),
@@ -101,7 +181,7 @@ export const api = {
 export type GenerateEvent =
   | { type: 'delta'; text: string }
   | { type: 'logprobs'; tokens: TokenLogprob[] }
-  | { type: 'done'; stopReason: string }
+  | { type: 'done'; stopReason: string; usage?: { input?: number; output?: number; cacheRead?: number; cacheWrite?: number } }
   | { type: 'error'; message: string };
 
 /** Stream a generation from the server (SSE over fetch). */

@@ -11,6 +11,7 @@ export * from './scenario.ts';
 export * from './context.ts';
 export * from './macros.ts';
 export * from './recall.ts';
+export * from './embeddings.ts';
 export * from './instruct.ts';
 export * from './formats.ts';
 export * from './prompts.ts';

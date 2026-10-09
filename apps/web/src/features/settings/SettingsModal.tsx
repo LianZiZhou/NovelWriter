@@ -14,9 +14,10 @@ import { ModelThumb } from '../../components/ModelThumb.tsx';
 import { NEWS } from '../home/news.ts';
 import { ModelSelect } from '../right/ModelSelect.tsx';
 import { ProvidersTab } from './ProvidersTab.tsx';
+import { EmbeddingsTab } from './EmbeddingsTab.tsx';
 import { FIXED_HOTKEYS, HOTKEY_LABELS, hotkeyParts } from '../../hotkeys.ts';
 
-type Tab = 'ai' | 'interface' | 'theme' | 'tts' | 'defaults' | 'hotkeys' | 'providers' | 'about';
+type Tab = 'ai' | 'interface' | 'theme' | 'tts' | 'defaults' | 'hotkeys' | 'providers' | 'embeddings' | 'about';
 
 const TITLES: Record<Tab, string> = {
   ai: 'AI Settings',
@@ -26,6 +27,7 @@ const TITLES: Record<Tab, string> = {
   defaults: 'Defaults',
   hotkeys: 'Hotkeys',
   providers: 'AI Providers',
+  embeddings: 'Vector Search',
   about: 'Support',
 };
 
@@ -35,6 +37,43 @@ function Group({ title, children }: { title: string; children: ReactNode }) {
       <div className="settings-group-title">{t(title)}</div>
       <div className="settings-grid">{children}</div>
     </>
+  );
+}
+
+/** Learned token ratios per model, so the context is sized in each model's own tokens. */
+function TokenCalibrationSetting() {
+  const s = useSettings();
+  const entries = Object.entries(s.tokenCalibration).sort((a, b) => b[1].at - a[1].at);
+  return (
+    <div>
+      <ToggleRow
+        title={t('Calibrate Token Counts')}
+        desc={
+          s.calibrateTokens
+            ? t("The context is sized in each model's own tokens, learned from the token counts the provider reports (and from a local server's tokenizer), instead of an estimate.")
+            : t('The context is sized with the built-in tokenizer, which can be off by 10–40% for some models.')
+        }
+        on={s.calibrateTokens}
+        onChange={(v) => s.set({ calibrateTokens: v })}
+      />
+      {s.calibrateTokens && entries.length > 0 && (
+        <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 4 }}>
+          {entries.slice(0, 8).map(([key, c]) => (
+            <div key={key} className="row between desc" style={{ fontSize: 13 }}>
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{key}</span>
+              <span>
+                ×{c.ratio.toFixed(2)} · {c.source === 'usage' ? t('{n} requests', { n: c.samples }) : t('tokenizer')}
+              </span>
+            </div>
+          ))}
+          <div>
+            <button type="button" className="btn small" onClick={() => s.set({ tokenCalibration: {} })}>
+              {t('Reset Calibration')}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -120,6 +159,7 @@ function AITab() {
           />
           <div className="desc" style={{ marginTop: 6 }}>{t('Caps the context sent with every request, for every story, e.g. to keep costs or latency down.')}</div>
         </div>
+        <TokenCalibrationSetting />
         <ToggleRow title={t('Default Bias')} desc={s.defaultBias ? t('A default bias will be applied, reducing the likelihood of dinkus (***) and asterism (⁂) to be generated.') : t('No default bias will be applied.')} on={s.defaultBias} onChange={(v) => s.set({ defaultBias: v })} />
         <div>
           <ToggleRow
@@ -818,7 +858,7 @@ export function SettingsModal({ onClose, initialTab }: { onClose: () => void; in
   const [tab, setTab] = useState<Tab>(initialTab ?? 'ai');
   const [log, setLog] = useState(false);
   const changelogSeen = useSettings((x) => x.changelogSeen);
-  const tabs: Tab[] = ['ai', 'interface', 'theme', 'tts', 'defaults', 'hotkeys', 'providers'];
+  const tabs: Tab[] = ['ai', 'interface', 'theme', 'tts', 'defaults', 'hotkeys', 'providers', 'embeddings'];
   return (
     <Modal onClose={onClose} width={1150} className="split-modal" label={t('User Settings')}>
       <div className="side">
@@ -863,6 +903,7 @@ export function SettingsModal({ onClose, initialTab }: { onClose: () => void; in
           {tab === 'defaults' && <DefaultsTab />}
           {tab === 'hotkeys' && <HotkeysTab />}
           {tab === 'providers' && <ProvidersTab />}
+          {tab === 'embeddings' && <EmbeddingsTab />}
           {tab === 'about' && <AboutTab />}
         </div>
       </div>

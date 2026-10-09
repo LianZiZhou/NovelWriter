@@ -3,6 +3,7 @@
  * The app root is keyed by language, so a language switch re-renders everything.
  */
 import { ZH_EXTRA } from './i18n-zh-extra.ts';
+import { ZH_EMBEDDINGS } from './i18n-zh-embeddings.ts';
 
 export type Lang = 'en' | 'zh';
 
@@ -347,4 +348,5 @@ const ZH: Record<string, string> = {
   'No AI model is configured. Open Settings → AI Providers to sign in, or use the offline Demo model.': '尚未配置 AI 模型。打开 设置 → AI 服务商 登录，或使用离线演示模型。',
   'Server unreachable': '无法连接服务器',
   ...ZH_EXTRA,
+  ...ZH_EMBEDDINGS,
 };

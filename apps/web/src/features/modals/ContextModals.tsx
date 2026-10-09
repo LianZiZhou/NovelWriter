@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react';
 import { CaretLeft, CaretRight, CornersOut, Plus, Trash } from '@phosphor-icons/react';
 import { countTokens, docText, outputTokens, DEFAULT_SYSTEM_PROMPT_ADVENTURE, DEFAULT_SYSTEM_PROMPT_STORY, defaultContextSettings, formatEphemeral, parseEphemeral, ephemeralActive, type BuiltContext, type StoryContextSettings } from '@novelwriter/core';
-import { useStory } from '../../store/story.ts';
+import { tokenRatio, useStory } from '../../store/story.ts';
+import { useEmbeddings } from '../../store/embeddings.ts';
 import { useUI } from '../../store/ui.ts';
 import { useSettings } from '../../store/settings.ts';
 import { t } from '../../i18n.ts';
@@ -45,6 +46,19 @@ const COLUMN_HELP: Record<string, string> = {
   Tokens: 'Tokens used in the context (and the full size when it was trimmed).',
   'Trim Type': 'How the text was shortened to fit: by newline, sentence or token.',
 };
+
+/** How the budget was scaled to the model's own tokens, and what the meaning search found. */
+function CalibrationNote({ ctx }: { ctx: BuiltContext }) {
+  const info = useStory((s) => s.modelInfo)();
+  const story = useStory((s) => s.current);
+  const ratio = tokenRatio(info);
+  const hits = useEmbeddings((s) => (story ? s.hits[story.id] : undefined));
+  const parts: string[] = [];
+  if (ratio && Math.abs(ratio - 1) > 0.005) parts.push(t("Calibrated for this model: ×{r} its tokens per built-in token, about {n} of the model's tokens.", { r: ratio.toFixed(2), n: Math.round(ctx.usedTokens * ratio) }));
+  if (hits?.hashes.length && ctx.report.some((r) => r.kind === 'recall' && r.included)) parts.push(t('The meaning search found {n} candidate passages for recall.', { n: hits.hashes.length }));
+  if (!parts.length) return null;
+  return <div className="desc" style={{ marginBottom: 8 }}>{parts.join(' ')}</div>;
+}
 
 export function ContextViewerModal({ onClose, which: initial }: { onClose: () => void; which: 'last' | 'current' }) {
   const last = useStory((s) => s.lastContext);
@@ -108,6 +122,7 @@ export function ContextViewerModal({ onClose, which: initial }: { onClose: () =>
         <div className="ctx-summary">
           {t('{n} tokens filled out of a maximum of {m}', { n: ctx.usedTokens, m: ctx.maxTokens })} ({t('context size')} [{ctx.maxTokens + out}] - {t('output length')} [{out}])
         </div>
+        <CalibrationNote ctx={ctx} />
         <ContextBar ctx={ctx} />
         <div className="ctx-legend">
           {(Object.keys(KIND_COLORS) as (keyof typeof KIND_COLORS)[]).map((k) => (
