@@ -664,7 +664,7 @@ export const useStory = create<StoryState>((set, get) => ({
       const hooked = hasHook('onTextAdventureInput') ? await runScriptHook('onTextAdventureInput', { text: input.text, mode: input.mode ?? 'do' }) : { text: input.text };
       s = get().current!;
       if (useSettings.getState().ttsSpeakInputs) speak(hooked.text);
-      let text = s.mode === 'adventure' ? adventureInput(hooked.text, input.mode ?? 'do') : hooked.text;
+      let text = s.mode === 'adventure' ? adventureInput(hooked.text, input.mode ?? 'do', docText(s.doc)) : hooked.text;
       const before = docText(s.doc);
       if (before && !before.endsWith('\n')) text = '\n' + text;
       if (s.mode === 'adventure') text += '\n';

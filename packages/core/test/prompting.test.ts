@@ -77,11 +77,11 @@ describe('structured layout', () => {
     expect(done.messages.at(-1)?.content).toContain('starting on a new line');
   });
   it('sends adventure actions as the player\'s turns', () => {
-    const s = story('The gate is shut.\n> 你问：“谁在那里？”\n', { mode: 'adventure', authorsNote: 'Keep it eerie.' });
+    const s = story('The gate is shut.\n> 你说：谁在那里？\n', { mode: 'adventure', authorsNote: 'Keep it eerie.' });
     const r = buildStoryRequest(s, { maxContextTokens: 4000, layout: 'structured', prefill: true });
     expect(r.messages.map((m) => m.role)).toEqual(['user', 'assistant', 'user']);
     expect(r.messages[1].content).toBe('The gate is shut.');
-    expect(r.messages[2].content.startsWith('你问：“谁在那里？”\n\n<instructions>')).toBe(true);
+    expect(r.messages[2].content.startsWith('你说：谁在那里？\n\n<instructions>')).toBe(true);
     expect(r.messages[2].content).toContain('Keep it eerie.');
   });
   it('leaves bracketed cues alone when the story is written in them', () => {

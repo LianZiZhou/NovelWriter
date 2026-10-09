@@ -8,23 +8,25 @@ import { postProcess } from '../src/prompts.ts';
 
 describe('adventure', () => {
   it('converts do/say input', () => {
-    expect(adventureInput('charge the dragon', 'do')).toBe('> You charge the dragon.');
-    expect(adventureInput('hello there', 'say')).toBe('> You say, "Hello there."');
-    expect(adventureInput('who are you?', 'say')).toBe('> You ask, "Who are you?"');
-    expect(adventureInput('run!', 'say')).toBe('> You yell, "Run!"');
-    expect(adventureInput('n', 'do')).toBe('> You go north.');
-    expect(adventureInput('x the door', 'do')).toBe('> You examine the door.');
+    expect(adventureInput('charge the dragon', 'do')).toBe('> You: charge the dragon.');
+    expect(adventureInput('hello there', 'say')).toBe('> You say: hello there.');
+    expect(adventureInput('Who are you?', 'say')).toBe('> You say: Who are you?');
+    expect(adventureInput('n', 'do')).toBe('> You: go north.');
+    expect(adventureInput('x the door', 'do')).toBe('> You: examine the door.');
     expect(adventureInput('!The guard falls asleep.', 'do')).toBe('> The guard falls asleep.');
-    expect(adventureInput('"hi', 'do')).toBe('> You say, "Hi."');
+    expect(adventureInput('"hi', 'do')).toBe('> You say: hi.');
+    expect(adventureInput('wait for*', 'do')).toBe('> You: wait for');
     expect(adventureInput('A storm rolls in.', 'story')).toBe('A storm rolls in.');
   });
-  it('writes Chinese and Japanese input in the story\'s own language', () => {
-    expect(adventureInput('你是谁？', 'say')).toBe('> 你问：“你是谁？”');
-    expect(adventureInput('我该去往何处', 'say')).toBe('> 你说：“我该去往何处。”');
-    expect(adventureInput('快跑！', 'say')).toBe('> 你喊：“快跑！”');
-    expect(adventureInput('我推开门', 'do')).toBe('> 你推开门。');
-    expect(adventureInput('“等等', 'do')).toBe('> 你说：“等等。”');
-    expect(adventureInput('だれ？', 'say')).toBe('> 「だれ？」');
+  it('words input in the story\'s language, keeping the player\'s own sentence ending', () => {
+    const zh = '风穿过门缝，带来远方陌生的草木气息。';
+    expect(adventureInput('你是谁？', 'say', zh)).toBe('> 你说：你是谁？');
+    expect(adventureInput('我该去往何处', 'say', zh)).toBe('> 你说：我该去往何处。');
+    expect(adventureInput('推开门', 'do', zh)).toBe('> 你：推开门。');
+    expect(adventureInput('open the door', 'do', zh)).toBe('> 你：open the door。');
+    expect(adventureInput('だれ？', 'say')).toBe('> あなたは言う：だれ？');
+    expect(adventureInput('Кто ты', 'say', 'Ветер дул с моря.')).toBe('> Вы говорите: Кто ты.');
+    expect(adventureInput('who are you', 'say', 'The wind blew.')).toBe('> You say: who are you.');
   });
 });
 
