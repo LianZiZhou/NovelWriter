@@ -378,7 +378,7 @@ export const useStory = create<StoryState>((set, get) => ({
       mode: settings.defaultMode,
       presetId: preset.id,
       params: cloneJson(preset.params),
-      model: settings.defaultModel,
+      model: settings.defaultModel ?? settings.lastModel,
       shelf: get().activeShelf,
       ...p,
     });
@@ -609,9 +609,11 @@ export const useStory = create<StoryState>((set, get) => ({
     const s = get().current;
     const settings = useSettings.getState();
     const models = get().models;
-    const pick = s?.model ?? settings.defaultModel;
-    if (pick && models.some((m) => m.provider === pick.provider && m.id === pick.id)) return pick;
-    if (pick && models.length === 0) return pick;
+    // The story's own model, then the default, then the one used last; the first still connected wins.
+    const picks = [s?.model, settings.defaultModel, settings.lastModel].filter((m): m is ModelRef => !!m);
+    const live = picks.find((p) => models.some((m) => m.provider === p.provider && m.id === p.id));
+    if (live) return live;
+    if (picks.length && models.length === 0) return picks[0];
     const first = preferredModel(models);
     return first ? { provider: first.provider, id: first.id } : null;
   },
@@ -788,6 +790,12 @@ export const useStory = create<StoryState>((set, get) => ({
   },
 }));
 
+/** Remember the model last used, so new stories (and stories whose model is gone) start with it. */
+export function rememberModel(m: ModelRef | null) {
+  const last = useSettings.getState().lastModel;
+  if (m && (last?.provider !== m.provider || last?.id !== m.id)) useSettings.getState().set({ lastModel: { provider: m.provider, id: m.id } });
+}
+
 /**
  * Stream a story continuation into the editor at `from` (end of story, or a
  * cursor position for inline generation) and record it as an AI history node.
@@ -810,6 +818,7 @@ async function runGeneration(
   const ui = useUI.getState();
   const settings = useSettings.getState();
   const model = get().resolveModel()!;
+  rememberModel(model);
   const info = get().modelInfo();
   const fullText = docText(s.doc);
   const before = fullText.slice(0, opts.from);

@@ -32,12 +32,27 @@ export function Checkbox({ on, onChange, label }: { on: boolean; onChange: (v: b
 }
 
 /** A labeled setting row with a toggle, as used in settings and side panels. */
-export function ToggleRow({ title, desc, on, onChange, disabled }: { title: ReactNode; desc?: ReactNode; on: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
+export function ToggleRow({
+  title,
+  desc,
+  on,
+  onChange,
+  disabled,
+  unsupported,
+}: {
+  title: ReactNode;
+  desc?: ReactNode;
+  on: boolean;
+  onChange: (v: boolean) => void;
+  disabled?: boolean;
+  /** Why the current model can't use this; greys the row out and shows the reason as its tooltip. */
+  unsupported?: string;
+}) {
   return (
-    <div className="toggle-row">
+    <div className={`toggle-row ${unsupported ? 'param-unsupported' : ''}`} title={unsupported}>
       <div className="row between">
         <div style={{ fontWeight: 600, fontSize: 16 }}>{title}</div>
-        <Toggle on={on} onChange={onChange} disabled={disabled} label={typeof title === 'string' ? title : undefined} />
+        <Toggle on={on && !unsupported} onChange={onChange} disabled={disabled || !!unsupported} label={typeof title === 'string' ? title : undefined} />
       </div>
       {desc && <div className="desc" style={{ marginTop: 4 }}>{desc}</div>}
     </div>
@@ -64,6 +79,7 @@ export function SliderSetting({
   defText,
   small,
   disabled,
+  unsupported,
   help,
 }: {
   title: ReactNode;
@@ -81,8 +97,11 @@ export function SliderSetting({
   defText?: string;
   small?: boolean;
   disabled?: boolean;
+  /** Why the current model can't use this; greys the slider out and shows the reason as its tooltip. */
+  unsupported?: string;
   help?: string;
 }) {
+  if (unsupported) disabled = true;
   const [draft, setDraft] = useState<string | null>(null);
   const shown = draft ?? String(value);
   const commit = () => {
@@ -92,7 +111,7 @@ export function SliderSetting({
     setDraft(null);
   };
   return (
-    <div className={`slider-setting ${small ? 'small' : ''}`} style={disabled ? { opacity: 0.55 } : undefined}>
+    <div className={`slider-setting ${small ? 'small' : ''} ${unsupported ? 'param-unsupported' : ''}`} style={disabled ? { opacity: 0.55 } : undefined} title={unsupported}>
       {!small && <div className="heading">{title}</div>}
       {!small && desc && <div className="desc">{desc}</div>}
       <div className="slider-head">
@@ -117,13 +136,13 @@ export function SliderSetting({
           {suffix && <span className="slider-suffix">{suffix}</span>}
           {note && <span className="slider-note">{note}</span>}
           {help && (
-            <span title={help} className="slider-help">
+            <span title={unsupported ? undefined : help} className="slider-help">
               <Question size={13} />
             </span>
           )}
         </div>
         {def !== undefined && (
-          <button type="button" className="slider-default" onClick={() => onChange(def)} title={t('Reset')}>
+          <button type="button" className="slider-default" disabled={disabled} onClick={() => onChange(def)} title={unsupported ? undefined : t('Reset')}>
             {defText ?? t('Default: {v}', { v: def })}
           </button>
         )}

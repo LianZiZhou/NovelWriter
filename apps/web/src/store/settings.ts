@@ -69,6 +69,8 @@ export interface Settings {
   inputBox: boolean;
   editorSpellcheck: boolean;
   defaultModel: ModelRef | null;
+  /** The model last picked or generated with; new stories fall back to it when no default model is set. */
+  lastModel: ModelRef | null;
   defaultPresetId: string;
   defaultMode: 'storyteller' | 'adventure';
   ttsVoice: string;
@@ -200,6 +202,7 @@ export const DEFAULT_SETTINGS: Settings = {
   inputBox: false,
   editorSpellcheck: false,
   defaultModel: null,
+  lastModel: null,
   defaultPresetId: 'default',
   defaultMode: 'storyteller',
   ttsVoice: '',

@@ -54,45 +54,42 @@ export function GenerationTab() {
 
   const enabled = p.order.filter((s) => s.enabled).map((s) => s.id);
   const hidden = p.order.length - enabled.length;
-  const unsupportedOn = enabled.filter((id) => !can(id));
-  // Why this model ignores sampling settings, when it does (reasoning models fix their own; others refused some).
-  const restrictedNote =
+  // Tooltip for settings this model doesn't take: they stay visible but greyed out, and stay saved in the preset.
+  const tip =
     caps.restricted === 'reasoning'
-      ? t('{model} sets its own sampling (reasoning model), so Randomness and the samplers are not sent. They stay saved in the preset.', { model: model || t('This model') })
-      : caps.restricted === 'learned'
-        ? t('{model} refused some settings; they are no longer sent to it.', { model: model || t('This model') })
-        : null;
+      ? t('{model} sets its own sampling (reasoning model), so this setting is not sent. It stays saved in the preset.', { model: model || t('This model') })
+      : t('{model} does not support this setting, so it is not sent. It stays saved in the preset.', { model: model || t('This model') });
+  const na = (x: ParamId) => (can(x) ? undefined : tip);
 
   const samplerSliders = (id: SamplerId) => {
-    if (!can(id)) return null;
     const help = (k: SamplerId) => t(SAMPLER_INFO[k].help);
     switch (id) {
       case 'temperature':
         return null; // shown in Generation Options
       case 'top_k':
-        return <SliderSetting key={id} small title="Top-K" value={p.topK} min={0} max={300} step={1} def={0} onChange={(v) => set({ topK: v })} help={help('top_k')} />;
+        return <SliderSetting key={id} small title="Top-K" value={p.topK} min={0} max={300} step={1} def={0} onChange={(v) => set({ topK: v })} unsupported={na('top_k')} help={help('top_k')} />;
       case 'top_p':
-        return <SliderSetting key={id} small title={t('Nucleus')} value={p.topP} min={0} max={1} step={0.01} def={0.95} onChange={(v) => set({ topP: v })} help={help('top_p')} />;
+        return <SliderSetting key={id} small title={t('Nucleus')} value={p.topP} min={0} max={1} step={0.01} def={0.95} onChange={(v) => set({ topP: v })} unsupported={na('top_p')} help={help('top_p')} />;
       case 'tfs':
-        return <SliderSetting key={id} small title={t('Tail-Free')} value={p.tailFreeSampling} min={0} max={1} step={0.001} def={1} onChange={(v) => set({ tailFreeSampling: v })} help={help('tfs')} />;
+        return <SliderSetting key={id} small title={t('Tail-Free')} value={p.tailFreeSampling} min={0} max={1} step={0.001} def={1} onChange={(v) => set({ tailFreeSampling: v })} unsupported={na('tfs')} help={help('tfs')} />;
       case 'top_a':
-        return <SliderSetting key={id} small title="Top-A" value={p.topA} min={0} max={1} step={0.01} def={0} onChange={(v) => set({ topA: v })} help={help('top_a')} />;
+        return <SliderSetting key={id} small title="Top-A" value={p.topA} min={0} max={1} step={0.01} def={0} onChange={(v) => set({ topA: v })} unsupported={na('top_a')} help={help('top_a')} />;
       case 'typical_p':
-        return <SliderSetting key={id} small title={t('Typical')} value={p.typicalP} min={0} max={1} step={0.01} def={1} onChange={(v) => set({ typicalP: v })} help={help('typical_p')} />;
+        return <SliderSetting key={id} small title={t('Typical')} value={p.typicalP} min={0} max={1} step={0.01} def={1} onChange={(v) => set({ typicalP: v })} unsupported={na('typical_p')} help={help('typical_p')} />;
       case 'min_p':
-        return <SliderSetting key={id} small title="Min-P" value={p.minP} min={0} max={1} step={0.01} def={0} onChange={(v) => set({ minP: v })} help={help('min_p')} />;
+        return <SliderSetting key={id} small title="Min-P" value={p.minP} min={0} max={1} step={0.01} def={0} onChange={(v) => set({ minP: v })} unsupported={na('min_p')} help={help('min_p')} />;
       case 'mirostat':
         return (
           <div key={id} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            <SliderSetting small title={t('Mirostat Tau')} value={p.mirostatTau} min={0} max={6} step={0.01} def={0} onChange={(v) => set({ mirostatTau: v })} help={help('mirostat')} />
-            <SliderSetting small title={t('Mirostat Learning Rate')} value={p.mirostatLr} min={0} max={1} step={0.01} def={1} onChange={(v) => set({ mirostatLr: v })} />
+            <SliderSetting small title={t('Mirostat Tau')} value={p.mirostatTau} min={0} max={6} step={0.01} def={0} onChange={(v) => set({ mirostatTau: v })} unsupported={na('mirostat')} help={help('mirostat')} />
+            <SliderSetting small title={t('Mirostat Learning Rate')} value={p.mirostatLr} min={0} max={1} step={0.01} def={1} onChange={(v) => set({ mirostatLr: v })} unsupported={na('mirostat')} />
           </div>
         );
       case 'unified':
         return (
           <div key={id} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            <SliderSetting small title={t('Unified Quad')} value={p.unifiedQuad} min={0} max={2} step={0.01} def={0} onChange={(v) => set({ unifiedQuad: v })} help={help('unified')} />
-            <SliderSetting small title={t('Unified Conf')} value={p.unifiedConf} min={0} max={2} step={0.01} def={0} onChange={(v) => set({ unifiedConf: v })} />
+            <SliderSetting small title={t('Unified Quad')} value={p.unifiedQuad} min={0} max={2} step={0.01} def={0} onChange={(v) => set({ unifiedQuad: v })} unsupported={na('unified')} help={help('unified')} />
+            <SliderSetting small title={t('Unified Conf')} value={p.unifiedConf} min={0} max={2} step={0.01} def={0} onChange={(v) => set({ unifiedConf: v })} unsupported={na('unified')} />
             {p.unifiedConf > 0 && p.unifiedConf < -p.unifiedQuad && <div className="desc warning-text">{t('Conf only makes sense above -Quad.')}</div>}
           </div>
         );
@@ -240,7 +237,6 @@ export function GenerationTab() {
       <div className="panel-section" style={{ gap: 18 }}>
         <Collapsible title={t('Generation Options')}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 28, marginTop: 14 }}>
-            {restrictedNote && <div className="desc warning-text">{restrictedNote}</div>}
             <SliderSetting
               title={t('Randomness')}
               desc={t('The higher the value, the more random the output!')}
@@ -249,7 +245,7 @@ export function GenerationTab() {
               max={2.5}
               step={0.01}
               def={1}
-              disabled={!can('temperature')}
+              unsupported={na('temperature')}
               onChange={(v) => set({ temperature: v })}
             />
             <SliderSetting
@@ -292,38 +288,29 @@ export function GenerationTab() {
                 {t('Change Samplers')}
               </button>
               {hidden > 0 && <div className="desc" style={{ marginTop: 8 }}>{t('{n} hidden', { n: hidden })}</div>}
-              {unsupportedOn.filter((x) => x !== 'temperature').length > 0 && (
-                <div className="desc" style={{ marginTop: 4 }}>
-                  {t('{n} not used by {model}', { n: unsupportedOn.filter((x) => x !== 'temperature').length, model: model || t('this model') })}
-                </div>
-              )}
             </div>
-            {(can('rep_pen') || can('rep_pen_range') || can('rep_pen_slope') || can('phrase_rep_pen')) && <div className="desc" style={{ opacity: 0.85 }}>{t('Repetition Penalty')}</div>}
-            {can('rep_pen') && <SliderSetting small title={t('Repetition Penalty')} value={p.repetitionPenalty} min={1} max={2} step={0.001} def={1} onChange={(v) => set({ repetitionPenalty: v })} help={t('Higher values make the output less repetitive.')} />}
-            {can('rep_pen_range') && <SliderSetting small title={t('Range')} value={p.repetitionPenaltyRange} min={0} max={8192} step={16} def={0} onChange={(v) => set({ repetitionPenaltyRange: v })} help={t('How many tokens, starting from the last generated one, will be considered repeated if they appear in the next output. 0 = the whole context.')} />}
-            {can('rep_pen_slope') && <SliderSetting small title={t('Slope')} value={p.repetitionPenaltySlope} min={0} max={10} step={0.01} def={0} onChange={(v) => set({ repetitionPenaltySlope: v })} help={t('Affects the ramping of the penalty’s harshness, starting from the final token.')} />}
-            {can('phrase_rep_pen') && (
-              <div>
-                <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 6 }} title={t('Penalizes repeating whole phrases (sent as DRY sampling).')}>
-                  {t('Phrase Repetition Penalty')}
-                </div>
-                <Select
-                  value={p.phraseRepPen}
-                  onChange={(v) => set({ phraseRepPen: v })}
-                  options={(['off', 'very_light', 'light', 'medium', 'aggressive', 'very_aggressive'] as const).map((v) => ({ value: v, label: v === 'off' ? t('Off') : t(v.replace('_', ' ').replace(/^./, (c) => c.toUpperCase())) }))}
-                />
+            <div className="desc" style={{ opacity: 0.85 }}>{t('Repetition Penalty')}</div>
+            <SliderSetting small title={t('Repetition Penalty')} value={p.repetitionPenalty} min={1} max={2} step={0.001} def={1} onChange={(v) => set({ repetitionPenalty: v })} unsupported={na('rep_pen')} help={t('Higher values make the output less repetitive.')} />
+            <SliderSetting small title={t('Range')} value={p.repetitionPenaltyRange} min={0} max={8192} step={16} def={0} onChange={(v) => set({ repetitionPenaltyRange: v })} unsupported={na('rep_pen_range')} help={t('How many tokens, starting from the last generated one, will be considered repeated if they appear in the next output. 0 = the whole context.')} />
+            <SliderSetting small title={t('Slope')} value={p.repetitionPenaltySlope} min={0} max={10} step={0.01} def={0} onChange={(v) => set({ repetitionPenaltySlope: v })} unsupported={na('rep_pen_slope')} help={t('Affects the ramping of the penalty’s harshness, starting from the final token.')} />
+            <div className={na('phrase_rep_pen') ? 'param-unsupported' : undefined} title={na('phrase_rep_pen')}>
+              <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 6 }} title={na('phrase_rep_pen') ? undefined : t('Penalizes repeating whole phrases (sent as DRY sampling).')}>
+                {t('Phrase Repetition Penalty')}
               </div>
-            )}
-            {(can('presence') || can('frequency')) && (
-              <div>
-                <div className="desc" style={{ opacity: 0.85 }}>{t('Alternate Repetition Penalty')}</div>
-                <div className="desc warning-text" style={{ opacity: 1, marginTop: 4 }}>
-                  {t('These options will strongly impact generation and are not recommended to set to high values.')}
-                </div>
+              <Select
+                value={p.phraseRepPen}
+                onChange={(v) => set({ phraseRepPen: v })}
+                options={(['off', 'very_light', 'light', 'medium', 'aggressive', 'very_aggressive'] as const).map((v) => ({ value: v, label: v === 'off' ? t('Off') : t(v.replace('_', ' ').replace(/^./, (c) => c.toUpperCase())) }))}
+              />
+            </div>
+            <div>
+              <div className="desc" style={{ opacity: 0.85 }}>{t('Alternate Repetition Penalty')}</div>
+              <div className="desc warning-text" style={{ opacity: 1, marginTop: 4 }}>
+                {t('These options will strongly impact generation and are not recommended to set to high values.')}
               </div>
-            )}
-            {can('presence') && <SliderSetting small title={t('Presence')} value={p.repetitionPenaltyPresence} min={-2} max={2} step={0.01} def={0} onChange={(v) => set({ repetitionPenaltyPresence: v })} note={p.repetitionPenaltyPresence === 0 ? '[0] (off)' : undefined} defText={`${t('Default: {v}', { v: 0 })} (off)`} help={t('Applies a flat penalty to every token that has already appeared.')} />}
-            {can('frequency') && <SliderSetting small title={t('Frequency')} value={p.repetitionPenaltyFrequency} min={-2} max={2} step={0.01} def={0} onChange={(v) => set({ repetitionPenaltyFrequency: v })} note={p.repetitionPenaltyFrequency === 0 ? '[0] (off)' : undefined} defText={`${t('Default: {v}', { v: 0 })} (off)`} help={t('Penalizes tokens more the more often they have appeared.')} />}
+            </div>
+            <SliderSetting small title={t('Presence')} value={p.repetitionPenaltyPresence} min={-2} max={2} step={0.01} def={0} onChange={(v) => set({ repetitionPenaltyPresence: v })} unsupported={na('presence')} note={p.repetitionPenaltyPresence === 0 ? '[0] (off)' : undefined} defText={`${t('Default: {v}', { v: 0 })} (off)`} help={t('Applies a flat penalty to every token that has already appeared.')} />
+            <SliderSetting small title={t('Frequency')} value={p.repetitionPenaltyFrequency} min={-2} max={2} step={0.01} def={0} onChange={(v) => set({ repetitionPenaltyFrequency: v })} unsupported={na('frequency')} note={p.repetitionPenaltyFrequency === 0 ? '[0] (off)' : undefined} defText={`${t('Default: {v}', { v: 0 })} (off)`} help={t('Penalizes tokens more the more often they have appeared.')} />
             <SliderSetting small title={t('Min Output Length')} value={p.minLength} min={1} max={500} step={1} def={1} onChange={(v) => set({ minLength: v })} help={can('min_length') ? t('Minimum characters to generate; also keeps stop sequences from ending the output earlier.') : t('Stop sequences are ignored until this many characters have been generated.')} />
           </div>
         </Collapsible>
