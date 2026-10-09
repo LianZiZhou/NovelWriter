@@ -1,11 +1,23 @@
 import { countTokens } from './tokenizer.ts';
+import { textHash } from './embeddings.ts';
+
+/** Vector search results for the story's chunks (by `textHash` of the chunk), best first. */
+export interface VectorHits {
+  hashes: string[];
+  /** Weight of this ranking against the keyword ranking (1 = equal). */
+  weight?: number;
+}
+
+/** Reciprocal rank fusion constant: how much the top ranks dominate. */
+const RRF_K = 60;
 
 /**
  * Passages from earlier in the story (text that no longer fits in the context) that are most relevant to the
- * latest text, ranked with BM25. Words are matched in alphabetic scripts; Chinese, Japanese and Korean are
- * matched by character pairs. Returns passages in story order, within `budget` tokens.
+ * latest text. Ranked with BM25 (words in alphabetic scripts; Chinese, Japanese and Korean by character pairs)
+ * and, when `vectors` are given, fused with the embedding search's ranking by reciprocal rank. Returns
+ * passages in story order, within `budget` tokens.
  */
-export function recallPassages(earlier: string, query: string, budget: number): string[] {
+export function recallPassages(earlier: string, query: string, budget: number, vectors?: VectorHits): string[] {
   if (budget <= 0 || earlier.trim().length < 200) return [];
   const chunks = chunkText(earlier);
   if (!chunks.length) return [];
@@ -30,18 +42,40 @@ export function recallPassages(earlier: string, query: string, budget: number): 
     }
     return { i, score };
   });
-  const ranked = scored.filter((x) => x.score > 1.5).sort((a, b) => b.score - a.score);
+  let ranked = scored.filter((x) => x.score > 1.5).sort((a, b) => b.score - a.score);
+  if (vectors?.hashes.length) {
+    const fused = new Map<number, number>();
+    ranked.forEach((x, r) => fused.set(x.i, 1 / (RRF_K + r + 1)));
+    const at = new Map(chunks.map((c, i) => [textHash(c), i]));
+    const w = vectors.weight ?? 1;
+    let r = 0;
+    for (const h of vectors.hashes) {
+      const i = at.get(h);
+      // Hits outside the earlier text (still in the context) don't count, nor take a rank.
+      if (i === undefined) continue;
+      fused.set(i, (fused.get(i) ?? 0) + w / (RRF_K + ++r));
+    }
+    ranked = [...fused].map(([i, score]) => ({ i, score })).sort((a, b) => b.score - a.score);
+  }
   const picked: { i: number; text: string }[] = [];
   let used = 0;
   for (const { i } of ranked) {
     let text = chunks[i];
     let n = countTokens(text) + 2;
-    // Too long for what is left: keep just its sentences that share terms with the latest text.
+    // Too long for what is left: keep just its sentences that share terms with the latest text, or (a passage
+    // found by meaning alone) its first sentences.
     if (used + n > budget) {
-      text = (text.match(/[^.!?…。！？\n]+[.!?…。！？]*["'”’」』)]*/g) ?? [])
-        .filter((x) => q.some((t) => termCounts(x).has(t)))
-        .join(' ')
-        .trim();
+      const sentences = text.match(/[^.!?…。！？\n]+[.!?…。！？]*["'”’」』)]*/g) ?? [];
+      const matching = sentences.filter((x) => q.some((t) => termCounts(x).has(t)));
+      const keep: string[] = [];
+      let size = 2;
+      for (const x of matching.length ? matching : sentences) {
+        const m = countTokens(x) + 1;
+        if (used + size + m > budget) break;
+        keep.push(x);
+        size += m;
+      }
+      text = keep.join(' ').trim();
       n = countTokens(text) + 2;
       if (!text || used + n > budget) continue;
     }
@@ -50,6 +84,11 @@ export function recallPassages(earlier: string, query: string, budget: number): 
     if (picked.length >= 6) break;
   }
   return picked.sort((a, b) => a.i - b.i).map((x) => x.text);
+}
+
+/** The chunks `recallPassages` searches, with the hashes their vectors are stored under. */
+export function recallChunks(text: string): { hash: string; text: string }[] {
+  return chunkText(text).map((t) => ({ hash: textHash(t), text: t }));
 }
 
 /** Paragraphs, joined up to ~400 characters and split down to ~800, never across a scene break. */

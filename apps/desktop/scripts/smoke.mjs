@@ -143,6 +143,31 @@ try {
     assert.ok(event.url ? /^https:\/\//.test(event.url) : event.type === 'prompt', JSON.stringify(event));
   });
 
+  if (process.env.SMOKE_EMBEDDINGS === '1') {
+    await step('embedding worker runs under Electron (ONNX runtime and model downloaded on request)', async () => {
+      const result = await page.evaluate(async () => {
+        const json = { 'content-type': 'application/json' };
+        const call = (method, url, body) => fetch(url, { method, headers: body ? json : {}, body: body ? JSON.stringify(body) : undefined }).then((r) => r.json());
+        const wait = async (task) => {
+          for (;;) {
+            const t = (await call('GET', '/api/embeddings/tasks')).find((x) => x.id === task.id);
+            if (t.status !== 'running') return t;
+            await new Promise((r) => setTimeout(r, 500));
+          }
+        };
+        await call('PUT', '/api/embeddings/config', { enabled: true, source: 'onnx', onnx: { model: 'bge-small-zh-v1.5', device: 'cpu' } });
+        for (const t of [await call('POST', '/api/embeddings/runtime/onnx'), await call('POST', '/api/embeddings/models', { kind: 'onnx', repo: 'bge-small-zh-v1.5' })]) {
+          const done = await wait(t);
+          if (done.status !== 'done') return { error: `${done.label}: ${done.error ?? done.status}` };
+        }
+        return call('POST', '/api/embeddings/test');
+      });
+      assert.ok(!result.error, result.error);
+      assert.equal(result.dims, 512);
+      assert.ok(result.related > result.unrelated, JSON.stringify(result));
+    });
+  }
+
   await step('external links go to the system browser (http(s) only)', async () => {
     await app.evaluate(({ shell }) => {
       globalThis.__opened = [];

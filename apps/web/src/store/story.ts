@@ -16,7 +16,11 @@ import {
   buildHypebotRequest,
   buildStoryRequest,
   buildSummaryRequest,
+  countTokens,
   nextLoreState,
+  requestTokenEstimate,
+  stripComments,
+  updateCalibration,
   type StoryRequestOptions,
   buildTitleRequest,
   cloneJson,
@@ -53,6 +57,7 @@ import {
 } from '@novelwriter/core';
 import { api, capsOf, generateStream, generateText, type ModelInfo } from '../api.ts';
 import { useSettings } from './settings.ts';
+import { searchVectors, syncVectors, useEmbeddings } from './embeddings.ts';
 import { useUI } from './ui.ts';
 import { t } from '../i18n.ts';
 import { speak } from '../features/tts/tts.ts';
@@ -631,7 +636,7 @@ export const useStory = create<StoryState>((set, get) => ({
     if (!s) return null;
     const info = get().modelInfo();
     const maxCtx = Math.min(s.params.maxContext, info?.contextWindow ?? Infinity, useSettings.getState().maxContextCap || Infinity);
-    const req = buildStoryRequest(s, requestOptions(info, { maxContextTokens: maxCtx, model: info?.id }));
+    const req = buildStoryRequest(s, requestOptions(info, { maxContextTokens: maxCtx, model: info?.id, vectors: useEmbeddings.getState().hits[s.id] }));
     return { system: req.system, messages: req.messages };
   },
 
@@ -640,7 +645,7 @@ export const useStory = create<StoryState>((set, get) => ({
     if (!s) return null;
     const info = get().modelInfo();
     const maxCtx = Math.min(s.params.maxContext, info?.contextWindow ?? Infinity, useSettings.getState().maxContextCap || Infinity);
-    return buildStoryRequest(s, requestOptions(info, { maxContextTokens: maxCtx, model: info?.id })).context;
+    return buildStoryRequest(s, requestOptions(info, { maxContextTokens: maxCtx, model: info?.id, vectors: useEmbeddings.getState().hits[s.id] })).context;
   },
 
   async send(input) {
@@ -828,14 +833,19 @@ async function runGeneration(
   const after = fullText.slice(opts.from);
   const maxCtx = Math.min(s.params.maxContext, info?.contextWindow ?? Infinity, useSettings.getState().maxContextCap || Infinity);
   const caps = capsOf(info);
-  const req = buildStoryRequest(
-    s,
-    requestOptions(info, {
-      maxContextTokens: maxCtx,
-      model: model.id,
-      inline: opts.inline ? { before, after, bidirectional: settings.bidirectionalInline } : undefined,
-    }),
-  );
+  if (settings.calibrateTokens) await seedCalibration(model, info, fullText);
+  const reqOpts = requestOptions(info, {
+    maxContextTokens: maxCtx,
+    model: model.id,
+    inline: opts.inline ? { before, after, bidirectional: settings.bidirectionalInline } : undefined,
+  });
+  let req = buildStoryRequest(s, reqOpts);
+  // Part of the story is out of view: look for earlier passages close in meaning to the latest text too.
+  if (req.context.storyStart > 0 && s.recall?.enabled) {
+    set({ generating: true, task: 'story' });
+    const vectors = await searchVectors(s, stripComments(opts.inline ? before : fullText));
+    if (vectors) req = buildStoryRequest(s, { ...reqOpts, vectors });
+  }
   // "Default Bias": keep dinkuses and asterisms out unless the story already uses them.
   const banned = [...s.bannedTokens, ...(settings.defaultBias ? ['***', '⁂'].filter((x) => !fullText.includes(x)) : [])];
   if (banned.length > s.bannedTokens.length) req.system += `\n\nNever write scene-break markers such as ${banned.slice(s.bannedTokens.length).join(' or ')}.`;
@@ -877,7 +887,8 @@ async function runGeneration(
       },
       abort.signal,
     )) {
-      if (ev.type === 'logprobs') probs.push(...ev.tokens);
+      if (ev.type === 'done' && ev.usage) learnCalibration(model, ev.usage, req.system, req.messages, info?.completion === 'raw' && !opts.inline ? req.raw : undefined);
+      else if (ev.type === 'logprobs') probs.push(...ev.tokens);
       else if (ev.type === 'delta') {
         raw += ev.text;
         if (settings.streamResponses) {
@@ -931,6 +942,8 @@ async function runGeneration(
     if (hasHook('onGenerationEnd')) void runScriptHook('onGenerationEnd', { text: final });
     void maybeHypebot(set, get, final);
     void updateSummary(get, req.context.storyStart);
+    const latest = get().current;
+    if (latest?.id === s.id) void syncVectors(latest);
   } else if (!final) {
     ed?.setDoc(get().current?.doc ?? []);
   }
@@ -1010,11 +1023,47 @@ export async function updateSummary(get: () => StoryState, storyStart: number, f
   }
 }
 
+const calibrationKey = (m: { provider: string; id: string }) => `${m.provider}/${m.id}`;
+
+/** A first token ratio for a model on a local server, from its own tokenizer, before any request has run. */
+async function seedCalibration(model: ModelRef, info: ModelInfo | undefined, text: string): Promise<void> {
+  const settings = useSettings.getState();
+  if (settings.tokenCalibration[calibrationKey(model)] || capsOf(info).tokenizer !== 'remote') return;
+  const sample = text.slice(-4000);
+  const ours = countTokens(sample);
+  if (ours < 200) return;
+  try {
+    const r = await Promise.race([api.tokenize(model, sample), new Promise<never>((_, rej) => setTimeout(() => rej(new Error('timeout')), 2000))]);
+    if (r.tokenizer !== 'remote' || !r.ids.length) return;
+    const ratio = Math.round((r.ids.length / ours) * 1000) / 1000;
+    settings.set({ tokenCalibration: { ...useSettings.getState().tokenCalibration, [calibrationKey(model)]: { ratio, samples: 0, source: 'tokenizer', at: Date.now() } } });
+  } catch {
+    /* the server's tokenizer is optional */
+  }
+}
+
+/** Learn the model's token ratio from the input tokens the provider reported for a request. */
+function learnCalibration(model: ModelRef, usage: { input?: number; cacheRead?: number; cacheWrite?: number }, system: string, messages: ChatMessage[], prompt?: string) {
+  const settings = useSettings.getState();
+  // Cached prompt tokens are reported apart from the rest of the input.
+  const actual = (usage.input ?? 0) + (usage.cacheRead ?? 0) + (usage.cacheWrite ?? 0);
+  const key = calibrationKey(model);
+  const next = updateCalibration(settings.tokenCalibration[key], actual, requestTokenEstimate(system, messages, prompt));
+  if (next && next !== settings.tokenCalibration[key]) settings.set({ tokenCalibration: { ...settings.tokenCalibration, [key]: next } });
+}
+
+/** The learned token ratio for a model, when calibration is on. */
+export function tokenRatio(info: { provider: string; id: string } | undefined): number | undefined {
+  const settings = useSettings.getState();
+  return settings.calibrateTokens && info ? settings.tokenCalibration[calibrationKey(info)]?.ratio : undefined;
+}
+
 /** Options shared by every story request: layout, prefill and bias handling for the model in use. */
 function requestOptions(info: ModelInfo | undefined, o: StoryRequestOptions): StoryRequestOptions {
   const settings = useSettings.getState();
   const caps = capsOf(info);
   return {
+    tokenRatio: tokenRatio(info),
     ...o,
     nativeBias: caps.tokenizer !== 'none',
     preamble: settings.preamble,

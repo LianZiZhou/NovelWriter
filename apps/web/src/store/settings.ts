@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { ModelRef, PromptLayout, UserScript } from '@novelwriter/core';
+import type { ModelRef, PromptLayout, TokenCalibration, UserScript } from '@novelwriter/core';
 import { api } from '../api.ts';
 import { BUILTIN_THEMES, type Theme } from '../theme/themes.ts';
 import { applyTheme } from '../theme/applyTheme.ts';
@@ -54,6 +54,10 @@ export interface Settings {
   promptLayout: PromptLayout;
   /** Upper bound on context tokens for every story (0 = no cap beyond the preset and model). */
   maxContextCap: number;
+  /** Size the context with each model's own token counts, learned from what the provider reports. */
+  calibrateTokens: boolean;
+  /** Learned token ratios by `provider/model`. */
+  tokenCalibration: Record<string, TokenCalibration>;
   /** Show the System Prompt / Prefill button in the Advanced tab. */
   showSystemPromptSettings: boolean;
   defaultBias: boolean;
@@ -191,6 +195,8 @@ export const DEFAULT_SETTINGS: Settings = {
   preamble: true,
   promptLayout: 'structured',
   maxContextCap: 0,
+  calibrateTokens: true,
+  tokenCalibration: {},
   showSystemPromptSettings: true,
   defaultBias: true,
   hypebotMode: 'off',

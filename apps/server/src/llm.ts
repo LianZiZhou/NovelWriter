@@ -375,6 +375,7 @@ export class LLM {
       const dec = new TextDecoder();
       let buf = '';
       let stopReason = 'stop';
+      let usage: { input: number; output: number } | undefined;
       try {
         for (;;) {
           const { value, done } = await reader.read();
@@ -385,7 +386,12 @@ export class LLM {
             const line = buf.slice(0, i).trim();
             buf = buf.slice(i + 1);
             if (!line.startsWith('data:') || line === 'data: [DONE]') continue;
-            let chunk: { choices?: { text?: string; finish_reason?: string | null }[]; content?: string };
+            let chunk: {
+              choices?: { text?: string; finish_reason?: string | null }[];
+              content?: string;
+              usage?: { prompt_tokens?: number; completion_tokens?: number };
+              timings?: { prompt_n?: number; cache_n?: number; predicted_n?: number };
+            };
             try {
               chunk = JSON.parse(line.slice(5));
             } catch {
@@ -397,13 +403,16 @@ export class LLM {
             if (text) yield { type: 'delta', text };
             const fin = chunk.choices?.[0]?.finish_reason;
             if (fin) stopReason = fin === 'length' ? 'length' : 'stop';
+            // Prompt size as the server counted it (OpenAI-style usage, or llama.cpp's timings).
+            if (chunk.usage?.prompt_tokens) usage = { input: chunk.usage.prompt_tokens, output: chunk.usage.completion_tokens ?? 0 };
+            else if (chunk.timings?.prompt_n && !usage) usage = { input: chunk.timings.prompt_n + (chunk.timings.cache_n ?? 0), output: chunk.timings.predicted_n ?? 0 };
           }
         }
       } catch (e) {
         if (signal.aborted) return void (yield { type: 'done', stopReason: 'aborted' });
         throw e;
       }
-      yield { type: 'done', stopReason };
+      yield { type: 'done', stopReason, usage };
       return;
     }
   }

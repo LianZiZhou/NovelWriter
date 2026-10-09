@@ -4,6 +4,7 @@ import { expandMacros } from './macros.ts';
 import { DEFAULT_SYSTEM_PROMPT_ADVENTURE, DEFAULT_SYSTEM_PROMPT_STORY } from './defaults.ts';
 import { docText } from './doc.ts';
 import { countTokens } from './tokenizer.ts';
+import type { VectorHits } from './recall.ts';
 import type { ChatMessage, GenerationParams, PhraseBiasGroup, SideChat, Story } from './types.ts';
 
 /** Characters per token for English prose; the fallback when there is no text to measure. */
@@ -112,6 +113,13 @@ export interface StoryRequestOptions {
   /** The model continues a final assistant message (prefill); enables opening the reply with the story's tail. */
   prefill?: boolean;
   random?: () => number;
+  /** Embedding search results for recalled passages. */
+  vectors?: VectorHits;
+  /**
+   * The model's tokens per o200k token, measured from what the provider reported for earlier requests. The
+   * context is sized in o200k tokens, so the budget is scaled down by it (and the output length up).
+   */
+  tokenRatio?: number;
 }
 
 /** Build the request that continues the story. */
@@ -120,12 +128,15 @@ export function buildStoryRequest(story: Story, opts: StoryRequestOptions): Stor
   const out = outputTokens(params, opts.inline?.before ?? opts.storyText ?? (docText(story.doc) || story.memory));
   // Text after the gap is part of the request too, so it comes out of the context budget.
   const afterText = opts.inline?.bidirectional ? stripComments(opts.inline.after.slice(0, 2000)) : '';
+  const ratio = calibrationRatio(opts.tokenRatio);
   const ctx = buildContext(story, {
-    maxContextTokens: opts.maxContextTokens - countTokens(afterText),
+    // A few percent to spare: the ratio is an average, and chat formatting adds tokens of its own.
+    maxContextTokens: Math.floor((opts.maxContextTokens / ratio) * (ratio === 1 ? 1 : 0.97)) - countTokens(afterText),
     outputTokens: out,
     model: opts.model,
     storyText: opts.inline ? opts.inline.before : opts.storyText,
     random: opts.random,
+    vectors: opts.vectors,
   });
   const base = expandMacros(story.systemPrompt.trim(), ctx.macroEnv) || (story.mode === 'adventure' ? DEFAULT_SYSTEM_PROMPT_ADVENTURE : DEFAULT_SYSTEM_PROMPT_STORY);
   // With native logit bias the phrase bias is sent as token biases instead of instructions.
@@ -139,7 +150,7 @@ export function buildStoryRequest(story: Story, opts: StoryRequestOptions): Stor
     fallbackMessages: fallback,
     raw,
     context: ctx,
-    maxTokens: out,
+    maxTokens: Math.round(out * ratio),
     stop: story.stopSequences.filter(Boolean),
     bias: ctx.phraseBias.filter((g) => g.enabled !== false && g.bias !== 0 && g.phrases.length).map((g) => ({ phrases: g.phrases, bias: g.bias })),
   });
@@ -415,3 +426,40 @@ export function buildHypebotRequest(story: Story, lastGeneration: string): { sys
 }
 
 /** Map generation parameters to provider sampling fields (OpenAI-compatible names). */
+
+// ------------------------------------------------------------- token calibration
+
+/** How a model's tokenizer compares with o200k, learned from the token counts providers report. */
+export interface TokenCalibration {
+  /** Model tokens per o200k token. */
+  ratio: number;
+  /** Requests it was measured on (0 when it only comes from the server's tokenizer). */
+  samples: number;
+  source: 'usage' | 'tokenizer';
+  at: number;
+}
+
+export function calibrationRatio(r: number | undefined): number {
+  return r && Number.isFinite(r) ? Math.min(3, Math.max(0.5, r)) : 1;
+}
+
+/** o200k tokens of what a request sends (the counts providers report are compared with this). */
+export function requestTokenEstimate(system: string, messages: ChatMessage[], prompt?: string): number {
+  if (prompt) return countTokens(prompt);
+  return countTokens(system) + messages.reduce((n, m) => n + countTokens(m.content), 0);
+}
+
+/**
+ * Fold one measurement into the calibration: `actual` input tokens the provider reported for a request whose
+ * text was `estimate` o200k tokens. Short requests are skipped, since chat formatting and hidden system
+ * prompts make up too much of them.
+ */
+export function updateCalibration(prev: TokenCalibration | undefined, actual: number, estimate: number, now = Date.now()): TokenCalibration | undefined {
+  if (!(actual > 0) || estimate < 300) return prev;
+  const sample = calibrationRatio(actual / estimate);
+  const n = prev?.source === 'usage' ? prev.samples : 0;
+  // An average over the first few requests, then a moving average that follows changes (a new model version).
+  const alpha = Math.max(0.2, 1 / (n + 1));
+  const ratio = prev && n > 0 ? prev.ratio + alpha * (sample - prev.ratio) : sample;
+  return { ratio: Math.round(ratio * 1000) / 1000, samples: n + 1, source: 'usage', at: now };
+}
