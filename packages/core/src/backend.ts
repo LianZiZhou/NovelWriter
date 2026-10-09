@@ -28,7 +28,9 @@ export type ParamId =
   | 'phrase_rep_pen'
   | 'min_length'
   | 'whitelist'
-  | 'dynamic_range';
+  | 'dynamic_range'
+  | 'xtc'
+  | 'banned_strings';
 
 export interface BackendCaps {
   params: ParamId[];
@@ -40,6 +42,8 @@ export interface BackendCaps {
   tokenizer: 'o200k' | 'remote' | 'none';
   /** Max stop sequences sent to the API (others are applied client-side). */
   stop: number;
+  /** The model continues a final assistant message (prefill) instead of answering it. */
+  prefill?: boolean;
 }
 
 const OPENAI_SET: ParamId[] = ['temperature', 'top_p', 'presence', 'frequency'];
@@ -48,7 +52,7 @@ const ALL: ParamId[] = ['temperature', 'top_k', 'top_p', 'top_a', 'min_p', 'typi
 export function backendCaps(flavor: BackendFlavor): BackendCaps {
   switch (flavor) {
     case 'demo':
-      return { params: ALL, samplerOrder: true, logprobs: 10, tokenizer: 'none', stop: 99 };
+      return { params: ALL, samplerOrder: true, logprobs: 10, tokenizer: 'none', stop: 99, prefill: true };
     case 'openai':
       return { params: OPENAI_SET, samplerOrder: false, logprobs: 20, tokenizer: 'o200k', stop: 4 };
     case 'openrouter':
@@ -56,13 +60,13 @@ export function backendCaps(flavor: BackendFlavor): BackendCaps {
     case 'openai-compatible':
       return { params: OPENAI_SET, samplerOrder: false, logprobs: 0, tokenizer: 'none', stop: 4 };
     case 'llama.cpp':
-      return { params: ['temperature', 'top_k', 'top_p', 'min_p', 'typical_p', 'mirostat', 'rep_pen', 'rep_pen_range', 'presence', 'frequency', 'phrase_rep_pen'], samplerOrder: true, logprobs: 20, tokenizer: 'remote', stop: 99 };
+      return { params: ['temperature', 'top_k', 'top_p', 'min_p', 'typical_p', 'mirostat', 'rep_pen', 'rep_pen_range', 'presence', 'frequency', 'phrase_rep_pen', 'xtc'], samplerOrder: true, logprobs: 20, tokenizer: 'remote', stop: 99, prefill: true };
     case 'vllm':
       return { params: ['temperature', 'top_k', 'top_p', 'min_p', 'rep_pen', 'presence', 'frequency', 'min_length'], samplerOrder: false, logprobs: 20, tokenizer: 'remote', stop: 99 };
     case 'koboldcpp':
-      return { params: ['temperature', 'top_k', 'top_p', 'top_a', 'min_p', 'typical_p', 'tfs', 'mirostat', 'unified', 'rep_pen', 'rep_pen_range', 'rep_pen_slope', 'presence', 'frequency', 'phrase_rep_pen'], samplerOrder: true, logprobs: 5, tokenizer: 'remote', stop: 99 };
+      return { params: ['temperature', 'top_k', 'top_p', 'top_a', 'min_p', 'typical_p', 'tfs', 'mirostat', 'unified', 'rep_pen', 'rep_pen_range', 'rep_pen_slope', 'presence', 'frequency', 'phrase_rep_pen', 'xtc', 'banned_strings'], samplerOrder: true, logprobs: 5, tokenizer: 'remote', stop: 99 };
     case 'tabbyapi':
-      return { params: ['temperature', 'top_k', 'top_p', 'top_a', 'min_p', 'typical_p', 'tfs', 'mirostat', 'unified', 'rep_pen', 'rep_pen_range', 'presence', 'frequency', 'phrase_rep_pen', 'min_length'], samplerOrder: false, logprobs: 20, tokenizer: 'remote', stop: 99 };
+      return { params: ['temperature', 'top_k', 'top_p', 'top_a', 'min_p', 'typical_p', 'tfs', 'mirostat', 'unified', 'rep_pen', 'rep_pen_range', 'presence', 'frequency', 'phrase_rep_pen', 'min_length', 'xtc', 'banned_strings'], samplerOrder: false, logprobs: 20, tokenizer: 'remote', stop: 99 };
     default:
       return { params: ['temperature'], samplerOrder: false, logprobs: 0, tokenizer: 'none', stop: 0 };
   }
@@ -96,6 +100,8 @@ const OPENAI_REASONING = /(^|[/.:])(o\d+(-|$)|gpt-5|[\w.-]*codex)/i;
  */
 export function modelCaps(flavor: BackendFlavor, m: ModelTraits, rejected: Iterable<string> = []): ModelCaps {
   const caps: ModelCaps = { ...backendCaps(flavor) };
+  // Claude continues a final assistant message; with thinking on it refuses one.
+  if (m.api === 'anthropic-messages') caps.prefill = !m.thinkingForced;
   const fixedSampling =
     m.api === 'openai-codex-responses' ||
     (m.reasoning && OPENAI_REASONING.test(m.id)) ||
@@ -116,6 +122,7 @@ export function modelCaps(flavor: BackendFlavor, m: ModelTraits, rejected: Itera
     if (learned.has('logprobs') || learned.has('top_logprobs')) caps.logprobs = 0;
     if (learned.has('logit_bias')) caps.tokenizer = 'none';
     if (learned.has('stop')) caps.stop = 0;
+    if (learned.has('prefill')) caps.prefill = false;
     if (caps.params.length < before) caps.restricted ??= 'learned';
   }
   return caps;
@@ -141,6 +148,8 @@ const PARAM_FIELDS: Record<ParamId, string[]> = {
   min_length: ['min_tokens'],
   whitelist: [],
   dynamic_range: [],
+  xtc: ['xtc_threshold', 'xtc_probability'],
+  banned_strings: ['banned_strings', 'banned_tokens'],
 };
 
 const REJECTION = /unsupported|not supported|does not support|doesn't support|unknown|unrecognized|not allowed|not permitted|only the default|invalid/i;
@@ -173,6 +182,8 @@ export interface PayloadExtras {
   /** Number of top alternatives to return per token. */
   logprobs?: number;
   stop?: string[];
+  /** Phrases the server should never let through (it backtracks and resamples). */
+  banned?: string[];
 }
 
 /**
@@ -218,6 +229,12 @@ export function samplerPayload(
     b.dry_allowed_length = 2;
   }
   if (can('min_length') && p.minLength > 1) b.min_tokens = Math.ceil(p.minLength / 4);
+  if (can('xtc') && (p.xtcProbability ?? 0) > 0) {
+    b.xtc_probability = p.xtcProbability;
+    b.xtc_threshold = p.xtcThreshold ?? 0.1;
+  }
+  const banned = (extras.banned ?? []).map((x) => x.replace(/^\{([\s\S]*)\}$/, '$1')).filter((x) => x.trim() && !/^\s*\[[\d,\s]+\]\s*$/.test(x));
+  if (can('banned_strings') && banned.length) b[kobold ? 'banned_tokens' : 'banned_strings'] = banned;
   if (caps.samplerOrder) {
     if (kobold) {
       const ids = p.order.filter((s) => s.enabled).map((s) => KOBOLD_ORDER[s.id]).filter((x): x is number => x !== undefined);
@@ -246,9 +263,20 @@ export interface TokenLogprob {
   top: { token: string; logprob: number }[];
 }
 
-/** Read OpenAI-style `choices[0].logprobs.content` from a stream chunk. */
+/** Read OpenAI-style `choices[0].logprobs.content` (or the text-completion layout) from a stream chunk. */
 export function chunkLogprobs(chunk: unknown): TokenLogprob[] {
-  const c = (chunk as { choices?: { logprobs?: { content?: unknown[] } }[] })?.choices?.[0]?.logprobs?.content;
+  const lp = (chunk as { choices?: { logprobs?: { content?: unknown[]; tokens?: unknown[]; token_logprobs?: unknown[]; top_logprobs?: unknown[] } }[] })?.choices?.[0]?.logprobs;
+  const c = lp?.content;
+  if (!Array.isArray(c) && Array.isArray(lp?.tokens) && Array.isArray(lp?.token_logprobs)) {
+    // Text completions: parallel arrays, alternatives as { token: logprob } objects.
+    return lp.tokens.flatMap((token, i) => {
+      const logprob = lp.token_logprobs![i];
+      if (typeof token !== 'string' || typeof logprob !== 'number') return [];
+      const alts = (lp.top_logprobs?.[i] ?? {}) as Record<string, unknown>;
+      const top = Object.entries(alts).filter((e): e is [string, number] => typeof e[1] === 'number').map(([t, l]) => ({ token: t, logprob: l })).sort((a, b) => b.logprob - a.logprob);
+      return [{ token, logprob, top }];
+    });
+  }
   if (!Array.isArray(c)) return [];
   const out: TokenLogprob[] = [];
   for (const raw of c) {

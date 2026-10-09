@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { ArrowRight, ArrowSquareOut, ArrowsLeftRight, Book, CaretDown, CaretUp, ChartBar, Copy, ImageSquare, CornersOut, DownloadSimple, MagnifyingGlass, Sword, Article } from '@phosphor-icons/react';
 import { countTokens, exportNovelAIStory, exportPlaintext, exportScenario, exportStoryFile, searchLore } from '@novelwriter/core';
-import { download, rememberModel, safeFileName, useStory, useStoryMeta } from '../../store/story.ts';
+import { download, rememberModel, safeFileName, updateSummary, useStory, useStoryMeta } from '../../store/story.ts';
 import { useSettings } from '../../store/settings.ts';
 import { useUI } from '../../store/ui.ts';
 import { t } from '../../i18n.ts';
@@ -22,6 +22,60 @@ export function FieldBox({ value, onChange, placeholder, ariaLabel, onExpand, mi
       <span className="tokens" aria-label={`${ariaLabel} contains ${tokens} tokens`}>
         {tokens} {t('tokens')}
       </span>
+    </div>
+  );
+}
+
+/** Running summary and recalled passages: what keeps a long story's early parts in view. */
+function LongStoryMemory() {
+  const story = useStoryMeta()!;
+  const store = useStory.getState();
+  const [busy, setBusy] = useState(false);
+  const summary = story.summary;
+  const recall = story.recall;
+  return (
+    <div className="panel-section">
+      <span className="heading">{t('Long Story Memory')}</span>
+      <ToggleRow
+        title={t('Story Summary')}
+        desc={t('Keeps a running summary of the story text that no longer fits in the context, and puts it back in. Updated in the background as the story grows.')}
+        on={!!summary?.enabled}
+        onChange={(v) => store.update((s) => void (s.summary = { text: '', upTo: 0, ...s.summary, enabled: v }))}
+      />
+      {summary?.enabled && (
+        <>
+          <FieldBox value={summary.text} ariaLabel="story summary" placeholder={t('Nothing summarized yet. The summary starts once the story outgrows the context.')} onChange={(v) => store.update((s) => void (s.summary = { ...s.summary!, text: v }))} />
+          <div className="row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+            <span className="desc">{t('Covers the first {n} characters.', { n: summary.upTo })}</span>
+            <button
+              type="button"
+              className="btn"
+              disabled={busy}
+              onClick={async () => {
+                const start = store.previewContext()?.storyStart ?? 0;
+                if (start <= summary.upTo) return useUI.getState().toast(t('The whole story still fits in the context; there is nothing to summarize yet.'), 'info');
+                setBusy(true);
+                await updateSummary(useStory.getState, start, true);
+                setBusy(false);
+              }}
+            >
+              {busy ? t('Summarizing…') : t('Update Now')}
+            </button>
+          </div>
+        </>
+      )}
+      <ToggleRow
+        title={t('Recall Earlier Passages')}
+        desc={t('When the story no longer fits, passages from earlier in it that match the latest text are put back in the context.')}
+        on={!!recall?.enabled}
+        onChange={(v) => store.update((s) => void (s.recall = { tokenBudget: 400, ...s.recall, enabled: v }))}
+      />
+      {recall?.enabled && (
+        <label className="number-field">
+          <span style={{ fontWeight: 600, fontSize: 14 }}>{t('Recall Budget (tokens)')}</span>
+          <input className="input" type="number" min={50} max={8000} step={50} value={recall.tokenBudget} onChange={(e) => store.update((s) => void (s.recall = { ...s.recall!, tokenBudget: Math.min(8000, Math.max(50, Number(e.target.value) || 400)) }))} />
+        </label>
+      )}
     </div>
   );
 }
@@ -130,6 +184,8 @@ export function StoryTab() {
         <div className="desc">{t('Info placed here will strongly influence AI output.')}</div>
         <FieldBox value={story.authorsNote} ariaLabel="author's note" onChange={(v) => store.update((s) => void (s.authorsNote = v))} onExpand={() => ui.open('systemPrompt', { field: 'authorsNote' })} />
       </div>
+
+      <LongStoryMemory />
 
       <div className="panel-section">
         <span className="heading">{t('Lorebook Quick Access')}</span>

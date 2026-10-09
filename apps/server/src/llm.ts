@@ -16,6 +16,11 @@ import {
   backendCaps,
   chunkLogprobs,
   defaultParams,
+  detectTemplate,
+  INSTRUCT_TEMPLATES,
+  renderInstruct,
+  type ChatMessage,
+  type InstructTemplateId,
   loadTokenizer,
   modelCaps,
   rejectedFields,
@@ -37,6 +42,13 @@ export interface CustomProviderConfig {
   apiKey?: string;
   /** Which server software this is, so the right sampler names are sent. */
   flavor?: BackendFlavor;
+  /**
+   * Run the models as text completion (`/completions`) instead of chat: `instruct` renders requests in the
+   * model's chat template, `raw` sends story continuations as plain text (base models, NovelAI style).
+   */
+  completion?: 'off' | 'instruct' | 'raw';
+  /** Instruct template; `auto` reads the server's chat template (llama.cpp) or goes by the model name. */
+  template?: InstructTemplateId | 'auto';
   models: { id: string; name?: string; contextWindow?: number; maxTokens?: number }[];
 }
 
@@ -68,6 +80,8 @@ export class LLM {
   private custom = new Map<string, CustomProviderConfig>();
   /** Request fields providers refused per model ("provider/id"), learned from their errors this run. */
   private rejected = new Map<string, Set<string>>();
+  /** Instruct templates found for `auto` ("provider/id"). */
+  private templates = new Map<string, InstructTemplateId>();
 
   constructor(readonly credentials: FileCredentialStore) {
     this.models = builtinModels({ credentials });
@@ -86,6 +100,7 @@ export class LLM {
     for (const id of this.customIds) if (!list.some((c) => c.id === id)) this.models.deleteProvider(id);
     this.customIds = new Set(list.map((c) => c.id));
     this.custom = new Map(list.map((c) => [c.id, c]));
+    this.templates.clear();
     for (const c of list) {
       const key = c.apiKey;
       this.models.setProvider(
@@ -165,7 +180,15 @@ export class LLM {
     const levels = model.reasoning ? getSupportedThinkingLevels(model) : [];
     const thinkingForced = Boolean(model.reasoning && levels.length && !levels.includes('off'));
     const traits = { provider: model.provider, api: model.api, id: model.id, reasoning: Boolean(model.reasoning), thinkingForced };
-    return modelCaps(this.flavorOf(model), traits, this.rejected.get(`${model.provider}/${model.id}`) ?? []);
+    const caps = modelCaps(this.flavorOf(model), traits, this.rejected.get(`${model.provider}/${model.id}`) ?? []);
+    // As text completion the reply is left open in the prompt, so a prefill is always continued.
+    if (this.completionMode(model.provider) !== 'off') caps.prefill = true;
+    return caps;
+  }
+
+  /** Whether a provider's models run as text completion, and how. */
+  completionMode(provider: string): 'off' | 'instruct' | 'raw' {
+    return this.custom.get(provider)?.completion ?? 'off';
   }
 
   listModels(provider?: string) {
@@ -179,6 +202,7 @@ export class LLM {
       maxTokens: m.maxTokens,
       reasoning: m.reasoning,
       api: m.api,
+      completion: this.completionMode(m.provider) === 'off' ? undefined : this.completionMode(m.provider),
     }));
   }
 
@@ -190,7 +214,7 @@ export class LLM {
     if (!model) throw new Error(`Unknown model ${req.model.provider}/${req.model.id}`);
     const params = defaultParams(req.params ?? {});
     const now = Date.now();
-    const messages: Message[] = req.messages.map((m) =>
+    const toMessages = (list: ChatMessage[]): Message[] => list.map((m) =>
       m.role === 'user'
         ? { role: 'user', content: m.content, timestamp: now }
         : {
@@ -204,21 +228,27 @@ export class LLM {
             timestamp: now,
           },
     );
-    const context: Context = { systemPrompt: req.system, messages };
+    const context: Context = { systemPrompt: req.system, messages: toMessages(req.messages) };
     const maxTokens = Math.min(req.maxTokens ?? Math.ceil(params.maxLength / 4), model.maxTokens || 4096);
 
     if (model.provider === DEMO_PROVIDER) {
       yield* this.demo(req, maxTokens * 4, signal);
       return;
     }
+    const custom = this.custom.get(model.provider);
+    if (custom && this.completionMode(model.provider) !== 'off') {
+      yield* this.complete(model as Model<Api>, custom, req, params, maxTokens, signal);
+      return;
+    }
 
     const flavor = this.flavorOf(model);
     const key = `${model.provider}/${model.id}`;
+    let fellBack = false;
     // A provider may still refuse a setting we thought it takes; drop what it names and retry (twice at most).
     for (let attempt = 0; ; attempt++) {
       const caps = this.capsOf(model as Model<Api>);
       const logitBias = await this.logitBias(req, flavor, model.provider, caps).catch(() => undefined);
-      const { temperature, body } = samplerPayload(params, flavor, { logitBias, logprobs: req.logprobs, stop: req.stop }, caps);
+      const { temperature, body } = samplerPayload(params, flavor, { logitBias, logprobs: req.logprobs, stop: req.stop, banned: req.banned }, caps);
       const options: Record<string, unknown> = { maxTokens, signal };
       // Story continuation wants no (or minimal) thinking. Models that cannot turn
       // thinking off get the lowest level and extra budget so output isn't starved.
@@ -239,10 +269,16 @@ export class LLM {
 
       let emitted = false;
       const retryWithout = (message: string): boolean => {
-        if (emitted || attempt >= 2) return false;
-        const bad = rejectedFields(message, sent);
-        if (!bad.length) return false;
+        if (emitted || attempt >= 3) return false;
         const set = this.rejected.get(key) ?? new Set<string>();
+        const bad = rejectedFields(message, sent);
+        if (!bad.length) {
+          // A model that won't continue the story's last lines (prefill) gets the request without them.
+          if (!req.fallbackMessages || fellBack) return false;
+          fellBack = true;
+          context.messages = toMessages(req.fallbackMessages);
+          bad.push('prefill');
+        }
         for (const f of bad) set.add(f);
         this.rejected.set(key, set);
         return true;
@@ -283,6 +319,111 @@ export class LLM {
         if (signal.aborted || !retryWithout((e as Error).message ?? String(e))) throw e;
       }
     }
+  }
+
+  /**
+   * Text completion against an OpenAI-compatible `/completions` endpoint (llama.cpp, KoboldCpp, TabbyAPI, vLLM):
+   * the request is rendered in the model's instruct template, or sent as the plain story text in raw mode.
+   */
+  private async *complete(
+    model: Model<Api>,
+    c: CustomProviderConfig,
+    req: GenerateRequest,
+    params: ReturnType<typeof defaultParams>,
+    maxTokens: number,
+    signal: AbortSignal,
+  ): AsyncGenerator<GenerateEvent> {
+    const flavor = c.flavor ?? 'openai-compatible';
+    const key = `${model.provider}/${model.id}`;
+    // Raw mode sends story continuations as they are; other requests (titles, lore…) still need instructions.
+    const plain = c.completion === 'raw' && typeof req.prompt === 'string';
+    const tpl = INSTRUCT_TEMPLATES[c.completion === 'raw' ? 'alpaca' : c.template && c.template !== 'auto' ? c.template : await this.autoTemplate(c, model.id)];
+    const prompt = plain ? req.prompt! : renderInstruct(tpl, req.system, req.messages, { modelId: model.id });
+    const stop = [...(plain ? [] : tpl.stop), ...(req.stop ?? [])];
+    const headers: Record<string, string> = { 'content-type': 'application/json' };
+    if (c.apiKey) headers.authorization = `Bearer ${c.apiKey}`;
+    for (let attempt = 0; ; attempt++) {
+      const caps = this.capsOf(model);
+      const logitBias = await this.logitBias(req, flavor, model.provider, caps).catch(() => undefined);
+      const { temperature, body } = samplerPayload(params, flavor, { logitBias, logprobs: req.logprobs, stop, banned: req.banned }, { ...caps, stop: Math.max(caps.stop, 16) });
+      // Text completions take the number of alternatives as `logprobs`.
+      if (body.logprobs) {
+        body.logprobs = body.top_logprobs;
+        delete body.top_logprobs;
+      }
+      const payload: Record<string, unknown> = { model: model.id, prompt, max_tokens: maxTokens, stream: true, ...body };
+      if (temperature !== undefined) payload.temperature = temperature;
+      let res: Response;
+      try {
+        res = await fetch(`${c.baseUrl.replace(/\/+$/, '')}/completions`, { method: 'POST', headers, body: JSON.stringify(payload), signal });
+      } catch (e) {
+        if (signal.aborted) return void (yield { type: 'done', stopReason: 'aborted' });
+        throw e;
+      }
+      if (!res.ok || !res.body) {
+        const text = await res.text().catch(() => '');
+        const bad = attempt < 3 ? rejectedFields(text, Object.keys(payload).filter((k) => !['model', 'prompt', 'max_tokens', 'stream'].includes(k))) : [];
+        if (bad.length) {
+          const set = this.rejected.get(key) ?? new Set<string>();
+          for (const f of bad) set.add(f);
+          this.rejected.set(key, set);
+          continue;
+        }
+        throw new Error(`HTTP ${res.status}${text ? `: ${text.slice(0, 300)}` : ''}`);
+      }
+      const reader = res.body.getReader();
+      const dec = new TextDecoder();
+      let buf = '';
+      let stopReason = 'stop';
+      try {
+        for (;;) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buf += dec.decode(value, { stream: true });
+          let i: number;
+          while ((i = buf.indexOf('\n')) >= 0) {
+            const line = buf.slice(0, i).trim();
+            buf = buf.slice(i + 1);
+            if (!line.startsWith('data:') || line === 'data: [DONE]') continue;
+            let chunk: { choices?: { text?: string; finish_reason?: string | null }[]; content?: string };
+            try {
+              chunk = JSON.parse(line.slice(5));
+            } catch {
+              continue;
+            }
+            const probs = chunkLogprobs(chunk);
+            if (probs.length) yield { type: 'logprobs', tokens: probs };
+            const text = chunk.choices?.[0]?.text ?? chunk.content ?? '';
+            if (text) yield { type: 'delta', text };
+            const fin = chunk.choices?.[0]?.finish_reason;
+            if (fin) stopReason = fin === 'length' ? 'length' : 'stop';
+          }
+        }
+      } catch (e) {
+        if (signal.aborted) return void (yield { type: 'done', stopReason: 'aborted' });
+        throw e;
+      }
+      yield { type: 'done', stopReason };
+      return;
+    }
+  }
+
+  /** The instruct template for `auto`: from the server's chat template (llama.cpp `/props`), else the model name. */
+  private async autoTemplate(c: CustomProviderConfig, modelId: string): Promise<InstructTemplateId> {
+    const key = `${c.id}/${modelId}`;
+    const known = this.templates.get(key);
+    if (known) return known;
+    let jinja = '';
+    try {
+      const root = c.baseUrl.replace(/\/+$/, '').replace(/\/v1$/, '');
+      const r = await fetch(`${root}/props`, { headers: c.apiKey ? { authorization: `Bearer ${c.apiKey}` } : {}, signal: AbortSignal.timeout(3000) });
+      if (r.ok) jinja = String(((await r.json()) as { chat_template?: unknown }).chat_template ?? '');
+    } catch {
+      /* not llama.cpp, or unreachable: go by the name */
+    }
+    const id = detectTemplate(modelId, jinja);
+    this.templates.set(key, id);
+    return id;
   }
 
   /** Phrase bias and single-token banned phrases as token-id logit biases, when the backend can tokenize. */
@@ -349,7 +490,7 @@ export class LLM {
 
   private async *demo(req: GenerateRequest, maxChars: number, signal: AbortSignal) {
     const ctx = req.messages.map((m) => m.content).join('\n');
-    const isAux = /HypeBot|lorebook entries|titles for stories|fiction editor/.test(req.system ?? '');
+    const isAux = /HypeBot|concise lorebook entries|titles for stories|fiction editor|running summary of a story/.test(req.system ?? '');
     const text = isAux ? auxDemo(req.system ?? '', ctx) : demoContinuation(ctx, Math.min(maxChars, 600));
     const faux = fauxProvider({ provider: DEMO_PROVIDER, tokensPerSecond: 80 });
     faux.setResponses([fauxAssistantMessage([fauxText(text)])]);
@@ -375,7 +516,10 @@ function auxDemo(system: string, ctx: string): string {
     const t = ['The Quiet Hour', 'Lanterns in the Mist', 'What the River Kept', 'The Last Bridge', 'A Map of Small Fires'];
     return t[Math.floor(Math.random() * t.length)];
   }
-  if (system.includes('lorebook entries')) {
+  if (system.includes('running summary of a story')) {
+    return 'Earlier, the travellers crossed the river towns, met a stranger who seemed to know too much, and set out north before the storm.';
+  }
+  if (system.includes('concise lorebook entries')) {
     const m = /entry for: ([^\n]+)/.exec(ctx);
     const subject = (m?.[1] ?? 'The subject').trim();
     return `${subject} is a figure spoken of in hushed tones along the river towns. Few have met them in person, yet everyone seems to know a story — most of them contradictory, all of them strange.`;

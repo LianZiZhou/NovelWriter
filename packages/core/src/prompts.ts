@@ -1,19 +1,37 @@
-import { buildContext, stripComments, type BuiltContext } from './context.ts';
+import { buildContext, RECALL_WRAP, stripComments, SUMMARY_WRAP, type BuiltContext, type ContextSourceKind } from './context.ts';
+import { stripThinking } from './instruct.ts';
+import { expandMacros } from './macros.ts';
 import { DEFAULT_SYSTEM_PROMPT_ADVENTURE, DEFAULT_SYSTEM_PROMPT_STORY } from './defaults.ts';
 import { docText } from './doc.ts';
 import { countTokens } from './tokenizer.ts';
 import type { ChatMessage, GenerationParams, PhraseBiasGroup, SideChat, Story } from './types.ts';
 
-/** Rough characters-per-token ratio for converting NovelAI's character output length. */
+/** Characters per token for English prose; the fallback when there is no text to measure. */
 export const CHARS_PER_TOKEN = 4;
 
-export function outputTokens(params: GenerationParams): number {
-  return Math.max(16, Math.ceil(params.maxLength / CHARS_PER_TOKEN));
+/**
+ * Characters per token of `sample` (the story's own text), so a length in characters becomes the right
+ * number of tokens: about 4 for English but only ~1.1 for Chinese.
+ */
+export function charsPerToken(sample: string): number {
+  const s = sample.slice(-4000);
+  if (s.trim().length < 40) return CHARS_PER_TOKEN;
+  const n = countTokens(s);
+  return n > 0 ? Math.min(6, Math.max(0.8, s.length / n)) : CHARS_PER_TOKEN;
+}
+
+/** Output tokens for NovelAI's character output length, measured against the story's own text. */
+export function outputTokens(params: GenerationParams, sample = ''): number {
+  return Math.max(16, Math.ceil(params.maxLength / charsPerToken(sample)));
 }
 
 export interface StoryRequest {
   system: string;
   messages: ChatMessage[];
+  /** The same request without a story-tail prefill, for models that turn out to reject prefills. */
+  fallbackMessages?: ChatMessage[];
+  /** NovelAI's context text as is, for raw-completion models. */
+  raw: string;
   context: BuiltContext;
   maxTokens: number;
   stop: string[];
@@ -40,23 +58,66 @@ export function stripBraces(p: string): string {
 }
 
 /**
- * Build the chat request that continues the story. The assembled NovelAI-style
- * context is sent as a single user message with instructions in the system prompt.
+ * How the assembled context reaches the model.
+ * - `classic`: NovelAI's context text verbatim as one user message (the layout NovelAI's own models were trained on).
+ * - `structured`: for chat models. Memory, lore and story info go into the system prompt as labelled background,
+ *   the story is the user message, the Author's Note and instructions follow it (where models weigh them most),
+ *   and the story's last lines can open the reply so the model continues them word for word.
  */
-export function buildStoryRequest(
-  story: Story,
-  opts: {
-    maxContextTokens: number;
-    model?: string;
-    storyText?: string;
-    /** Inline generation at the cursor; `after` is only sent when bidirectional. */
-    inline?: { before: string; after: string; bidirectional?: boolean };
-    nativeBias?: boolean;
-    preamble?: boolean;
-  },
-): StoryRequest {
+export type PromptLayout = 'classic' | 'structured';
+
+/** Wording for NovelAI's `[ S: n ]` quality tag, which only NovelAI's models understand. */
+const STYLE_WORDS = ['', 'simple, casual prose', 'plain, readable prose', 'competent, engaging prose', 'polished, well-crafted prose', 'exceptional, award-worthy literary prose'];
+
+/** Title, author, genre, tags and style tag in plain words, for models that don't know NovelAI's ATTG line. */
+export function storyInfoText(s: Story): string {
+  const lines: string[] = [];
+  if (s.title && s.title !== 'New Story') lines.push(`Title: ${s.title}`);
+  if (s.author) lines.push(`Author: ${s.author}`);
+  if (s.genre) lines.push(`Genre: ${s.genre}`);
+  if (s.tags.length) lines.push(`Tags: ${s.tags.join(', ')}`);
+  if (s.styleTag > 0) lines.push(`Prose quality: ${STYLE_WORDS[Math.min(5, Math.max(1, Math.round(s.styleTag)))]}`);
+  return lines.join('\n');
+}
+
+const BACKGROUND_TAG: Partial<Record<ContextSourceKind, string>> = { memory: 'memory', lore: 'lore', subcontext: 'lore', ephemeral: 'note', summary: 'summary', recall: 'earlier_passage' };
+
+/** The story's last lines, to open the reply with (empty when the story ends at a line break or is short). */
+export function continuationTail(text: string): string {
+  if (!text || /\s$/.test(text)) return '';
+  const nl = text.lastIndexOf('\n');
+  let from = nl >= 0 ? nl + 1 : 0;
+  // Long paragraphs: start at a sentence or word boundary within the last ~300 characters.
+  if (text.length - from > 300) {
+    const win = text.slice(-300);
+    const cut = /[.!?…。！？」』"”]\s*/g;
+    let at = -1;
+    for (const m of win.matchAll(cut)) if ((m.index ?? 0) + m[0].length < win.length - 20) at = (m.index ?? 0) + m[0].length;
+    if (at < 0) at = Math.max(0, win.indexOf(' ') + 1);
+    from = text.length - 300 + at;
+  }
+  const tail = text.slice(from);
+  return tail.trim().length >= 8 ? tail.replace(/^\s+/, '') : '';
+}
+
+export interface StoryRequestOptions {
+  maxContextTokens: number;
+  model?: string;
+  storyText?: string;
+  /** Inline generation at the cursor; `after` is only sent when bidirectional. */
+  inline?: { before: string; after: string; bidirectional?: boolean };
+  nativeBias?: boolean;
+  preamble?: boolean;
+  layout?: PromptLayout;
+  /** The model continues a final assistant message (prefill); enables opening the reply with the story's tail. */
+  prefill?: boolean;
+  random?: () => number;
+}
+
+/** Build the request that continues the story. */
+export function buildStoryRequest(story: Story, opts: StoryRequestOptions): StoryRequest {
   const params = story.params;
-  const out = outputTokens(params);
+  const out = outputTokens(params, opts.inline?.before ?? opts.storyText ?? (docText(story.doc) || story.memory));
   // Text after the gap is part of the request too, so it comes out of the context budget.
   const afterText = opts.inline?.bidirectional ? stripComments(opts.inline.after.slice(0, 2000)) : '';
   const ctx = buildContext(story, {
@@ -64,35 +125,105 @@ export function buildStoryRequest(
     outputTokens: out,
     model: opts.model,
     storyText: opts.inline ? opts.inline.before : opts.storyText,
+    random: opts.random,
   });
-  const base = story.systemPrompt.trim() || (story.mode === 'adventure' ? DEFAULT_SYSTEM_PROMPT_ADVENTURE : DEFAULT_SYSTEM_PROMPT_STORY);
+  const base = expandMacros(story.systemPrompt.trim(), ctx.macroEnv) || (story.mode === 'adventure' ? DEFAULT_SYSTEM_PROMPT_ADVENTURE : DEFAULT_SYSTEM_PROMPT_STORY);
   // With native logit bias the phrase bias is sent as token biases instead of instructions.
   const extra = biasInstructions(opts.nativeBias ? [] : ctx.phraseBias, story.bannedTokens, story.banBrackets, story.avoidOverusedWords);
   const lengthHint = `Write roughly ${params.maxLength} characters or less.`;
-  let system = [base, extra, lengthHint].filter(Boolean).join('\n\n');
-  let user: string;
-  if (opts.inline?.bidirectional && afterText.trim()) {
-    system +=
-      '\n\nYou are filling a gap inside the story. Write only the text that belongs at <GAP/>, so that it flows naturally into the text after it.';
-    user = `${ctx.text}<GAP/>${afterText}`;
-  } else if (opts.inline) {
-    system += '\n\nContinue from exactly where the text stops; your text will be inserted there.';
-    user = ctx.text || '(The story has not started yet. Begin it.)';
-  } else {
-    user = ctx.text || '(The story has not started yet. Begin it.)';
-    // "Preamble": on a short story, mark the start of the text so the model treats it as prose to continue.
-    if (opts.preamble && ctx.text && ctx.text.length < 1000) user = `⁂\n${user}`;
-  }
-  const messages: ChatMessage[] = [{ role: 'user', content: user }];
-  if (story.prefill) messages.push({ role: 'assistant', content: story.prefill });
-  return {
+  // NovelAI's context text as is: what a raw-completion model continues.
+  const raw = (opts.preamble && ctx.text && ctx.text.length < 1000 && !opts.inline ? '⁂\n' : '') + ctx.text;
+  const result = (system: string, messages: ChatMessage[], fallback?: ChatMessage[]): StoryRequest => ({
     system,
     messages,
+    fallbackMessages: fallback,
+    raw,
     context: ctx,
     maxTokens: out,
     stop: story.stopSequences.filter(Boolean),
     bias: ctx.phraseBias.filter((g) => g.enabled !== false && g.bias !== 0 && g.phrases.length).map((g) => ({ phrases: g.phrases, bias: g.bias })),
-  };
+  });
+  const gap = Boolean(opts.inline?.bidirectional && afterText.trim());
+
+  if ((opts.layout ?? 'classic') === 'classic') {
+    let system = [base, extra, lengthHint].filter(Boolean).join('\n\n');
+    let user: string;
+    if (gap) {
+      system +=
+        '\n\nYou are filling a gap inside the story. Write only the text that belongs at <GAP/>, so that it flows naturally into the text after it.';
+      user = `${ctx.text}<GAP/>${afterText}`;
+    } else if (opts.inline) {
+      system += '\n\nContinue from exactly where the text stops; your text will be inserted there.';
+      user = ctx.text || '(The story has not started yet. Begin it.)';
+    } else {
+      user = ctx.text || '(The story has not started yet. Begin it.)';
+      // "Preamble": on a short story, mark the start of the text so the model treats it as prose to continue.
+      if (opts.preamble && ctx.text && ctx.text.length < 1000) user = `⁂\n${user}`;
+    }
+    const messages: ChatMessage[] = [{ role: 'user', content: user }];
+    if (story.prefill) messages.push({ role: 'assistant', content: story.prefill });
+    return result(system, messages);
+  }
+
+  // Structured: background into the system prompt, the story as the message, instructions after it.
+  const labels = new Map(ctx.report.map((r) => [r.id, r.label]));
+  const background: string[] = [];
+  const notes: string[] = [];
+  let storyBody = '';
+  let prev: string | null = null;
+  for (const seg of ctx.segments) {
+    if (seg.kind === 'story') {
+      storyBody += seg.text;
+      prev = null;
+      continue;
+    }
+    const wrap = seg.kind === 'summary' ? SUMMARY_WRAP : seg.kind === 'recall' ? RECALL_WRAP : null;
+    const text = (wrap && seg.text.startsWith(wrap.prefix) && seg.text.endsWith(wrap.suffix) ? seg.text.slice(wrap.prefix.length, -wrap.suffix.length) : seg.text).trim();
+    if (!text || seg.sourceId === prev) continue;
+    prev = seg.sourceId;
+    if (seg.kind === 'authorsNote') notes.push(text);
+    else if (seg.kind === 'attg') {
+      const info = storyInfoText(story);
+      if (info) background.push(`<story_info>\n${info}\n</story_info>`);
+    } else {
+      const tag = BACKGROUND_TAG[seg.kind] ?? 'note';
+      const name = seg.kind === 'lore' || seg.kind === 'subcontext' ? ` name="${(labels.get(seg.sourceId) ?? '').replace(/"/g, "'")}"` : '';
+      background.push(`<${tag}${name}>\n${text}\n</${tag}>`);
+    }
+  }
+  let system = [base, extra].filter(Boolean).join('\n\n');
+  if (background.length) {
+    system +=
+      '\n\nBackground for the story follows: the author\'s memory notes, lorebook entries about people, places and things, and other notes. ' +
+      'Use it to stay consistent; never copy it into the story.\n\n<background>\n' +
+      background.join('\n\n') +
+      '\n</background>';
+  }
+  const after: string[] = [];
+  if (notes.length) after.push(`Author's note for what comes next (follow it, never repeat it):\n${notes.join('\n')}`);
+  if (gap) {
+    const user = `<story>\n${storyBody}<GAP/>${afterText}\n</story>\n\n${[...after, `Write only the text that belongs at <GAP/>, so that it flows naturally into the text after it. ${lengthHint}`].join('\n\n')}`;
+    return result(system, [{ role: 'user', content: user }]);
+  }
+  const started = storyBody.trim().length > 0;
+  const tail = opts.prefill && !story.prefill && started ? continuationTail(storyBody) : '';
+  const how = !started
+    ? 'The story has not started yet. Begin it.'
+    : /\n\s*$/.test(storyBody)
+      ? 'Continue the story from where it stops, starting on the new line.'
+      : 'Continue the story from exactly where it stops; if it stops mid-sentence or mid-word, finish that sentence first.';
+  const ask = (h: string) => [...after, `${h} ${lengthHint} Reply with the story text only.`].join('\n\n');
+  const wrap = (body: string) => (started ? `<story>\n${body}\n</story>\n\n` : '');
+  const plain: ChatMessage[] = [{ role: 'user', content: wrap(storyBody) + ask(how) }];
+  if (story.prefill) return result(system, [...plain, { role: 'assistant', content: story.prefill }]);
+  if (!tail) return result(system, plain);
+  // The reply opens with the story's last lines, so the model carries on from them word for word.
+  const head = storyBody.slice(0, storyBody.length - tail.length);
+  const messages: ChatMessage[] = [
+    { role: 'user', content: wrap(head) + ask('Continue the story. Your reply already begins with its next lines; carry on from them seamlessly, mid-sentence if needed.') },
+    { role: 'assistant', content: tail },
+  ];
+  return result(system, messages, plain);
 }
 
 /**
@@ -105,7 +236,7 @@ export function postProcess(
   generated: string,
   opts: { stop?: string[]; trimToSentence?: boolean; minLength?: number; banned?: string[] } = {},
 ): string {
-  let g = generated.replace(/\r\n/g, '\n');
+  let g = stripThinking(generated.replace(/\r\n/g, '\n'));
   // Some models echo the tail of the context; drop exact overlap.
   const tail = existing.slice(-200);
   for (let n = Math.min(tail.length, g.length); n >= 12; n--) {
@@ -187,6 +318,23 @@ export function buildToolboxRequest(
       'You are an expert fiction editor. You will receive story context and a passage to revise. ' +
       'Return only the revised passage text, with no commentary, quotes, or markdown.',
     messages: [{ role: 'user', content: `Story context (for style):\n"""\n${before}\n"""\n\nTask: ${task[mode]}\n\nPassage:\n"""\n${selection}\n"""` }],
+  };
+}
+
+/**
+ * Fold the next stretch of story text that dropped out of the context into the running summary. `chunk` is the
+ * story text from `summary.upTo` on; the reply is the whole updated summary.
+ */
+export function buildSummaryRequest(story: Story, chunk: string): { system: string; messages: ChatMessage[] } {
+  const prev = story.summary?.text.trim() ?? '';
+  const intro = prev ? `Summary so far:\n"""\n${prev}\n"""\n\nStory text that follows it:` : 'Story text:';
+  return {
+    system:
+      'You maintain the running summary of a story for its author, so the story can continue consistently once its early parts are out of view. ' +
+      'Write in the language of the story, in past tense, as compact prose paragraphs. Keep what later events may depend on: who is who, ' +
+      'relationships, places, objects, promises, secrets, unresolved threads and the order of major events. Drop scene-by-scene detail and style. ' +
+      'Reply with only the complete updated summary, at most about 400 words.',
+    messages: [{ role: 'user', content: `${intro}\n"""\n${stripComments(chunk)}\n"""\n\n${prev ? 'Rewrite the summary so it also covers this text.' : 'Summarize this text.'}` }],
   };
 }
 

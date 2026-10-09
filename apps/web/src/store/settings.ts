@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { ModelRef, UserScript } from '@novelwriter/core';
+import type { ModelRef, PromptLayout, UserScript } from '@novelwriter/core';
 import { api } from '../api.ts';
 import { BUILTIN_THEMES, type Theme } from '../theme/themes.ts';
 import { applyTheme } from '../theme/applyTheme.ts';
@@ -50,6 +50,8 @@ export interface Settings {
   streamDelay: number;
   continueToSentenceEnd: boolean;
   preamble: boolean;
+  /** How the context is laid out for chat models (see core `PromptLayout`). */
+  promptLayout: PromptLayout;
   /** Upper bound on context tokens for every story (0 = no cap beyond the preset and model). */
   maxContextCap: number;
   /** Show the System Prompt / Prefill button in the Advanced tab. */
@@ -187,6 +189,7 @@ export const DEFAULT_SETTINGS: Settings = {
   streamDelay: 0,
   continueToSentenceEnd: true,
   preamble: true,
+  promptLayout: 'structured',
   maxContextCap: 0,
   showSystemPromptSettings: true,
   defaultBias: true,

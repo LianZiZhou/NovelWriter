@@ -28,10 +28,13 @@ export function tokenizerReady(): boolean {
   return impl !== null;
 }
 
-/** Approximate encoding used before the real tokenizer is loaded: ~4 chars per token. */
+/**
+ * Approximate encoding used before the real tokenizer is loaded: ~4 chars per token for alphabetic
+ * scripts, one per character for Chinese, Japanese and Korean (o200k averages ~1.1 characters there).
+ */
 function heuristicEncode(text: string): number[] {
   const out: number[] = [];
-  const re = /\s*[\p{L}\p{N}]{1,4}|\s*[^\s\p{L}\p{N}]|\s+/gu;
+  const re = /\s*[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]|\s*(?:(?![\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}])[\p{L}\p{N}]){1,4}|\s*[^\s\p{L}\p{N}]|\s+/gu;
   let m: RegExpExecArray | null;
   while ((m = re.exec(text))) out.push(m.index);
   return out;

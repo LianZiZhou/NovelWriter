@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { CaretLeft, CaretRight, CornersOut, Plus, Trash } from '@phosphor-icons/react';
-import { countTokens, outputTokens, DEFAULT_SYSTEM_PROMPT_ADVENTURE, DEFAULT_SYSTEM_PROMPT_STORY, defaultContextSettings, formatEphemeral, parseEphemeral, ephemeralActive, type BuiltContext, type StoryContextSettings } from '@novelwriter/core';
+import { countTokens, docText, outputTokens, DEFAULT_SYSTEM_PROMPT_ADVENTURE, DEFAULT_SYSTEM_PROMPT_STORY, defaultContextSettings, formatEphemeral, parseEphemeral, ephemeralActive, type BuiltContext, type StoryContextSettings } from '@novelwriter/core';
 import { useStory } from '../../store/story.ts';
 import { useUI } from '../../store/ui.ts';
 import { useSettings } from '../../store/settings.ts';
@@ -28,6 +28,11 @@ const ACTIVATION: Record<string, string> = {
   categoryDisabled: 'Category disabled',
   noMatch: 'No key found',
   noText: 'No text',
+  sticky: 'Sticky',
+  delayed: 'Delayed',
+  cooldown: 'On cooldown',
+  probability: 'Probability roll failed',
+  group: 'Another entry of its group was kept',
 };
 const COLUMN_HELP: Record<string, string> = {
   Stage: 'The insertion stage the entry was added in.',
@@ -92,7 +97,7 @@ export function ContextViewerModal({ onClose, which: initial }: { onClose: () =>
   const reserved = ctx.report.filter((r) => r.included && (r.stage ?? 0) > stageIdx).reduce((n, r) => n + r.reservedTokens, 0);
   const hidden = new Set(ctx.report.filter((r) => r.hidden).map((r) => r.id));
   const rows = ctx.report.filter((r) => showInactive || r.included || r.kind !== 'lore');
-  const out = story ? outputTokens(story.params) : 0;
+  const out = story ? outputTokens(story.params, docText(story.doc) || story.memory) : 0;
   return (
     <Modal onClose={onClose} width={1000} height="calc(100vh - 50px)" label={t('Context Viewer')} className="ctx-modal">
       <div className="ctx-modal-head">

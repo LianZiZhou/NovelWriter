@@ -1,4 +1,4 @@
-import { backendCaps, type BackendFlavor, type GenerateRequest, type ModelCaps, type Preset, type Shelf, type Story, type StoryMeta, type TokenLogprob } from '@novelwriter/core';
+import { backendCaps, type BackendFlavor, type GenerateRequest, type InstructTemplateId, type ModelCaps, type Preset, type Shelf, type Story, type StoryMeta, type TokenLogprob } from '@novelwriter/core';
 
 export interface ProviderInfo {
   id: string;
@@ -25,6 +25,8 @@ export interface ModelInfo {
   flavor: BackendFlavor;
   /** What this model takes (flavor minus what the model rejects); older servers leave it out. */
   caps?: ModelCaps;
+  /** Run as text completion: rendered in an instruct template, or raw story text. */
+  completion?: 'instruct' | 'raw';
 }
 
 /** Capabilities of the selected model. */
@@ -46,6 +48,8 @@ export interface CustomProvider {
   baseUrl: string;
   apiKey?: string;
   flavor?: BackendFlavor;
+  completion?: 'off' | 'instruct' | 'raw';
+  template?: InstructTemplateId | 'auto';
   models: { id: string; name?: string; contextWindow?: number; maxTokens?: number }[];
 }
 

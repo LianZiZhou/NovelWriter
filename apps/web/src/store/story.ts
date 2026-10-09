@@ -15,6 +15,9 @@ import {
   type TokenProb,
   buildHypebotRequest,
   buildStoryRequest,
+  buildSummaryRequest,
+  nextLoreState,
+  type StoryRequestOptions,
   buildTitleRequest,
   cloneJson,
   commit,
@@ -628,7 +631,7 @@ export const useStory = create<StoryState>((set, get) => ({
     if (!s) return null;
     const info = get().modelInfo();
     const maxCtx = Math.min(s.params.maxContext, info?.contextWindow ?? Infinity, useSettings.getState().maxContextCap || Infinity);
-    const req = buildStoryRequest(s, { maxContextTokens: maxCtx, model: info?.id, preamble: useSettings.getState().preamble, nativeBias: capsOf(info).tokenizer !== 'none' });
+    const req = buildStoryRequest(s, requestOptions(info, { maxContextTokens: maxCtx, model: info?.id }));
     return { system: req.system, messages: req.messages };
   },
 
@@ -637,7 +640,7 @@ export const useStory = create<StoryState>((set, get) => ({
     if (!s) return null;
     const info = get().modelInfo();
     const maxCtx = Math.min(s.params.maxContext, info?.contextWindow ?? Infinity, useSettings.getState().maxContextCap || Infinity);
-    return buildStoryRequest(s, { maxContextTokens: maxCtx, model: info?.id }).context;
+    return buildStoryRequest(s, requestOptions(info, { maxContextTokens: maxCtx, model: info?.id })).context;
   },
 
   async send(input) {
@@ -825,18 +828,20 @@ async function runGeneration(
   const after = fullText.slice(opts.from);
   const maxCtx = Math.min(s.params.maxContext, info?.contextWindow ?? Infinity, useSettings.getState().maxContextCap || Infinity);
   const caps = capsOf(info);
-  const req = buildStoryRequest(s, {
-    maxContextTokens: maxCtx,
-    model: model.id,
-    inline: opts.inline ? { before, after, bidirectional: settings.bidirectionalInline } : undefined,
-    nativeBias: caps.tokenizer !== 'none',
-    preamble: settings.preamble,
-  });
+  const req = buildStoryRequest(
+    s,
+    requestOptions(info, {
+      maxContextTokens: maxCtx,
+      model: model.id,
+      inline: opts.inline ? { before, after, bidirectional: settings.bidirectionalInline } : undefined,
+    }),
+  );
   // "Default Bias": keep dinkuses and asterisms out unless the story already uses them.
   const banned = [...s.bannedTokens, ...(settings.defaultBias ? ['***', '⁂'].filter((x) => !fullText.includes(x)) : [])];
   if (banned.length > s.bannedTokens.length) req.system += `\n\nNever write scene-break markers such as ${banned.slice(s.bannedTokens.length).join(' or ')}.`;
   set({ generating: true, task: 'story', lastContext: req.context });
   abort = new AbortController();
+  const builtMessages = JSON.stringify(req.messages);
   if (hasHook('onContextBuilt')) {
     const hooked = await runScriptHook('onContextBuilt', { system: req.system, context: req.messages[0]?.content ?? '', messages: req.messages });
     req.system = String(hooked.system ?? req.system);
@@ -866,6 +871,9 @@ async function runGeneration(
         bias: req.bias,
         banned,
         logprobs: settings.tokenProbabilities && caps.logprobs ? settings.logprobsCount : undefined,
+        // Only sent untouched: a script that rewrote the messages would be undone by the fallback.
+        fallbackMessages: JSON.stringify(req.messages) === builtMessages ? req.fallbackMessages : undefined,
+        prompt: info?.completion === 'raw' && !opts.inline ? req.raw : undefined,
       },
       abort.signal,
     )) {
@@ -905,6 +913,10 @@ async function runGeneration(
       const r = commit(st.history, 'ai', [change]);
       st.history = tokenProbs.length ? setNodeProbs(r.history, r.node.id, tokenProbs) : r.history;
       st.doc = doc;
+      // Sticky / cooldown lore timing and `{{setvar}}` variables carry over to the next generation.
+      const loreState = nextLoreState(st.loreState, req.context.activations, st.step);
+      if (Object.keys(loreState).length || st.loreState) st.loreState = loreState;
+      if (Object.keys(req.context.macroEnv.vars).length || st.vars) st.vars = req.context.macroEnv.vars;
       st.step = st.step + 1;
       // "Unbias When Generated": a group switches itself off once one of its phrases has appeared.
       if (st.phraseBias.some((g) => g.generateOnce && g.enabled)) {
@@ -918,6 +930,7 @@ async function runGeneration(
     if (settings.ttsSpeakOutputs) speak(final);
     if (hasHook('onGenerationEnd')) void runScriptHook('onGenerationEnd', { text: final });
     void maybeHypebot(set, get, final);
+    void updateSummary(get, req.context.storyStart);
   } else if (!final) {
     ed?.setDoc(get().current?.doc ?? []);
   }
@@ -951,6 +964,63 @@ export function alignTokenProbs(raw: string, final: string, tokens: TokenLogprob
     out.push({ o: from, t: piece, lp: t.logprob, top: t.top.map((x) => [x.token, x.logprob]) });
   }
   return out;
+}
+
+/** Requests per summary update at most, so a long story catches up over a few generations. */
+const SUMMARY_CHUNK = 8000;
+let summarizing = false;
+
+/**
+ * Fold story text that has dropped out of the context into the running summary. Runs in the background after a
+ * generation once enough new text is out of view, or on request (`force`) until it has caught up.
+ */
+export async function updateSummary(get: () => StoryState, storyStart: number, force = false): Promise<boolean> {
+  const s = get().current;
+  const model = get().resolveModel();
+  if (!s?.summary?.enabled || !model || summarizing) return false;
+  const text = docText(s.doc);
+  const upTo = Math.min(s.summary.upTo, text.length);
+  // Wait until a good stretch is out of view, unless asked.
+  if (storyStart - upTo < (force ? 1 : 2000)) return false;
+  summarizing = true;
+  const id = s.id;
+  try {
+    let at = upTo;
+    let summary = s.summary.text;
+    do {
+      let end = Math.min(storyStart, at + SUMMARY_CHUNK);
+      // End the chunk at a paragraph break when there is one.
+      const nl = text.lastIndexOf('\n', end);
+      if (end < storyStart && nl > at + SUMMARY_CHUNK / 2) end = nl + 1;
+      const req = buildSummaryRequest({ ...s, summary: { enabled: true, text: summary, upTo: at } }, text.slice(at, end));
+      const out = (await generateText({ model, ...req, maxTokens: 1200, params: defaultParams({ temperature: 0.4 }) })).trim();
+      if (!out || get().current?.id !== id) break;
+      summary = out;
+      at = end;
+      get().update((st) => {
+        st.summary = { enabled: st.summary?.enabled ?? true, text: summary, upTo: at };
+      });
+    } while (force && at < storyStart);
+    return true;
+  } catch (e) {
+    if (force) useUI.getState().toast((e as Error).message, 'error');
+    return false;
+  } finally {
+    summarizing = false;
+  }
+}
+
+/** Options shared by every story request: layout, prefill and bias handling for the model in use. */
+function requestOptions(info: ModelInfo | undefined, o: StoryRequestOptions): StoryRequestOptions {
+  const settings = useSettings.getState();
+  const caps = capsOf(info);
+  return {
+    ...o,
+    nativeBias: caps.tokenizer !== 'none',
+    preamble: settings.preamble,
+    layout: settings.promptLayout ?? 'structured',
+    prefill: Boolean(caps.prefill),
+  };
 }
 
 async function maybeHypebot(set: (p: Partial<StoryState>) => void, get: () => StoryState, last: string, force = false) {

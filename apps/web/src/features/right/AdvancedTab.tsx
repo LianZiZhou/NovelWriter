@@ -16,6 +16,8 @@ export const KIND_COLORS: Record<ContextSourceKind, string> = {
   subcontext: '#75cf67',
   ephemeral: '#9773ff',
   attg: '#ec56a7',
+  summary: '#e0a43a',
+  recall: '#4fb3c9',
 };
 
 export const KIND_LABELS: Record<ContextSourceKind, string> = {
@@ -26,6 +28,8 @@ export const KIND_LABELS: Record<ContextSourceKind, string> = {
   subcontext: 'Subcontext',
   ephemeral: 'Ephemeral',
   attg: 'ATTG',
+  summary: 'Story Summary',
+  recall: 'Recalled Passages',
 };
 
 export function ContextBar({ ctx }: { ctx: BuiltContext | null }) {
