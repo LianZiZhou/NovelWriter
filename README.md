@@ -305,3 +305,12 @@ frame.
 
 Layout: `packages/core` (context builder, lorebook, history, formats; no DOM),
 `apps/server` (Fastify + pi-ai), `apps/web` (React UI), `apps/desktop` (Electron app).
+
+## License
+
+NovelWriter is licensed under the [GNU Affero General Public License v3.0 or later](LICENSE)
+(`AGPL-3.0-or-later`). If you run a modified version as a network service, you must offer its users the
+source code of that version.
+
+NovelWriter is an independent project and is not affiliated with, endorsed by or sponsored by NovelAI or
+Anlatan. NovelAI is a trademark of its respective owner.
